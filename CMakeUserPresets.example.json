@@ -1,0 +1,77 @@
+{
+  "//": [
+    "Vorlage für die eigene CMakeUserPresets.json.",
+    "",
+    "  cp CMakeUserPresets.example.json CMakeUserPresets.json",
+    "",
+    "Die kopierte Datei ist bewusst NICHT versioniert — sie enthält deine",
+    "lokalen Pfade. Trage unten dein Qt-Verzeichnis ein; alles andere ist",
+    "optional und kann gelöscht werden.",
+    "",
+    "Alternativ zu dieser Datei genügt die Umgebungsvariable QT_ROOT.",
+    "Siehe README.md, Abschnitt Bauen."
+  ],
+
+  "version": 6,
+
+  "configurePresets": [
+    {
+      "name": "qt-env",
+      "hidden": true,
+      "description": "Pfad zur Qt-Installation — das Verzeichnis MIT bin/ und lib/ darin.",
+      "environment": {
+        "QT_ROOT": "C:/Qt/6.10.1/msvc2022_64"
+      }
+    },
+
+    {
+      "name": "my-debug",
+      "displayName": "Meine Konfiguration • VS x64 • Debug",
+      "inherits": [ "windows-vs-x64-debug_dynamic", "qt-env" ]
+    },
+    {
+      "name": "my-testing",
+      "displayName": "Meine Konfiguration • VS x64 • Testing",
+      "inherits": [ "windows-vs-x64-testing_dynamic", "qt-env" ]
+    },
+
+    {
+      "//": "Optional: lokale vcpkg-Toolchain. Ganzen Block löschen, wenn nicht benutzt.",
+      "name": "with-vcpkg",
+      "hidden": true,
+      "cacheVariables": {
+        "VCPKG_ROOT": "C:/dev/vcpkg",
+        "CMAKE_TOOLCHAIN_FILE": "C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_FEATURE_FLAGS": "manifests,versions"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "//": "Eigene Job-Anzahl statt der geteilten Vorgabe.",
+      "name": "my-build-debug",
+      "displayName": "Meine Konfiguration • Build • Debug",
+      "configurePreset": "my-debug",
+      "configuration": "Debug",
+      "jobs": 8
+    },
+    {
+      "name": "my-build-testing",
+      "displayName": "Meine Konfiguration • Build • Testing",
+      "configurePreset": "my-testing",
+      "configuration": "Testing",
+      "jobs": 8
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "my-ctest",
+      "displayName": "Meine Konfiguration • CTest • Testing",
+      "configurePreset": "my-testing",
+      "configuration": "Testing",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

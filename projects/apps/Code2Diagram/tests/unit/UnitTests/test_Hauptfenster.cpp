@@ -1,0 +1,157 @@
+/**
+ * @file test_Hauptfenster.cpp
+ * @brief Das Fenster: lesen, waehlen, Text des Diagramms — ohne es zu zeigen
+ */
+#include <doctest.h>
+
+#include "ui/Hauptfenster.hpp"
+
+#include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
+
+using c2d::ui::Hauptfenster;
+
+TEST_SUITE("Hauptfenster")
+{
+    TEST_CASE("Das Beispiel: zwei Funktionen und die Datentypen stehen zur Wahl")
+    {
+        Hauptfenster fenster;
+        CHECK(fenster.diagramme().isEmpty());
+        CHECK(fenster.diagrammText().isEmpty());
+
+        fenster.zeigeBeispiel();
+        CHECK(fenster.diagramme() == QStringList{"dauer_ms", "ampel_takt", "types"});
+        CHECK(fenster.meldungen() == 0);
+        CHECK(fenster.quelltext().contains("ampel_takt"));
+        // die erste Funktion ist gewaehlt, das erste Format ist Mermaid
+        CHECK(fenster.diagrammText().startsWith("%% dauer_ms\nflowchart TD\n"));
+        CHECK(fenster.diagrammText().contains("-->|\"ROT_GELB, GELB\"|"));
+    }
+
+    TEST_CASE("Diagramm und Format waehlen")
+    {
+        Hauptfenster fenster;
+        fenster.zeigeBeispiel();
+
+        CHECK(fenster.waehleDiagramm("ampel_takt"));
+        CHECK(fenster.diagrammText().contains("ampel_takt(Ampel *ampel, uint16_t vergangen_ms)"));
+
+        CHECK(fenster.waehleDiagramm(Hauptfenster::kDatentypen));
+        CHECK(fenster.diagrammText().contains("classDiagram"));
+        CHECK(fenster.diagrammText().contains("Ampel --> Phase : phase"));
+
+        CHECK(fenster.waehleFormat("dot"));
+        CHECK(fenster.diagrammText().startsWith("digraph \"ampel.c\" {"));
+
+        CHECK_FALSE(fenster.waehleDiagramm("gibt_es_nicht"));
+        CHECK_FALSE(fenster.waehleFormat("svg"));
+        CHECK(fenster.diagrammText().startsWith("digraph"));  // eine falsche Wahl aendert nichts
+    }
+
+    TEST_CASE("Vorschau: je Knoten eine Form; C++ und draw.io gehen denselben Weg")
+    {
+        Hauptfenster fenster;
+        CHECK(fenster.vorschauFormen() == 0);
+        fenster.zeigeBeispiel();
+        CHECK(fenster.vorschauFormen() == 7);  // dauer_ms: Start, switch, vier return, Ende
+        CHECK(fenster.waehleDiagramm(Hauptfenster::kDatentypen));
+        CHECK(fenster.vorschauFormen() == 2);  // Phase, Ampel
+
+        fenster.zeige("namespace n { struct A { int x; int f() { return g(); } int g() { return x; } }; }", "a.hpp");
+        CHECK(fenster.diagramme() == QStringList{"n::A::f", "n::A::g", "types"});
+        CHECK(fenster.diagrammText().startsWith("%% f\nflowchart TD\n    n0([\"n::A::f()\"])"));
+        CHECK(fenster.waehleFormat("drawio"));
+        CHECK(fenster.diagrammText().startsWith("<mxfile host=\"Code2Diagram\">"));
+        CHECK(fenster.waehleAnsicht("text"));
+        CHECK(fenster.waehleAnsicht("preview"));
+        CHECK_FALSE(fenster.waehleAnsicht("bild"));
+    }
+
+    TEST_CASE("Zum Ablauf der gerufenen Funktion und zurueck; einbetten und wieder herausnehmen")
+    {
+        Hauptfenster fenster;
+        fenster.zeigeBeispiel();
+        CHECK(fenster.waehleDiagramm("ampel_takt"));
+        CHECK(fenster.diagramm() == "ampel_takt");
+        const int ohne = fenster.vorschauFormen();
+        CHECK(fenster.einbettungen() == 0);
+
+        // ampel_takt ruft dauer_ms: dessen Ablauf haengt sich umrahmt ein
+        CHECK(fenster.betteEin("dauer_ms"));
+        CHECK(fenster.einbettungen() == 1);
+        CHECK(fenster.vorschauFormen() == ohne + 5);  // switch und vier return, ohne Start und Ende
+        CHECK(fenster.diagrammText().contains("subgraph g0[\"dauer_ms(Phase phase)\"]"));
+        CHECK_FALSE(fenster.betteEin("dauer_ms"));    // der eine Aufruf traegt schon eine
+        CHECK_FALSE(fenster.betteEin("gibt_es_nicht"));
+
+        CHECK(fenster.loeseEinbettungen());
+        CHECK(fenster.einbettungen() == 0);
+        CHECK(fenster.vorschauFormen() == ohne);
+        CHECK_FALSE(fenster.diagrammText().contains("subgraph"));
+        CHECK_FALSE(fenster.loeseEinbettungen());
+
+        // der Verlauf: von ampel_takt zu dauer_ms und zurueck
+        CHECK(fenster.waehleDiagramm("dauer_ms"));
+        CHECK(fenster.diagramm() == "dauer_ms");
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "ampel_takt");
+        CHECK(fenster.zurueck());  // davor stand dauer_ms, das erste Diagramm nach dem Laden
+        CHECK(fenster.diagramm() == "dauer_ms");
+        CHECK_FALSE(fenster.zurueck());
+    }
+
+    TEST_CASE("Bedingte Uebersetzung: Definitionen waehlen die Variante, der Schalter liest alle Zweige")
+    {
+        const char* quelle = "#ifdef BOARD_A\nvoid a(void) { x(); }\n#else\nvoid b(void) { y(); }\n#endif\n"
+                             "void immer(void) {\n#if STUFE > 1\n  laut();\n#endif\n  leise();\n}\n";
+        Hauptfenster fenster;
+        fenster.zeige(quelle, "v.c");
+        CHECK(fenster.diagramme() == QStringList{"b", "immer"});
+        CHECK(fenster.unbekannteNamen() == QStringList{"BOARD_A", "STUFE"});
+        CHECK(fenster.waehleDiagramm("immer"));
+        CHECK_FALSE(fenster.diagrammText().contains("laut"));
+
+        fenster.setzeDefinitionen("BOARD_A, STUFE=2");
+        CHECK(fenster.diagramme() == QStringList{"a", "immer"});
+        CHECK(fenster.unbekannteNamen().isEmpty());
+        CHECK(fenster.diagramm() == "immer");  // das gewaehlte Diagramm bleibt
+        CHECK(fenster.diagrammText().contains("laut"));
+
+        fenster.setzeAlleZweige(true);
+        CHECK(fenster.diagramme() == QStringList{"a", "b", "immer"});
+        fenster.setzeAlleZweige(false);
+        fenster.setzeDefinitionen("");
+        CHECK(fenster.diagramme() == QStringList{"b", "immer"});
+    }
+
+    TEST_CASE("Eine Datei oeffnen; eine fehlende meldet es und laesst das Fenster, wie es war")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QString pfad = QDir(ordner.path()).filePath("probe.c");
+        {
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write("struct A { int x; };\nint f(void) { return 1; }\nint g(void) { return 2 }\n");
+        }
+
+        Hauptfenster fenster;
+        QString fehler;
+        CHECK(fenster.oeffne(pfad, &fehler));
+        CHECK(fehler.isEmpty());
+        CHECK(fenster.windowTitle().startsWith("probe.c"));
+        CHECK(fenster.diagramme() == QStringList{"f", "g", "types"});
+        CHECK(fenster.meldungen() == 1);  // das fehlende Semikolon in g
+
+        CHECK_FALSE(fenster.oeffne(QDir(ordner.path()).filePath("fehlt.c"), &fehler));
+        CHECK(fehler.contains("fehlt.c"));
+        CHECK(fenster.diagramme().size() == 3);
+    }
+
+    TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
+    {
+        CHECK(Hauptfenster::dateiFilter() ==
+              "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;All files (*)");
+    }
+}

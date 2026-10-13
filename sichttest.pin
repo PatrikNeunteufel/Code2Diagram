@@ -1,0 +1,19 @@
+# ==============================================================================
+# sichttest.pin — welches Paket der Sichttest-Steuerung dieses Projekt bezieht
+# ==============================================================================
+# Version wechseln = diese Datei aendern + committen. Der Pin steht NUR hier;
+# Solution.json verweist mit "pin" darauf (External "sichttest", Art archive).
+# Felder: CMakeCraft docs/de/guide/references/Packages.md §4
+#
+# Die Pruefsumme ist die der HOCHGELADENEN Datei des Releases (nicht die eines
+# spaeteren Schnuerens - sie aendert sich mit jedem Lauf). Braucht CMakeCraft
+# ab v0.10.0.
+# ==============================================================================
+
+set(SICHTTEST_VERSION "v0.4.0")
+set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
+set(SICHTTEST_SHA256  "fdb97654b37c3939abe07a89d439424cecf849a8290eab65278eea7e35a5882e")
+
+# Fallback-Quellen, wenn die URL nicht erreichbar ist. Relative Pfade gelten ab
+# dem Ordner dieser Datei.
+set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

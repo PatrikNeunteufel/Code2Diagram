@@ -1,0 +1,16 @@
+# ==============================================================================
+# cmakecraft.pin — welche CMakeCraft-Version dieses Projekt verwendet
+# ==============================================================================
+# Version wechseln = diese Datei aendern + committen ("Sync" per Tag-Bump).
+# Notfall (Fix noch ohne Tag): CMAKECRAFT_VERSION auf einen Branch setzen,
+# nach dem Release wieder auf einen Tag pinnen.
+# Verfahren: CMakeCraft/docs/de/guide/userguides/Neues_Projekt_Guide.md §5
+# ==============================================================================
+
+set(CMAKECRAFT_VERSION "v0.11.1")
+set(CMAKECRAFT_GIT_URL "https://github.com/PatrikNeunteufel/CMakeCraft.git")
+
+# Fallback-Quellen, wenn die GIT_URL nicht erreichbar ist (Reihenfolge!).
+# Relative Pfade beziehen sich auf den Projekt-Root. Leer lassen, wenn es
+# keinen lokalen CMakeCraft-Checkout gibt.
+set(CMAKECRAFT_FALLBACK_PATHS "../CMakeCraft")

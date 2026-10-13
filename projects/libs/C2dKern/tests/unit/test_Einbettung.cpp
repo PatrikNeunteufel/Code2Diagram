@@ -1,0 +1,304 @@
+/**
+ * @file test_Einbettung.cpp
+ * @brief Aufrufziele, Einbetten und Herausloesen, die Anordnung und draw.io
+ */
+#include <ostream>  // doctest schreibt string_view ueber operator<<
+
+#include <doctest.h>
+
+#include "c2d/ausgabe/Ausgabe.hpp"
+#include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Anordnung.hpp"
+#include "c2d/sprache/Sprache.hpp"
+
+#include <algorithm>
+
+using namespace c2d::diagramm;
+
+namespace
+{
+
+constexpr std::string_view kQuelle = R"c(
+static int quadrat(int x) { return x * x; }
+static int summe(int n)
+{
+    int s = 0;
+    for (int i = 0; i < n; i++)
+        s += quadrat(i);
+    return s;
+}
+int main(void)
+{
+    int n = lies();
+    if (n < 0) return 1;
+    drucke(summe(n));
+    return 0;
+}
+)c";
+
+/// Das gebuendelte Flussdiagramm der Funktion `name` aus kQuelle.
+Flussdiagramm fluss(std::string_view name, std::string_view quelle = kQuelle)
+{
+    const c2d::sprache::Ergebnis e = c2d::sprache::c().lies(quelle, "test.c");
+    for (const c2d::modell::Funktion& f : e.einheit.funktionen)
+        if (f.name == name) return fasseAnweisungsfolgenZusammen(flussVon(f));
+    FAIL("no function " << name);
+    return Flussdiagramm();
+}
+
+bool hatKante(const Flussdiagramm& d, KnotenId von, KnotenId nach, std::string_view beschriftung = {})
+{
+    for (const Kante& k : d.kanten())
+        if (k.von == von && k.nach == nach && k.beschriftung == beschriftung) return true;
+    return false;
+}
+
+/// main mit summe hinter Knoten 4 und darin quadrat hinter Knoten 9.
+Flussdiagramm zweifachEingebettet()
+{
+    const Flussdiagramm einmal = betteEin(fluss("main"), 4, fluss("summe"), "summe(int n)");
+    return betteEin(einmal, 9, fluss("quadrat"), "quadrat(int x)");
+}
+
+bool ueberlappen(const Rechteck& a, const Rechteck& b)
+{
+    return a.x < b.x + b.breite && b.x < a.x + a.breite && a.y < b.y + b.hoehe && b.y < a.y + a.hoehe;
+}
+
+bool liegtIn(const Rechteck& innen, const Rechteck& aussen)
+{
+    return innen.x >= aussen.x && innen.y >= aussen.y && innen.x + innen.breite <= aussen.x + aussen.breite &&
+           innen.y + innen.hoehe <= aussen.y + aussen.hoehe;
+}
+
+std::size_t zaehle(const std::string& text, std::string_view teil)
+{
+    std::size_t n = 0;
+    for (std::size_t i = text.find(teil); i != std::string::npos; i = text.find(teil, i + 1)) ++n;
+    return n;
+}
+
+}  // namespace
+
+TEST_SUITE("Einbettung")
+{
+    TEST_CASE("Jeder Knoten nennt, welche Funktionen sein Text ruft")
+    {
+        const Flussdiagramm d = fluss("main");
+        REQUIRE(d.knoten().size() == 7);
+        CHECK(d.knoten()[0].aufrufe.empty());  // die Signatur im Start ist kein Aufruf
+        CHECK(d.knoten()[1].aufrufe == std::vector<std::string>{"lies"});
+        CHECK(d.knoten()[2].aufrufe.empty());
+        CHECK(d.knoten()[4].art == KnotenArt::Aufruf);
+        CHECK(d.knoten()[4].aufrufe == std::vector<std::string>{"drucke", "summe"});
+
+        // Bereich und Objekt vor dem Namen zaehlen nicht, Woerter der Sprache und Literale auch nicht
+        const Flussdiagramm e =
+            fluss("f", "void f(void) { a = sizeof(b) + g(h(1), \"k(\") + o.m(2) + p->n(3) + N::q(4) + g(5) + 0x1Fu; }");
+        CHECK(e.knoten()[1].aufrufe == std::vector<std::string>{"g", "h", "m", "n", "q"});
+
+        // beim Buendeln sammeln sich die Aufrufe
+        const Flussdiagramm s = fluss("summe");
+        CHECK(s.knoten()[3].zeilen == std::vector<std::string>{"s += quadrat(i)", "i++"});
+        CHECK(s.knoten()[3].aufrufe == std::vector<std::string>{"quadrat"});
+    }
+
+    TEST_CASE("Einbetten: der Ablauf der gerufenen Funktion haengt hinter dem Aufruf, als Gruppe")
+    {
+        const Flussdiagramm haupt = fluss("main");
+        const Flussdiagramm d = betteEin(haupt, 4, fluss("summe"), "summe(int n)");
+
+        // die Kennungen von main bleiben, vier Knoten kommen dazu (ohne Start und Ende von summe)
+        REQUIRE(d.knoten().size() == 11);
+        CHECK(d.knoten()[4].zeilen == haupt.knoten()[4].zeilen);
+        CHECK(d.knoten()[4].gruppe == kKeine);  // der Aufrufer bleibt draussen
+        for (KnotenId i = 7; i < 11; ++i) CHECK(d.knoten()[i].gruppe == 0);
+        REQUIRE(d.gruppen().size() == 1);
+        CHECK(d.gruppen()[0].titel == "summe(int n)");
+        CHECK(d.gruppen()[0].aufrufer == 4);
+
+        CHECK(d.kanten().size() == 12);
+        CHECK_FALSE(hatKante(d, 4, 5));  // der Aufrufer fuehrt nicht mehr direkt weiter
+        CHECK(hatKante(d, 4, 7));        // sondern in den ersten Schritt von summe
+        CHECK(hatKante(d, 8, 9, "yes"));
+        CHECK(hatKante(d, 9, 8));
+        CHECK(hatKante(d, 8, 10, "no"));
+        CHECK(hatKante(d, 10, 5));  // das Ende von summe: dorthin, wohin der Aufrufer fuehrte
+    }
+
+    TEST_CASE("Einbetten: nur einmal je Knoten, nicht ohne Inhalt, nicht an einem Knoten, den es nicht gibt")
+    {
+        const Flussdiagramm haupt = fluss("main");
+        const Flussdiagramm einmal = betteEin(haupt, 4, fluss("summe"), "summe(int n)");
+
+        CHECK(betteEin(einmal, 4, fluss("quadrat"), "x").knoten().size() == einmal.knoten().size());
+        CHECK(betteEin(haupt, 99, fluss("summe"), "x").knoten().size() == haupt.knoten().size());
+        CHECK(betteEin(haupt, 4, fluss("leer", "void leer(void) { }"), "x").gruppen().empty());
+    }
+
+    TEST_CASE("Einbetten in eine Einbettung, und beides wieder herausloesen")
+    {
+        const Flussdiagramm haupt = fluss("main");
+        const Flussdiagramm d = zweifachEingebettet();
+
+        REQUIRE(d.knoten().size() == 12);
+        REQUIRE(d.gruppen().size() == 2);
+        CHECK(d.gruppen()[1].eltern == 0);
+        CHECK(d.gruppen()[1].aufrufer == 9);
+        CHECK(d.knoten()[11].gruppe == 1);
+        CHECK(d.liegtIn(1, 0));
+        CHECK_FALSE(d.liegtIn(0, 1));
+        CHECK(hatKante(d, 9, 11));
+        CHECK(hatKante(d, 11, 8));
+        CHECK_FALSE(hatKante(d, 9, 8));
+
+        SUBCASE("die innere allein")
+        {
+            const Flussdiagramm ohne = loeseEin(d, 1);
+            CHECK(ohne.knoten().size() == 11);
+            CHECK(ohne.gruppen().size() == 1);
+            CHECK(hatKante(ohne, 9, 8));  // der Aufrufer hat seine Kante wieder
+            CHECK(ohne.kanten().size() == 12);
+        }
+        SUBCASE("die aeussere nimmt die innere mit")
+        {
+            const Flussdiagramm ohne = loeseEin(d, 0);
+            CHECK(ohne.knoten().size() == haupt.knoten().size());
+            CHECK(ohne.gruppen().empty());
+            CHECK(ohne.kanten().size() == haupt.kanten().size());
+            for (const Kante& k : haupt.kanten()) CHECK(hatKante(ohne, k.von, k.nach, k.beschriftung));
+        }
+        CHECK(loeseEin(d, 7).knoten().size() == 12);  // eine Gruppe, die es nicht gibt
+    }
+
+    TEST_CASE("Mermaid und DOT: eine Gruppe wird ein Rahmen, verschachtelt")
+    {
+        const Flussdiagramm d = zweifachEingebettet();
+
+        const std::string m = c2d::ausgabe::mermaid().schreibe(d, {});
+        CHECK(m.find("    n4[[\"drucke(summe(n))\"]]\n"
+                     "    n5[\"return 0\"]\n"
+                     "    n6([\"End\"])\n"
+                     "    subgraph g0[\"summe(int n)\"]\n"
+                     "        n7[\"int s = 0<br>int i = 0\"]\n") != std::string::npos);
+        CHECK(m.find("        subgraph g1[\"quadrat(int x)\"]\n"
+                     "            n11[\"return x * x\"]\n"
+                     "        end\n"
+                     "    end\n"
+                     "    n0 --> n1\n") != std::string::npos);
+
+        const std::string dot = c2d::ausgabe::dot().schreibe(d, {});
+        CHECK(dot.find("    subgraph cluster_0 {\n        style=dashed; label=\"summe(int n)\";\n") != std::string::npos);
+        CHECK(dot.find("        subgraph cluster_1 {\n") != std::string::npos);
+    }
+}
+
+TEST_SUITE("Anordnung")
+{
+    TEST_CASE("Flussdiagramm: nichts ueberlappt, alles im Bild, Rahmen um ihre Knoten")
+    {
+        const Flussdiagramm d = zweifachEingebettet();
+        for (const bool nachRechts : {false, true})
+        {
+            CAPTURE(nachRechts);
+            AnordnungOptionen optionen;
+            optionen.nachRechts = nachRechts;
+            const FlussAnordnung a = ordneAn(d, optionen);
+
+            REQUIRE(a.knoten.size() == d.knoten().size());
+            REQUIRE(a.kanten.size() == d.kanten().size());
+            REQUIRE(a.gruppen.size() == 2);
+            const Rechteck bild{0, 0, a.breite, a.hoehe};
+            for (std::size_t i = 0; i < a.knoten.size(); ++i)
+            {
+                CHECK(liegtIn(a.knoten[i], bild));
+                for (std::size_t k = i + 1; k < a.knoten.size(); ++k) CHECK_FALSE(ueberlappen(a.knoten[i], a.knoten[k]));
+            }
+            for (KnotenId i = 7; i < 11; ++i) CHECK(liegtIn(a.knoten[i], a.gruppen[0]));
+            CHECK(liegtIn(a.knoten[11], a.gruppen[1]));
+            CHECK(liegtIn(a.gruppen[1], a.gruppen[0]));
+            CHECK(liegtIn(a.gruppen[0], bild));
+            CHECK_FALSE(liegtIn(a.knoten[4], a.gruppen[0]));  // der Aufrufer steht vor dem Rahmen
+
+            // jede Kante beginnt am Rand ihrer Quelle und endet am Rand ihres Ziels
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+            {
+                REQUIRE(a.kanten[e].size() >= 2);
+                const auto amRand = [](const Rechteck& r, const Punkt& p) {
+                    return liegtIn({p.x, p.y, 0, 0}, {r.x - 1, r.y - 1, r.breite + 2, r.hoehe + 2});
+                };
+                CHECK(amRand(a.knoten[d.kanten()[e].von], a.kanten[e].front()));
+                CHECK(amRand(a.knoten[d.kanten()[e].nach], a.kanten[e].back()));
+            }
+        }
+    }
+
+    TEST_CASE("Flussdiagramm: nach unten folgt das Ziel unter der Quelle, nach rechts rechts von ihr")
+    {
+        const Flussdiagramm d = fluss("main");
+        const FlussAnordnung unten = ordneAn(d);
+        CHECK(unten.knoten[1].y > unten.knoten[0].y + unten.knoten[0].hoehe);
+        CHECK(unten.knoten[3].y == doctest::Approx(unten.knoten[4].y).epsilon(0.2));  // beide Zweige in einer Schicht
+
+        AnordnungOptionen optionen;
+        optionen.nachRechts = true;
+        const FlussAnordnung rechts = ordneAn(d, optionen);
+        CHECK(rechts.knoten[1].x > rechts.knoten[0].x + rechts.knoten[0].breite);
+    }
+
+    TEST_CASE("Strukturdiagramm: die Basis steht ueber dem, was von ihr erbt")
+    {
+        const c2d::sprache::Ergebnis e = c2d::sprache::cpp().lies(
+            "struct Basis { int a; }; struct Kind : Basis { Basis* b; Kind* naechstes; }; enum E { X };", "t.cpp");
+        const Strukturdiagramm d = strukturVon(e.einheit);
+        const StrukturAnordnung a = ordneAn(d);
+
+        REQUIRE(a.kaesten.size() == 3);
+        REQUIRE(a.beziehungen.size() == d.beziehungen.size());
+        CHECK(a.kaesten[0].y + a.kaesten[0].hoehe < a.kaesten[1].y);
+        for (std::size_t i = 0; i < 3; ++i)
+            for (std::size_t k = i + 1; k < 3; ++k) CHECK_FALSE(ueberlappen(a.kaesten[i], a.kaesten[k]));
+        CHECK(a.breite > 0);
+        CHECK(a.beziehungen.back().size() == 4);  // Kind -> Kind: eine Schlaufe
+    }
+}
+
+TEST_SUITE("draw.io")
+{
+    TEST_CASE("Flussdiagramm: je Knoten und Gruppe eine Zelle mit Ort, je Kante eine mit Quelle und Ziel")
+    {
+        const Flussdiagramm d = zweifachEingebettet();
+        const std::string x = c2d::ausgabe::drawio().schreibe(d, {});
+
+        CHECK(x.starts_with("<mxfile host=\"Code2Diagram\">\n  <diagram name=\"main\" id=\"c2d\">\n"));
+        CHECK(x.ends_with("</mxfile>\n"));
+        CHECK(zaehle(x, "vertex=\"1\"") == d.knoten().size() + d.gruppen().size());
+        CHECK(zaehle(x, "edge=\"1\"") == d.kanten().size());
+        CHECK(zaehle(x, "<mxGeometry ") == d.knoten().size() + d.gruppen().size() + d.kanten().size());
+
+        // die Gruppe ist ein Behaelter: ihr Inhalt haengt an ihr, die innere Gruppe an der aeusseren
+        CHECK(x.find("<mxCell id=\"g0\" value=\"summe(int n)\" style=\"swimlane;") != std::string::npos);
+        CHECK(x.find("<mxCell id=\"g1\" value=\"quadrat(int x)\"") != std::string::npos);
+        CHECK(zaehle(x, "parent=\"g0\"") == 5);  // vier Knoten und die innere Gruppe
+        CHECK(zaehle(x, "parent=\"g1\"") == 1);
+        CHECK(x.find("<mxCell id=\"n2\" value=\"n &amp;lt; 0\" style=\"rhombus;") != std::string::npos);
+        CHECK(x.find("value=\"int s = 0&lt;br&gt;int i = 0\"") != std::string::npos);
+        CHECK(x.find("<mxCell id=\"e3\" value=\"no\" style=\"edgeStyle=orthogonalEdgeStyle;") != std::string::npos);
+        CHECK(x.find("source=\"n2\" target=\"n4\"") != std::string::npos);
+    }
+
+    TEST_CASE("Datentypen: je Typ eine Zelle wie die UML-Klasse von draw.io")
+    {
+        const c2d::sprache::Ergebnis e = c2d::sprache::cpp().lies(
+            "struct Basis { int a; }; class Kind : public Basis { public: void f(); private: Basis* b; };", "t.cpp");
+        const std::string x = c2d::ausgabe::drawio().schreibe(strukturVon(e.einheit), {.richtung = "LR"});
+
+        CHECK(zaehle(x, "vertex=\"1\"") == 2);
+        CHECK(zaehle(x, "edge=\"1\"") == 2);
+        CHECK(x.find("&lt;b&gt;Kind&lt;/b&gt;") != std::string::npos);
+        CHECK(x.find("- Basis* b") != std::string::npos);
+        CHECK(x.find("+ void f()") != std::string::npos);
+        CHECK(x.find("style=\"endArrow=block;endFill=0;endSize=12;html=1;") != std::string::npos);  // erbt
+        CHECK(x.find("source=\"k1\" target=\"k0\"") != std::string::npos);
+    }
+}

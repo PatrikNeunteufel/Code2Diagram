@@ -1,0 +1,906 @@
+{
+  "version": 6,
+  "vendor": {
+    "cmake-architecture-v2": {
+      "version": "0.1.0",
+      "date": "2025-12-03",
+      "description": "Team-weite Presets für CMake Architecture V2"
+    }
+  },
+  "configurePresets": [
+    {
+      "name": "MultiThreaded_Static",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<IF:$<CONFIG:Debug>,Debug,>"
+      }
+    },
+    {
+      "name": "MultiThreaded_Static_force_debug",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDebug"
+      }
+    },
+    {
+      "name": "MultiThreaded_Dynamic",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<IF:$<CONFIG:Debug>,Debug,>DLL"
+      }
+    },
+    {
+      "name": "MultiThreaded_Dynamic_force_debug",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDebugDLL"
+      }
+    },
+
+    {
+      "name": "windows-vs-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS": "ON",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;Testing",
+        "ACTIVE_CONFIGURE_PRESET": "${presetName}",
+
+        "BUILD_TESTS": "ON",
+        "BUILD_ONLY": "",
+        "ENABLE_CLANG_TIDY": "OFF",
+        "ENABLE_CLANG_FORMAT_CHECK": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+
+    {
+      "name": "vs-Win32-base",
+      "hidden": true,
+      "architecture": {
+        "value": "Win32",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "vs-x64-base",
+      "hidden": true,
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "vs-ARM-base",
+      "hidden": true,
+      "architecture": {
+        "value": "ARM",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "vs-ARM64-base",
+      "hidden": true,
+      "architecture": {
+        "value": "ARM64",
+        "strategy": "external"
+      }
+    },
+
+    {
+      "name": "windows-vs-x64-msvc",
+      "hidden": true,
+      "inherits": [ "windows-vs-base", "vs-x64-base" ]
+    },
+    {
+      "name": "windows-vs-ARM64-msvc",
+      "hidden": true,
+      "inherits": [ "windows-vs-base", "vs-ARM64-base" ]
+    },
+    {
+      "name": "windows-vs-x64-clangcl",
+      "hidden": true,
+      "inherits": [ "windows-vs-base", "vs-x64-base" ],
+      "toolset": {
+        "strategy": "external",
+        "value": "ClangCL"
+      }
+    },
+    {
+      "name": "windows-vs-ARM64-clangcl",
+      "hidden": true,
+      "inherits": [ "windows-vs-base", "vs-ARM64-base" ],
+      "toolset": {
+        "strategy": "external",
+        "value": "ClangCL"
+      }
+    },
+
+    {
+      "name": "windows-vs-x64-debug_dynamic",
+      "displayName": "Windows • VS (MSVC) • x64 • Debug • /MDd",
+      "description": "Visual Studio multi-config; x64; Debug; dynamic MSVC CRT.",
+      "inherits": [ "windows-vs-x64-msvc", "MultiThreaded_Dynamic_force_debug" ]
+    },
+    {
+      "name": "windows-vs-x64-release_dynamic",
+      "displayName": "Windows • VS (MSVC) • x64 • Release • /MD",
+      "description": "Visual Studio multi-config; x64; Release; dynamic MSVC CRT.",
+      "inherits": [ "windows-vs-x64-msvc", "MultiThreaded_Dynamic" ]
+    },
+    {
+      "name": "windows-vs-ARM64-release_dynamic",
+      "displayName": "Windows • VS (MSVC) • ARM64 • Release • /MD",
+      "description": "Visual Studio multi-config; ARM64; Release; dynamic MSVC CRT.",
+      "inherits": [ "windows-vs-ARM64-msvc", "MultiThreaded_Dynamic" ]
+    },
+    {
+      "name": "windows-vs-x64-debug_clangcl_asan",
+      "displayName": "Windows • VS (clang-cl) • x64 • Debug • ASan",
+      "description": "Visual Studio with clang-cl toolset; x64; Debug. Turns on ASan via ENABLE_ASAN.",
+      "inherits": [ "windows-vs-x64-clangcl" ],
+      "cacheVariables": { "ENABLE_ASAN": "ON" }
+    },
+
+    {
+      "name": "windows-vs-x64-testing_dynamic",
+      "displayName": "Windows • VS (MSVC) • x64 • Testing • /MD",
+      "description": "Visual Studio multi-config; x64; Testing; dynamic MSVC CRT. Enables testing targets.",
+      "inherits": [ "windows-vs-x64-msvc", "MultiThreaded_Dynamic" ],
+      "cacheVariables": { "ENABLE_TESTING_CONFIG": "ON" }
+    },
+
+    {
+      "name": "windows-vs-x64-debug_quality",
+      "displayName": "Windows • VS (MSVC) • x64 • Debug • Quality Checks",
+      "description": "Visual Studio multi-config; x64; Debug with Clang-Tidy enabled for code quality checks.",
+      "inherits": [ "windows-vs-x64-debug_dynamic" ],
+      "cacheVariables": {
+        "ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+
+    {
+      "name": "windows-vs-x64-debug_apps-only",
+      "displayName": "Windows • VS (MSVC) • x64 • Debug • Apps Only",
+      "description": "Visual Studio multi-config; x64; Debug; builds only application executables (no tests).",
+      "inherits": [ "windows-vs-x64-debug_dynamic" ],
+      "cacheVariables": {
+        "BUILD_TESTS": "OFF"
+      }
+    },
+
+    {
+      "name": "windows-ninja-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ACTIVE_CONFIGURE_PRESET": "${presetName}",
+
+        "BUILD_TESTS": "ON",
+        "BUILD_ONLY": "",
+        "ENABLE_CLANG_TIDY": "OFF",
+        "ENABLE_CLANG_FORMAT_CHECK": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ninja-single",
+      "hidden": true,
+      "generator": "Ninja"
+    },
+    {
+      "name": "ninja-multi",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;Testing"
+      }
+    },
+
+    {
+      "name": "win-ninja-msvc",
+      "hidden": true,
+      "inherits": [ "windows-ninja-base", "ninja-single" ]
+    },
+    {
+      "name": "win-ninja-clang",
+      "hidden": true,
+      "inherits": [ "windows-ninja-base", "ninja-single" ],
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "win-ninja-multi",
+      "hidden": true,
+      "inherits": [ "windows-ninja-base", "ninja-multi" ]
+    },
+
+    {
+      "name": "craft-selftest",
+      "displayName": "CMakeCraft • Selftest • Ninja Clang Debug",
+      "description": "Build-System-Phasentests (RUN_BUILD_SYSTEM_TESTS=ON). In Konsumenten-Projekten nur als Smoke-Check nach einem Snapshot-Sync noetig.",
+      "inherits": [ "win-ninja-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RUN_BUILD_SYSTEM_TESTS": "ON"
+      }
+    },
+
+    {
+      "name": "windows-ninja-debug-msvc",
+      "displayName": "Windows • Ninja • MSVC • Debug",
+      "description": "Ninja single-config (Debug) with MSVC on Windows.",
+      "inherits": [ "win-ninja-msvc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDebugDLL"
+      }
+    },
+    {
+      "name": "windows-ninja-release-msvc",
+      "displayName": "Windows • Ninja • MSVC • Release",
+      "description": "Ninja single-config (Release) with MSVC on Windows.",
+      "inherits": [ "win-ninja-msvc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
+      }
+    },
+    {
+      "name": "windows-ninja-debug-clang",
+      "displayName": "Windows • Ninja • Clang • Debug",
+      "description": "Ninja single-config (Debug) with Clang on Windows.",
+      "inherits": [ "win-ninja-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-ninja-release-clang",
+      "displayName": "Windows • Ninja • Clang • Release",
+      "description": "Ninja single-config (Release) with Clang on Windows.",
+      "inherits": [ "win-ninja-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-ninja-testing-msvc",
+      "displayName": "Windows • Ninja • MSVC • Testing",
+      "description": "Ninja single-config (Testing) with MSVC on Windows.",
+      "inherits": [ "win-ninja-msvc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Testing",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    },
+    {
+      "name": "windows-ninja-testing-clang",
+      "displayName": "Windows • Ninja • Clang • Testing",
+      "description": "Ninja single-config (Testing) with Clang on Windows.",
+      "inherits": [ "win-ninja-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Testing",
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    },
+    {
+      "name": "windows-ninja-multi",
+      "displayName": "Windows • Ninja • Multi-Config",
+      "description": "Ninja Multi-Config on Windows (Debug, Release, Testing).",
+      "inherits": [ "win-ninja-multi" ]
+    },
+    {
+      "name": "windows-ninja-multi-tests",
+      "displayName": "Windows • Ninja • Multi-Config • Tests",
+      "description": "Ninja Multi-Config with tests enabled.",
+      "inherits": [ "windows-ninja-multi" ],
+      "cacheVariables": {
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    },
+
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ACTIVE_CONFIGURE_PRESET": "${presetName}",
+
+        "BUILD_TESTS": "ON",
+        "BUILD_ONLY": "",
+        "ENABLE_CLANG_TIDY": "OFF",
+        "ENABLE_CLANG_FORMAT_CHECK": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-gcc",
+      "hidden": true,
+      "inherits": [ "linux-base" ],
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "linux-clang",
+      "hidden": true,
+      "inherits": [ "linux-base" ],
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux • GCC • Debug",
+      "description": "Ninja single-config (Debug) with GCC on Linux.",
+      "inherits": [ "linux-gcc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-gcc-release",
+      "displayName": "Linux • GCC • Release",
+      "description": "Ninja single-config (Release) with GCC on Linux.",
+      "inherits": [ "linux-gcc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-clang-debug",
+      "displayName": "Linux • Clang • Debug",
+      "description": "Ninja single-config (Debug) with Clang on Linux.",
+      "inherits": [ "linux-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-clang-release",
+      "displayName": "Linux • Clang • Release",
+      "description": "Ninja single-config (Release) with Clang on Linux.",
+      "inherits": [ "linux-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-gcc-testing",
+      "displayName": "Linux • GCC • Testing",
+      "description": "Ninja single-config (Testing) with GCC on Linux.",
+      "inherits": [ "linux-gcc" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Testing",
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-testing",
+      "displayName": "Linux • Clang • Testing",
+      "description": "Ninja single-config (Testing) with Clang on Linux.",
+      "inherits": [ "linux-clang" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Testing",
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-debug-asan",
+      "displayName": "Linux • Clang • Debug • ASan",
+      "description": "Ninja single-config (Debug) with AddressSanitizer on Linux.",
+      "inherits": [ "linux-clang-debug" ],
+      "cacheVariables": {
+        "ENABLE_ASAN": "ON"
+      }
+    },
+
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ACTIVE_CONFIGURE_PRESET": "${presetName}",
+
+        "BUILD_TESTS": "ON",
+        "BUILD_ONLY": "",
+        "ENABLE_CLANG_TIDY": "OFF",
+        "ENABLE_CLANG_FORMAT_CHECK": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-xcode",
+      "hidden": true,
+      "inherits": [ "macos-base" ],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    },
+    {
+      "name": "macos-ninja",
+      "hidden": true,
+      "inherits": [ "macos-base" ],
+      "generator": "Ninja"
+    },
+
+    {
+      "name": "macos-xcode-arm64",
+      "displayName": "macOS • Xcode • ARM64",
+      "description": "Xcode multi-config for Apple Silicon (ARM64).",
+      "inherits": [ "macos-xcode" ],
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-xcode-x86_64",
+      "displayName": "macOS • Xcode • x86_64",
+      "description": "Xcode multi-config for Intel Macs (x86_64).",
+      "inherits": [ "macos-xcode" ],
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
+    },
+    {
+      "name": "macos-ninja-debug",
+      "displayName": "macOS • Ninja • Debug",
+      "description": "Ninja single-config (Debug) on macOS.",
+      "inherits": [ "macos-ninja" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "macos-ninja-testing",
+      "displayName": "macOS • Ninja • Testing",
+      "description": "Ninja single-config (Testing) on macOS.",
+      "inherits": [ "macos-ninja" ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Testing",
+        "ENABLE_TESTING_CONFIG": "ON"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "build-vs-x64-Debug",
+      "displayName": "Build • VS x64 • Debug",
+      "description": "Builds the Debug configuration for VS x64.",
+      "configurePreset": "windows-vs-x64-debug_dynamic",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-vs-x64-Release",
+      "displayName": "Build • VS x64 • Release",
+      "description": "Builds the Release configuration for VS x64.",
+      "configurePreset": "windows-vs-x64-release_dynamic",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-vs-x64-Testing",
+      "displayName": "Build • VS x64 • Testing",
+      "description": "Builds the Testing configuration for VS x64 (with tests).",
+      "configurePreset": "windows-vs-x64-testing_dynamic",
+      "configuration": "Testing"
+    },
+    {
+      "name": "build-vs-ARM64-Release",
+      "displayName": "Build • VS ARM64 • Release",
+      "description": "Builds the Release configuration for VS ARM64.",
+      "configurePreset": "windows-vs-ARM64-release_dynamic",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "build-ninja-debug-msvc",
+      "displayName": "Build • Ninja • MSVC • Debug",
+      "description": "Builds the Ninja MSVC Debug single-config.",
+      "configurePreset": "windows-ninja-debug-msvc"
+    },
+    {
+      "name": "build-ninja-release-msvc",
+      "displayName": "Build • Ninja • MSVC • Release",
+      "description": "Builds the Ninja MSVC Release single-config.",
+      "configurePreset": "windows-ninja-release-msvc"
+    },
+    {
+      "name": "build-ninja-debug-clang",
+      "displayName": "Build • Ninja • Clang • Debug",
+      "description": "Builds the Ninja Clang Debug single-config.",
+      "configurePreset": "windows-ninja-debug-clang"
+    },
+    {
+      "name": "build-ninja-release-clang",
+      "displayName": "Build • Ninja • Clang • Release",
+      "description": "Builds the Ninja Clang Release single-config.",
+      "configurePreset": "windows-ninja-release-clang"
+    },
+
+    {
+      "name": "build-ninja-testing-msvc",
+      "displayName": "Build • Ninja • MSVC • Testing",
+      "description": "Builds the Ninja MSVC Testing single-config.",
+      "configurePreset": "windows-ninja-testing-msvc"
+    },
+    {
+      "name": "build-ninja-testing-clang",
+      "displayName": "Build • Ninja • Clang • Testing",
+      "description": "Builds the Ninja Clang Testing single-config.",
+      "configurePreset": "windows-ninja-testing-clang"
+    },
+
+    {
+      "name": "build-ninja-multi-Debug",
+      "displayName": "Build • Ninja Multi • Debug",
+      "description": "Builds the Debug configuration for Ninja Multi-Config.",
+      "configurePreset": "windows-ninja-multi",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-ninja-multi-Release",
+      "displayName": "Build • Ninja Multi • Release",
+      "description": "Builds the Release configuration for Ninja Multi-Config.",
+      "configurePreset": "windows-ninja-multi",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-ninja-multi-Testing",
+      "displayName": "Build • Ninja Multi • Testing",
+      "description": "Builds the Testing configuration for Ninja Multi-Config (with tests).",
+      "configurePreset": "windows-ninja-multi-tests",
+      "configuration": "Testing"
+    },
+
+    {
+      "name": "build-linux-gcc-Debug",
+      "displayName": "Build • Linux GCC • Debug",
+      "description": "Builds Linux GCC Debug.",
+      "configurePreset": "linux-gcc-debug"
+    },
+    {
+      "name": "build-linux-gcc-Release",
+      "displayName": "Build • Linux GCC • Release",
+      "description": "Builds Linux GCC Release.",
+      "configurePreset": "linux-gcc-release"
+    },
+    {
+      "name": "build-linux-clang-Debug",
+      "displayName": "Build • Linux Clang • Debug",
+      "description": "Builds Linux Clang Debug.",
+      "configurePreset": "linux-clang-debug"
+    },
+    {
+      "name": "build-linux-clang-Release",
+      "displayName": "Build • Linux Clang • Release",
+      "description": "Builds Linux Clang Release.",
+      "configurePreset": "linux-clang-release"
+    },
+    {
+      "name": "build-linux-gcc-Testing",
+      "displayName": "Build • Linux GCC • Testing",
+      "description": "Builds Linux GCC Testing.",
+      "configurePreset": "linux-gcc-testing"
+    },
+    {
+      "name": "build-linux-clang-Testing",
+      "displayName": "Build • Linux Clang • Testing",
+      "description": "Builds Linux Clang Testing.",
+      "configurePreset": "linux-clang-testing"
+    },
+    {
+      "name": "build-linux-clang-Debug-asan",
+      "displayName": "Build • Linux Clang • Debug • ASan",
+      "description": "Builds Linux Clang Debug with ASan.",
+      "configurePreset": "linux-clang-debug-asan"
+    },
+
+    {
+      "name": "build-macos-xcode-Debug",
+      "displayName": "Build • macOS Xcode • Debug",
+      "description": "Builds macOS Xcode Debug.",
+      "configurePreset": "macos-xcode-arm64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-macos-xcode-Release",
+      "displayName": "Build • macOS Xcode • Release",
+      "description": "Builds macOS Xcode Release.",
+      "configurePreset": "macos-xcode-arm64",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-macos-ninja-Debug",
+      "displayName": "Build • macOS Ninja • Debug",
+      "description": "Builds macOS Ninja Debug.",
+      "configurePreset": "macos-ninja-debug"
+    },
+    {
+      "name": "build-macos-ninja-Testing",
+      "displayName": "Build • macOS Ninja • Testing",
+      "description": "Builds macOS Ninja Testing.",
+      "configurePreset": "macos-ninja-testing"
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "ctest-vs-x64-Debug",
+      "displayName": "CTest • VS x64 • Debug",
+      "description": "Runs CTest for VS x64 Debug.",
+      "configurePreset": "windows-vs-x64-debug_dynamic",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-vs-x64-Release",
+      "displayName": "CTest • VS x64 • Release",
+      "description": "Runs CTest for VS x64 Release (fuer Release-Workflows).",
+      "configurePreset": "windows-vs-x64-release_dynamic",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-vs-x64-Testing",
+      "displayName": "CTest • VS x64 • Testing",
+      "description": "Runs CTest for VS x64 Testing.",
+      "configurePreset": "windows-vs-x64-testing_dynamic",
+      "configuration": "Testing",
+      "output": { "outputOnFailure": true }
+    },
+
+    {
+      "name": "ctest-ninja-multi-Debug",
+      "displayName": "CTest • Ninja Multi • Debug",
+      "description": "Runs CTest for Ninja Multi-Config (Debug).",
+      "configurePreset": "windows-ninja-multi",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-ninja-multi-Testing",
+      "displayName": "CTest • Ninja Multi • Testing",
+      "description": "Runs CTest for Ninja Multi-Config (Testing).",
+      "configurePreset": "windows-ninja-multi-tests",
+      "configuration": "Testing",
+      "output": { "outputOnFailure": true }
+    },
+
+    {
+      "name": "ctest-linux-gcc-Testing",
+      "displayName": "CTest • Linux GCC • Testing",
+      "description": "Runs CTest for Linux GCC Testing.",
+      "configurePreset": "linux-gcc-testing",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-linux-clang-Testing",
+      "displayName": "CTest • Linux Clang • Testing",
+      "description": "Runs CTest for Linux Clang Testing.",
+      "configurePreset": "linux-clang-testing",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-linux-gcc-Release",
+      "displayName": "CTest • Linux GCC • Release",
+      "description": "Runs CTest for Linux GCC Release.",
+      "configurePreset": "linux-gcc-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-linux-clang-Debug-asan",
+      "displayName": "CTest • Linux Clang • Debug • ASan",
+      "description": "Runs CTest for Linux Clang Debug with ASan.",
+      "configurePreset": "linux-clang-debug-asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-macos-ninja-Testing",
+      "displayName": "CTest • macOS Ninja • Testing",
+      "description": "Runs CTest for macOS Ninja Testing.",
+      "configurePreset": "macos-ninja-testing",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ctest-macos-xcode-Release",
+      "displayName": "CTest • macOS Xcode • Release",
+      "description": "Runs CTest for macOS Xcode Release.",
+      "configurePreset": "macos-xcode-arm64",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ],
+
+  "packagePresets": [
+    {
+      "name": "package-windows-inno-Release",
+      "displayName": "Package • Windows • Inno Setup • Release",
+      "description": "Packages the VS x64 Release build using CPack's INNOSETUP generator (requires Inno Setup 6+).",
+      "configurePreset": "windows-vs-x64-release_dynamic",
+      "generators": [ "INNOSETUP" ],
+      "configurations": [ "Release" ]
+    },
+
+    {
+      "name": "package-macos-dmg-Release",
+      "displayName": "Package • macOS • DMG • Release",
+      "description": "Packages the Release build into a DMG using CPack External generator.",
+      "configurePreset": "macos-xcode-arm64",
+      "generators": [ "External" ],
+      "configurations": [ "Release" ]
+    },
+
+    {
+      "name": "package-linux-tgz-Release",
+      "displayName": "Package • Linux • TGZ • Release",
+      "description": "Packages the Release build into a .tar.gz archive using CPack TGZ generator.",
+      "configurePreset": "linux-gcc-release",
+      "generators": [ "TGZ" ],
+      "configurations": [ "Release" ]
+    }
+  ],
+
+  "workflowPresets": [
+    {
+      "name": "wf-vs-x64-release-inno",
+      "displayName": "Workflow • VS x64 • Release → Test → Inno",
+      "description": "Configure VS x64 Release, build, test (Release), then package with Inno Setup.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-vs-x64-release_dynamic"
+        },
+        {
+          "type": "build",
+          "name": "build-vs-x64-Release"
+        },
+        {
+          "type": "test",
+          "name": "ctest-vs-x64-Release"
+        },
+        {
+          "type": "package",
+          "name": "package-windows-inno-Release"
+        }
+      ]
+    },
+    {
+      "name": "wf-linux-gcc-release-tgz",
+      "displayName": "Workflow • Linux GCC • Release → Test → TGZ",
+      "description": "Configure Linux GCC Release, build, test, then package as TGZ.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-gcc-release"
+        },
+        {
+          "type": "build",
+          "name": "build-linux-gcc-Release"
+        },
+        {
+          "type": "test",
+          "name": "ctest-linux-gcc-Release"
+        },
+        {
+          "type": "package",
+          "name": "package-linux-tgz-Release"
+        }
+      ]
+    },
+    {
+      "name": "wf-macos-xcode-release-dmg",
+      "displayName": "Workflow • macOS Xcode • Release → Test → DMG",
+      "description": "Configure macOS Xcode Release, build, test, then package as DMG.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "macos-xcode-arm64"
+        },
+        {
+          "type": "build",
+          "name": "build-macos-xcode-Release"
+        },
+        {
+          "type": "test",
+          "name": "ctest-macos-xcode-Release"
+        },
+        {
+          "type": "package",
+          "name": "package-macos-dmg-Release"
+        }
+      ]
+    },
+    {
+      "name": "wf-ninja-multi-testing",
+      "displayName": "Workflow • Ninja Multi • Testing → Test",
+      "description": "Configure Ninja multi-config (tests enabled), build Testing, then run CTest Testing.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-ninja-multi-tests"
+        },
+        {
+          "type": "build",
+          "name": "build-ninja-multi-Testing"
+        },
+        {
+          "type": "test",
+          "name": "ctest-ninja-multi-Testing"
+        }
+      ]
+    },
+    {
+      "name": "wf-linux-clang-debug-asan",
+      "displayName": "Workflow • Linux Clang • Debug • ASan → Test",
+      "description": "Configure Linux Clang Debug with ASan, build, then test.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-clang-debug-asan"
+        },
+        {
+          "type": "build",
+          "name": "build-linux-clang-Debug-asan"
+        },
+        {
+          "type": "test",
+          "name": "ctest-linux-clang-Debug-asan"
+        }
+      ]
+    }
+  ]
+}

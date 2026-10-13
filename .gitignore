@@ -1,0 +1,14 @@
+# Build und gefetchtes Build-System / Pakete
+/out/
+/.externals/
+/.vs/
+
+# lokale Pfade (QT_ROOT)
+/CMakeUserPresets.json
+
+# Laeufe des Werkzeugs Sichttest (Testlog, Report, Screenshots)
+sichttest-logs/
+
+# Claude: lokal (Projektkontext, Handover, Sessions)
+/CLAUDE.md
+/.claude/

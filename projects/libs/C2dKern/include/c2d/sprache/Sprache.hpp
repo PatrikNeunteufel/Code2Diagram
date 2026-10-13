@@ -1,0 +1,100 @@
+/**
+ * @file Sprache.hpp
+ * @brief Eine Sprache: ihre Sprachtabelle und ihr Leser (Text -> Codemodell)
+ *
+ * Die allgemeine Basis ist fuer alle gleich — Lexer (lexer/Lexer.hpp),
+ * Codemodell (modell/Code.hpp), Meldungen. Eine Sprache traegt nur ihre
+ * Einzelheiten bei: eine Tabelle und einen Leser in rekursivem Abstieg, beides
+ * in ihrem Ordner unter src/sprache/. Eine neue Sprache anmelden: in
+ * Sprache.cpp in die Liste eintragen.
+ */
+#pragma once
+
+#include "c2d/lexer/Lexer.hpp"
+#include "c2d/modell/Code.hpp"
+#include "c2d/quelle/Meldung.hpp"
+
+#include <span>
+#include <string_view>
+#include <vector>
+
+namespace c2d::sprache
+{
+
+/// Eine Definition von aussen, wie `-D NAME=wert` beim Compiler.
+struct Definition
+{
+    std::string name;
+    std::string wert = "1";
+};
+
+/// `NAME` oder `NAME=wert` als Definition; ohne Wert gilt 1. Ein leerer Name: kein gueltiger Text.
+[[nodiscard]] Definition definitionAus(std::string_view text);
+
+/// Wie gelesen wird. Was eine Sprache nicht kennt, uebergeht sie.
+struct LeseOptionen
+{
+    /// Bedingte Uebersetzung (#if, #ifdef ...) nicht auswerten, sondern alle
+    /// Zweige lesen — als stuende der Code aller Varianten hintereinander.
+    bool alleZweige = false;
+    /// Gelten zusaetzlich zu den #define der Datei, vom Anfang der Datei an.
+    std::vector<Definition> definitionen;
+};
+
+struct Ergebnis
+{
+    modell::Einheit einheit;
+    std::vector<quelle::Meldung> meldungen;
+    /// Namen, nach denen eine Bedingung gefragt hat und die nirgends definiert
+    /// sind — sie galten als nicht definiert. Wer eine andere Variante sehen
+    /// will, gibt sie in LeseOptionen::definitionen an. In der Reihenfolge des
+    /// Texts, jeder einmal.
+    std::vector<std::string> unbekannteNamen;
+};
+
+class Sprache
+{
+public:
+    virtual ~Sprache() = default;
+
+    [[nodiscard]] virtual std::string_view name() const = 0;
+    /// Dateiendungen ohne Punkt, klein geschrieben.
+    [[nodiscard]] virtual std::span<const std::string_view> endungen() const = 0;
+    [[nodiscard]] virtual const lexer::Sprachtabelle& tabelle() const = 0;
+
+    /// Beanspruchen mehrere Sprachen eine Endung (`h`: C und C++): ist dieser
+    /// Text meine Sprache? Wer nichts erkennt, ueberlaesst die Datei der Sprache,
+    /// die zuerst angemeldet ist.
+    [[nodiscard]] virtual bool erkennt(std::string_view /*text*/) const { return false; }
+
+    /// Liest den Text. Was der Leser nicht versteht, uebergeht er mit einer
+    /// Meldung — das Ergebnis ist immer brauchbar, nie leer wegen eines Fehlers.
+    [[nodiscard]] virtual Ergebnis lies(std::string_view text, std::string_view einheitName,
+                                        const LeseOptionen& optionen) const = 0;
+
+    /// Mit den Vorgaben der LeseOptionen.
+    [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName) const
+    {
+        return lies(text, einheitName, LeseOptionen{});
+    }
+};
+
+/// Alle angemeldeten Sprachen.
+[[nodiscard]] std::span<const Sprache* const> sprachen();
+
+/// Die Sprache zu einem Dateinamen, nach seiner Endung; nullptr = keine.
+/// Beanspruchen mehrere die Endung, entscheidet `inhalt` (Sprache::erkennt),
+/// sonst die zuerst angemeldete.
+[[nodiscard]] const Sprache* spracheFuer(std::string_view dateiname, std::string_view inhalt = {});
+
+/// C (C11): Funktionen mit Rumpf, struct/union/enum, typedef, globale
+/// Variablen, #include und #define. Bedingte Uebersetzung wird ausgewertet
+/// (LeseOptionen); Makros werden nicht ersetzt.
+[[nodiscard]] const Sprache& c();
+
+/// C++ (C++20): was C hat, dazu Namensraeume, Klassen mit Methoden, Basen und
+/// Sichtbarkeit, Konstruktoren und Operatoren, using, try/catch/throw,
+/// range-for. Schablonen werden uebergangen, nicht verstanden.
+[[nodiscard]] const Sprache& cpp();
+
+}  // namespace c2d::sprache

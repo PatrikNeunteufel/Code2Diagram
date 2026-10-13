@@ -1,0 +1,124 @@
+{
+    "schemaVersion": "1.0",
+    "solution": {
+        "name": "Code2Diagram",
+        "version": "0.1.0"
+    },
+    "settings": {
+        "standards": {
+            "cxx_standard": 20
+        },
+        "defaults": {
+            "library_type": "STATIC",
+            "executable_type": "CONSOLE"
+        },
+        "sources": {
+            "mode": "explicit"
+        }
+    },
+    "externals": {
+        "doctest": {
+            "description": "Test-Framework (ein Kopf, lokal)",
+            "skip": false,
+            "path": "externals/doctest"
+        },
+        "Qt6": {
+            "description": "Qt6 UI Framework",
+            "skip": false,
+            "system": true,
+            "package": "Qt6",
+            "components": [ "Core", "Gui", "Widgets" ],
+            "hints": [ "${QT_ROOT}" ]
+        },
+        "sichttest": {
+            "description": "Sichttest-Steuerung (SichtTest_Helper): fertiges Paket mit Koepfen, SichttestSteuerung1.dll und dem Tester im Ordner sichttest; es wird nichts gelinkt",
+            "skip": false,
+            "archive": true,
+            "pin": "sichttest.pin",
+            "platforms": [ "windows" ],
+            "include_dirs": [ "include" ],
+            "define": "SICHTTEST_VORHANDEN",
+            "runtime": { "files": [ "bin/SichttestSteuerung1.dll" ], "dirs": [ "sichttest" ] }
+        }
+    },
+    "libraries": [
+        {
+            "name": "C2dKern",
+            "description": "Der Kern ohne Qt: allgemeiner Lexer, Codemodell, Leser je Sprache (C), Diagramm-Modelle mit ihrer Ableitung, Ausgabeformate (Mermaid, DOT)",
+            "skip": false,
+            "type": "STATIC",
+            "path": "projects/libs/C2dKern/src",
+            "public_headers": "projects/libs/C2dKern/include",
+            "dependencies": [],
+            "externals": []
+        }
+    ],
+    "executables": [
+        {
+            "name": "c2d",
+            "description": "Kommandozeile: Quelldatei rein, Diagramm-Text raus (ohne Qt)",
+            "skip": false,
+            "type": "CONSOLE",
+            "path": "projects/exec/c2d/src",
+            "dependencies": [ "C2dKern" ],
+            "externals": []
+        }
+    ],
+    "apps": [
+        {
+            "name": "Code2Diagram",
+            "description": "Liest Quellcode (zuerst C) und leitet daraus lesbare Diagramme ab",
+            "skip": false,
+            "displayName": "Code2Diagram",
+            "//version": "SSOT fuer Name UND Version. Das Root-CMakeLists liest beide Werte HIER heraus und reicht sie als Kompilat-Definitionen an den Code weiter (AppInfo.hpp).",
+            "version": "0.1.0",
+
+            "core": {
+                "dependencies": [ "C2dKern" ],
+                "externals": [ "Qt6", "sichttest" ]
+            },
+
+            "runner": {
+                "type": "GUI",
+                "dependencies": [ "C2dKern" ],
+                "externals": [ "Qt6", "sichttest" ]
+            },
+
+            "pch": {
+                "enabled": true,
+                "header": "pch.h"
+            },
+
+            "tests": {
+                "skip": false,
+                "framework": "doctest",
+                "targets": [
+                    {
+                        "name": "UnitTests",
+                        "description": "Unit-Tests der Anwendung (doctest): das Fenster, ohne es zu zeigen",
+                        "skip": false,
+                        "type": "unit",
+                        "path": "tests/unit/UnitTests",
+                        "labels": [ "unit", "ui" ],
+                        "dependencies": [ "Code2Diagram.Core", "C2dKern" ],
+                        "externals": [ "Qt6" ]
+                    }
+                ]
+            },
+            "platforms": [ "windows", "linux", "macos" ]
+        }
+    ],
+    "tests": [
+        {
+            "name": "C2dKern_UnitTests",
+            "description": "Unit-Tests des Kerns (doctest): Lexer, Leser fuer C, Diagramme, Ausgabeformate",
+            "skip": false,
+            "type": "unit",
+            "framework": "doctest",
+            "path": "projects/libs/C2dKern/tests/unit",
+            "dependencies": [ "C2dKern" ],
+            "externals": [ "doctest" ],
+            "labels": [ "unit", "core", "fast" ]
+        }
+    ]
+}

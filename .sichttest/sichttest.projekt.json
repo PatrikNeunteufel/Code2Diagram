@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "anwendung": "Code2Diagram",
+  "start": {
+    "exe": "out/build/windows-ninja-release-clang/exec/Code2Diagram/bin/Release/Code2Diagram.exe",
+    "argumente": ["--testing"]
+  },
+  "listen": [
+    { "ordner": "docs/sichttest", "muster": "Sichttest_*.md", "ablage": "docs/sichttest/sichttest-logs" }
+  ],
+  "abbildung": {
+    "datei": "datei_oeffnen pfad"
+  }
+}
