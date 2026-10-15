@@ -135,7 +135,8 @@ Flussdiagramm fasseAnweisungsfolgenZusammen(const Flussdiagramm& diagramm, std::
     return neu;
 }
 
-Flussdiagramm betteEin(const Flussdiagramm& haupt, KnotenId stelle, const Flussdiagramm& unter, std::string_view titel)
+Flussdiagramm betteEin(const Flussdiagramm& haupt, KnotenId stelle, const Flussdiagramm& unter, std::string_view titel,
+                       std::string_view herkunft)
 {
     const auto innen = [&](KnotenId i) {
         return unter.knoten()[i].art != KnotenArt::Start && unter.knoten()[i].art != KnotenArt::Ende;
@@ -149,6 +150,7 @@ Flussdiagramm betteEin(const Flussdiagramm& haupt, KnotenId stelle, const Flussd
     // Was dem Aufrufer bisher folgte, folgt kuenftig den Enden von `unter`.
     Gruppe rahmen;
     rahmen.titel = std::string(titel);
+    rahmen.herkunft = std::string(herkunft);
     rahmen.eltern = haupt.knoten()[stelle].gruppe;
     rahmen.aufrufer = stelle;
     Flussdiagramm neu(haupt.titel());

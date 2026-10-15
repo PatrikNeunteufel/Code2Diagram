@@ -49,11 +49,13 @@ TEST_SUITE("Ausgabe")
 {
     TEST_CASE("Die Formate melden sich an; das erste ist die Vorgabe")
     {
-        REQUIRE(c2d::ausgabe::formate().size() == 3);
-        CHECK(c2d::ausgabe::formate()[0] == &mermaid());
+        REQUIRE(c2d::ausgabe::formate().size() == 4);
+        CHECK(c2d::ausgabe::formate()[0] == &c2d::ausgabe::svg());
+        CHECK(c2d::ausgabe::format("mermaid") == &mermaid());
         CHECK(c2d::ausgabe::format("dot") == &dot());
         CHECK(c2d::ausgabe::format("drawio") == &c2d::ausgabe::drawio());
-        CHECK(c2d::ausgabe::format("svg") == nullptr);
+        CHECK(c2d::ausgabe::format("png") == nullptr);
+        CHECK(c2d::ausgabe::svg().endung() == "svg");
         CHECK(mermaid().endung() == "mmd");
     }
 
@@ -208,5 +210,68 @@ TEST_SUITE("Ausgabe")
         CHECK(m.find("    class anonymous_1 {\n") != std::string::npos);  // die Kennung ohne Leerzeichen
         // ohne die Klammern, die den Rumpf beenden; spitze Klammern als Tilde
         CHECK(m.find("        ab|c~d~ x \"y\"\n") != std::string::npos);
+
+        // SVG: Text ist XML-Inhalt
+        const std::string s = c2d::ausgabe::svg().schreibe(d, {});
+        CHECK(s.find(">a{b}|c&lt;d&gt; x &quot;y&quot;</text>") != std::string::npos);
+    }
+}
+
+TEST_SUITE("SVG")
+{
+    std::size_t zaehle(const std::string& text, std::string_view stueck)
+    {
+        std::size_t n = 0;
+        for (std::size_t i = text.find(stueck); i != std::string::npos; i = text.find(stueck, i + 1)) ++n;
+        return n;
+    }
+
+    TEST_CASE("Flussdiagramm: die Formen der Vorschau, je Kante ein Linienzug mit Spitze, Orte aus der Anordnung")
+    {
+        const Flussdiagramm d = vierFormen();
+        const std::string s = c2d::ausgabe::svg().schreibe(d, {});
+
+        CHECK(s.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\""));
+        CHECK(s.ends_with("</svg>\n"));
+        CHECK(s.find("<title>t</title>") != std::string::npos);
+        CHECK(s.find("prefers-color-scheme: dark") != std::string::npos);
+        // je Kante ein Linienzug und eine Spitze; dazu die zwei Seitenlinien des Aufrufs
+        CHECK(zaehle(s, "<polyline class=\"linie\"") == d.kanten().size() + 2);
+        CHECK(zaehle(s, "<polygon class=\"spitze\"") == d.kanten().size());
+        CHECK(zaehle(s, "<polygon class=\"flaeche\"") == 1);  // die Raute
+        CHECK(zaehle(s, "<rect class=\"getoent\"") == 1);     // der Start, rund
+        CHECK(zaehle(s, "<rect class=\"schild\"") == 2);      // yes, no
+        // maskiert, und die zwei Zeilen untereinander
+        CHECK(s.find(">a &lt; &quot;b&quot;</tspan>") != std::string::npos);
+        CHECK(s.find(">x = 1</tspan><tspan") != std::string::npos);
+        // gleiche Eingabe, gleicher Text; nach rechts ein anderer
+        CHECK(c2d::ausgabe::svg().schreibe(d, {}) == s);
+        CHECK(c2d::ausgabe::svg().schreibe(d, {.richtung = "LR"}) != s);
+    }
+
+    TEST_CASE("Strukturdiagramm: Kasten mit Kopf, Art in Guillemets, Raute am Besitzer")
+    {
+        const Strukturdiagramm d = strukturVon(lies(beispiele::kDatentypen, "datentypen.c"));
+        const std::string s = c2d::ausgabe::svg().schreibe(d, {});
+
+        CHECK(zaehle(s, "<rect class=\"flaeche\"") == d.kaesten.size());
+        CHECK(zaehle(s, "<rect class=\"getoent\"") == d.kaesten.size());
+        CHECK(s.find("\xC2\xAB" "union" "\xC2\xBB") != std::string::npos);
+        CHECK(s.find(">naechster</text>") != std::string::npos);
+        std::size_t enthaelt = 0;
+        for (const Beziehung& b : d.beziehungen)
+            if (b.art == BeziehungArt::Enthaelt) ++enthaelt;
+        CHECK(enthaelt > 0);
+        CHECK(zaehle(s, "<polygon class=\"spitze\"") >= enthaelt);
+        CHECK(s.ends_with("</svg>\n"));
+    }
+
+    TEST_CASE("Eingebettet: je Gruppe ein gestrichelter Rahmen mit Titel")
+    {
+        const Flussdiagramm d = betteEin(vierFormen(), 2, vierFormen(), "g(void)");  // hinter den Aufruf g()
+        REQUIRE(d.gruppen().size() == 1);
+        const std::string s = c2d::ausgabe::svg().schreibe(d, {});
+        CHECK(zaehle(s, "<rect class=\"rahmen\"") == 1);
+        CHECK(s.find("font-style=\"italic\">g(void)</text>") != std::string::npos);
     }
 }

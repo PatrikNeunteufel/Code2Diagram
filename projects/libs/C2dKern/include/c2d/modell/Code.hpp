@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace c2d::modell
@@ -89,8 +90,15 @@ struct Funktion
     std::vector<Parameter> parameter;
     AnweisungPtr rumpf;  ///< leer = nur deklariert
     int zeile = 0;
+    /// Nur in ihrer Datei sichtbar (`static` vor einer freien Funktion) — ein
+    /// Aufruf aus einer anderen Datei meint sie nie.
+    bool intern = false;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }
+    /// Meint ein Aufruf diese Funktion, dem Namen nach? `f` passt auf jede
+    /// Funktion `f`, gleich in welchem Bereich; `N::f` nur auf eine, deren voller
+    /// Name so endet (`N::f`, `a::N::f`).
+    [[nodiscard]] bool heisst(std::string_view aufruf) const;
     /// `bereich::name(typ name, ...)` — der Text des Startknotens.
     [[nodiscard]] std::string signatur() const { return modell::signatur(vollerName(), parameter); }
 };

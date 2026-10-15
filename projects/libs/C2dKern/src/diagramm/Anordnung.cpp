@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <numeric>
 #include <utility>
 
@@ -16,10 +17,14 @@ namespace
 {
 
 constexpr double kRand = 24;          // um das ganze Diagramm
-constexpr double kAbstandSchicht = 46;  // zwischen zwei Schichten
+constexpr double kAbstandSchicht = 54;  // zwischen zwei Schichten; in der Luecke biegen die Kanten ab
 constexpr double kAbstandNachbar = 34;  // zwischen zwei Knoten einer Schicht
+constexpr double kAbstandStuetze = 16;  // neben einem Stuetzpunkt
+constexpr double kStuetzBreite = 8;     // ein Stuetzpunkt ohne Beschriftung
+constexpr double kUnterLuecke = 11;     // eine Beschriftung steht so weit unter der Luecke, in der ihre Kante abbiegt
 constexpr double kRueckAbstand = 26;    // einer Kante zurueck vom aeussersten Knoten
 constexpr double kRueckStaffel = 14;    // zwischen zwei Kanten zurueck
+constexpr double kSpurAbstand = 8;      // eine Kante zurueck, die unten aus- oder oben eintritt: so nah an der Zeile
 constexpr double kGruppenRand = 14;
 constexpr double kGruppenTitel = 22;
 
@@ -30,16 +35,26 @@ struct Schichtung
     std::vector<Rechteck> orte;
     std::vector<int> rang;
     std::vector<bool> zurueck;  ///< je Kante: fuehrt sie gegen die Richtung?
+    /// je Kante ueber mehrere Schichten: die Mitten ihrer Stuetzpunkte, je Schicht dazwischen einer
+    std::vector<std::vector<Punkt>> stuetzen;
+    std::vector<double> zeileOben;  ///< je Schicht: ihre Oberkante
 };
 
 /// Ordnet n Knoten der Groessen `groesse` in Schichten an, von oben nach unten.
-Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten)
+///
+/// Eine Kante ueber mehrere Schichten bekommt in jeder Schicht dazwischen einen
+/// Stuetzpunkt: einen Knoten ohne Inhalt, der ihr den Platz freihaelt. So laeuft
+/// sie in einer eigenen Spalte, statt durch Knoten oder aussen herum. Der erste
+/// Stuetzpunkt ist `stuetzBreite[e]` breit (0: schmal) — Platz fuer eine Beschriftung.
+Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten,
+                    const std::vector<double>& stuetzBreite = {})
 {
     const std::size_t n = groesse.size();
     Schichtung s;
     s.orte.resize(n);
     s.rang.assign(n, 0);
     s.zurueck.assign(kanten.size(), false);
+    s.stuetzen.resize(kanten.size());
     if (n == 0) return s;
 
     std::vector<std::vector<std::size_t>> hinaus(n);
@@ -96,30 +111,72 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         }
     }
 
-    // 3. Die Schichten, zuerst in der Reihenfolge des Besuchs.
-    const int schichten = 1 + *std::max_element(s.rang.begin(), s.rang.end());
-    std::vector<std::vector<std::size_t>> schicht(static_cast<std::size_t>(schichten));
-    for (const std::size_t v : besuch) schicht[static_cast<std::size_t>(s.rang[v])].push_back(v);
-
-    std::vector<std::vector<std::size_t>> oben(n), unten(n);  // Nachbarn in hoeheren / tieferen Schichten
+    // 3. Stuetzpunkte: die Knoten n, n+1, ... ; `masse` und `rang` gelten fuer alle.
+    std::vector<Punkt> masse = groesse;
+    std::vector<int> rang = s.rang;
+    std::vector<Paar> stuecke;  // von oben nach unten
+    std::vector<std::vector<std::size_t>> stuetzIds(kanten.size());
     for (std::size_t e = 0; e < kanten.size(); ++e)
     {
         const auto [a, b] = kanten[e];
         if (s.rang[a] == s.rang[b]) continue;
-        const std::size_t hoch = s.rang[a] < s.rang[b] ? a : b;
-        const std::size_t tief = hoch == a ? b : a;
+        if (s.zurueck[e])
+        {
+            stuecke.emplace_back(b, a);  // laeuft aussen herum; zaehlt nur fuer die Reihenfolge
+            continue;
+        }
+        std::size_t davor = a;
+        for (int r = s.rang[a] + 1; r < s.rang[b]; ++r)
+        {
+            const bool erster = r == s.rang[a] + 1;
+            const double breite = erster && e < stuetzBreite.size() && stuetzBreite[e] > 0 ? stuetzBreite[e] : kStuetzBreite;
+            stuetzIds[e].push_back(masse.size());
+            stuecke.emplace_back(davor, masse.size());
+            davor = masse.size();
+            masse.push_back({breite, 0});
+            rang.push_back(r);
+        }
+        stuecke.emplace_back(davor, b);
+    }
+    const std::size_t alle = masse.size();
+
+    std::vector<std::vector<std::size_t>> oben(alle), unten(alle);  // Nachbarn in hoeheren / tieferen Schichten
+    for (const auto [hoch, tief] : stuecke)
+    {
         unten[hoch].push_back(tief);
         oben[tief].push_back(hoch);
     }
 
-    // 4. Reihenfolge je Schicht nach dem Schwerpunkt der Nachbarn, zweimal hinab und hinauf.
-    std::vector<double> platz(n, 0);
+    // 4. Die Schichten, zuerst in der Reihenfolge der Kanten: was ein Knoten erreicht,
+    //    steht in der Schicht darunter in der Folge seiner Kanten — die Faelle eines switch
+    //    in der Folge der Quelle.
+    const int schichten = 1 + *std::max_element(rang.begin(), rang.end());
+    std::vector<std::vector<std::size_t>> schicht(static_cast<std::size_t>(schichten));
+    std::vector<bool> eingereiht(alle, false);
+    const auto reiheEin = [&](std::size_t v) {
+        if (eingereiht[v]) return;
+        eingereiht[v] = true;
+        schicht[static_cast<std::size_t>(rang[v])].push_back(v);
+    };
+    for (const std::size_t v : besuch)
+        if (rang[v] == 0) reiheEin(v);
+    for (std::size_t r = 0; r + 1 < schicht.size(); ++r)
+    {
+        for (std::size_t i = 0; i < schicht[r].size(); ++i)
+            for (const std::size_t w : unten[schicht[r][i]])
+                if (static_cast<std::size_t>(rang[w]) == r + 1) reiheEin(w);
+        for (const std::size_t v : besuch)  // was von oben nicht erreicht wird
+            if (static_cast<std::size_t>(rang[v]) == r + 1) reiheEin(v);
+    }
+
+    // 5. Reihenfolge je Schicht nach dem Schwerpunkt der Nachbarn, zweimal hinab und hinauf.
+    std::vector<double> platz(alle, 0);
     const auto zaehleDurch = [&](const std::vector<std::size_t>& reihe) {
         for (std::size_t i = 0; i < reihe.size(); ++i) platz[reihe[i]] = static_cast<double>(i);
     };
     for (const auto& reihe : schicht) zaehleDurch(reihe);
     const auto sortiere = [&](std::vector<std::size_t>& reihe, const std::vector<std::vector<std::size_t>>& nachbarn) {
-        std::vector<double> schwerpunkt(n, 0);
+        std::vector<double> schwerpunkt(alle, 0);
         for (const std::size_t v : reihe)
         {
             double summe = 0;
@@ -136,39 +193,72 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         for (std::size_t i = schicht.size(); i-- > 1;) sortiere(schicht[i - 1], unten);
     }
 
-    // 5. Orte: jede Schicht eine Zeile; ein Knoten steht moeglichst unter der Mitte seiner oberen Nachbarn.
-    double y = 0;
-    for (const auto& reihe : schicht)
-    {
-        double hoehe = 0;
-        for (const std::size_t v : reihe) hoehe = std::max(hoehe, groesse[v].y);
-        double frei = 0;
-        bool erster = true;
-        for (const std::size_t v : reihe)
+    // 6. Orte: jede Schicht eine Zeile; ein Knoten steht moeglichst unter der Mitte seiner oberen Nachbarn.
+    //    Wird ein Knoten mit genau einem oberen Nachbarn, der nur ihn hat, zur Seite gedraengt,
+    //    rueckt der obere mit, und es wird neu gesetzt — so bleibt eine Kette gerade, statt in
+    //    einer Luecke zu knicken, in der schon andere Kanten laufen.
+    std::vector<Rechteck> orte(alle);
+    std::vector<double> mindestens(alle, -1e18);  // linker Rand, nicht weiter links
+    const auto abstand = [&](std::size_t a, std::size_t b) {
+        return a >= n || b >= n ? kAbstandStuetze : kAbstandNachbar;
+    };
+    const auto setze = [&] {
+        s.zeileOben.clear();
+        double y = 0;
+        for (const auto& reihe : schicht)
         {
-            double wunsch = frei + groesse[v].x / 2;
-            if (!oben[v].empty())
+            s.zeileOben.push_back(y);
+            double hoehe = 0;
+            for (const std::size_t v : reihe) hoehe = std::max(hoehe, masse[v].y);
+            double frei = 0;  // rechter Rand des Knotens davor
+            for (std::size_t i = 0; i < reihe.size(); ++i)
             {
-                double summe = 0;
-                for (const std::size_t w : oben[v]) summe += s.orte[w].mitte().x;
-                wunsch = summe / static_cast<double>(oben[v].size());
+                const std::size_t v = reihe[i];
+                double wunsch = frei + masse[v].x / 2;
+                if (!oben[v].empty())
+                {
+                    double summe = 0;
+                    for (const std::size_t w : oben[v]) summe += orte[w].mitte().x;
+                    wunsch = summe / static_cast<double>(oben[v].size());
+                }
+                double links = std::max(wunsch - masse[v].x / 2, mindestens[v]);
+                if (i > 0) links = std::max(links, frei + abstand(reihe[i - 1], v));
+                orte[v] = {links, y + (hoehe - masse[v].y) / 2, masse[v].x, masse[v].y};
+                frei = links + masse[v].x;
             }
-            const double links = erster ? wunsch - groesse[v].x / 2 : std::max(wunsch - groesse[v].x / 2, frei);
-            s.orte[v] = {links, y + (hoehe - groesse[v].y) / 2, groesse[v].x, groesse[v].y};
-            frei = links + groesse[v].x + kAbstandNachbar;
-            erster = false;
+            y += hoehe + kAbstandSchicht;
         }
-        y += hoehe + kAbstandSchicht;
+    };
+    setze();
+    for (std::size_t runde = 0; runde < 2 * schicht.size() + 4; ++runde)
+    {
+        bool geaendert = false;
+        for (std::size_t v = 0; v < alle; ++v)
+        {
+            if (oben[v].size() != 1) continue;
+            const std::size_t u = oben[v].front();
+            if (unten[u].size() != 1 || rang[u] + 1 != rang[v]) continue;
+            const double versatz = orte[v].mitte().x - orte[u].mitte().x;
+            if (versatz < 0.5) continue;
+            mindestens[u] = orte[u].x + versatz;
+            geaendert = true;
+        }
+        if (!geaendert) break;
+        setze();
     }
 
     // an den Rand ruecken
-    double links = s.orte[0].x;
-    for (const Rechteck& r : s.orte) links = std::min(links, r.x);
-    for (Rechteck& r : s.orte)
+    double links = orte[0].x;
+    for (const Rechteck& r : orte) links = std::min(links, r.x);
+    for (Rechteck& r : orte)
     {
         r.x += kRand - links;
         r.y += kRand;
     }
+    for (double& oberkante : s.zeileOben) oberkante += kRand;
+    s.orte.assign(orte.begin(), orte.begin() + static_cast<std::ptrdiff_t>(n));
+    for (std::size_t e = 0; e < kanten.size(); ++e)
+        for (const std::size_t d : stuetzIds[e]) s.stuetzen[e].push_back(orte[d].mitte());
     return s;
 }
 
@@ -220,21 +310,6 @@ double kopfHoehe(const AnordnungOptionen& optionen)
     return 2 * optionen.zeilenHoehe + 10;
 }
 
-Punkt beschriftungsOrt(const Linienzug& linie)
-{
-    if (linie.empty()) return {};
-    if (linie.size() == 1) return linie[0];
-    // Mit Knick: auf dem Stueck hinter dem ersten Knick — zwei Kanten aus einem
-    // Knoten teilen das erste Stueck, erst danach trennen sie sich.
-    if (linie.size() > 2) return {(linie[1].x + linie[2].x) / 2, (linie[1].y + linie[2].y) / 2};
-    // Gerade: nah an der Quelle, so steht die Beschriftung an ihrer Verzweigung.
-    const Punkt a = linie[0];
-    const Punkt b = linie[1];
-    const double laenge = std::hypot(b.x - a.x, b.y - a.y);
-    const double t = laenge > 60 ? 16 / laenge : 0.4;
-    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
-}
-
 FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen)
 {
     const std::vector<Knoten>& knoten = diagramm.knoten();
@@ -250,21 +325,26 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         const Punkt g = groesseVon(k, optionen);
         groesse.push_back(drehen ? Punkt{g.y, g.x} : g);
     }
+    // Der erste Stuetzpunkt einer langen Kante haelt ihrer Beschriftung den Platz frei.
     std::vector<Paar> paare;
-    for (const Kante& k : kanten) paare.emplace_back(k.von, k.nach);
-    const Schichtung s = schichte(groesse, paare);
+    std::vector<double> stuetzBreite;
+    for (const Kante& k : kanten)
+    {
+        paare.emplace_back(k.von, k.nach);
+        const double breite = static_cast<double>(k.beschriftung.size()) * optionen.zeichenBreite + 10;
+        stuetzBreite.push_back(k.beschriftung.empty() ? 0 : drehen ? optionen.zeilenHoehe + 6 : breite);
+    }
+    const Schichtung s = schichte(groesse, paare, stuetzBreite);
     a.knoten = s.orte;
 
-    // Liegt zwischen den Schichten von `von` und `nach` ein Knoten auf der Senkrechten bei x?
-    const auto versperrt = [&](double x, int von, int nach) {
-        for (std::size_t v = 0; v < knoten.size(); ++v)
-            if (s.rang[v] > von && s.rang[v] < nach && x > a.knoten[v].x - 6 && x < a.knoten[v].x + a.knoten[v].breite + 6)
-                return true;
-        return false;
+    const auto entlang = [](Punkt von, Punkt nach, double weit) {
+        const double laenge = std::hypot(nach.x - von.x, nach.y - von.y);
+        if (laenge < 1) return von;
+        const double t = std::clamp(weit, 0.0, laenge) / laenge;
+        return Punkt{von.x + (nach.x - von.x) * t, von.y + (nach.y - von.y) * t};
     };
 
     std::size_t staffel = 0;
-    std::size_t staffelLinks = 0;
     for (std::size_t e = 0; e < kanten.size(); ++e)
     {
         const Rechteck& von = a.knoten[kanten[e].von];
@@ -272,28 +352,35 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         const int rangVon = s.rang[kanten[e].von];
         const int rangNach = s.rang[kanten[e].nach];
         Linienzug linie;
+        Punkt ort;
         if (rangNach > rangVon)
         {
-            // hinab: unten aus der Quelle, oben ins Ziel; bei Versatz mit zwei Knicken
+            // hinab: unten aus der Quelle, durch die Stuetzpunkte, oben ins Ziel. Die Spalte
+            // wechselt nur in der Luecke ueber einer Schicht — dort, wo nichts steht.
             const Punkt p{von.mitte().x, von.y + von.hoehe};
             const Punkt q{nach.mitte().x, nach.y};
-            const double oben = p.y + kAbstandSchicht / 2;
-            const double unten = q.y - kAbstandSchicht / 2;
-            if (rangNach == rangVon + 1)
-                linie = std::abs(p.x - q.x) < 1 ? Linienzug{p, q} : Linienzug{p, {p.x, oben}, {q.x, oben}, q};
-            else if (!versperrt(p.x, rangVon, rangNach))
-                linie = std::abs(p.x - q.x) < 1 ? Linienzug{p, q} : Linienzug{p, {p.x, unten}, {q.x, unten}, q};
-            else if (!versperrt(q.x, rangVon, rangNach))
-                linie = {p, {p.x, oben}, {q.x, oben}, q};
+            const auto luecke = [&](int r) { return s.zeileOben[static_cast<std::size_t>(r)] - kAbstandSchicht / 2; };
+            linie.push_back(p);
+            double x = p.x;
+            const auto biege = [&](double ziel, int r) {
+                if (std::abs(ziel - x) < 1) return;
+                linie.push_back({x, luecke(r)});
+                linie.push_back({ziel, luecke(r)});
+                x = ziel;
+            };
+            int r = rangVon;
+            for (const Punkt& stuetze : s.stuetzen[e]) biege(stuetze.x, ++r);
+            biege(q.x, rangNach);
+            linie.push_back(q);
+
+            // Die Beschriftung steht dort, wo die Kante ihren eigenen Weg geht: gleich unter
+            // der Luecke, in der Kanten aus derselben Quelle sich trennen — biegt sie dort
+            // ab, auf ihrer eigenen Senkrechten, sonst auf der Senkrechten unter der Quelle.
+            const double ersteLuecke = luecke(rangVon + 1);
+            if (linie.size() > 2 && linie[1].y <= ersteLuecke + 1)
+                ort = entlang(linie[2], linie[3], kUnterLuecke);
             else
-            {
-                // ueber mehrere Schichten, und beide Senkrechten sind versperrt: links aussen herum
-                double aussen = std::min(von.x, nach.x);
-                for (std::size_t v = 0; v < knoten.size(); ++v)
-                    if (s.rang[v] > rangVon && s.rang[v] < rangNach) aussen = std::min(aussen, a.knoten[v].x);
-                aussen -= kRueckAbstand + kRueckStaffel * static_cast<double>(staffelLinks++);
-                linie = {p, {p.x, oben}, {aussen, oben}, {aussen, unten}, {q.x, unten}, q};
-            }
+                ort = entlang(linie[0], linie[1], ersteLuecke + kUnterLuecke - p.y);
         }
         else
         {
@@ -304,11 +391,45 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
                     aussen = std::max(aussen, a.knoten[v].x + a.knoten[v].breite);
             aussen += kRueckAbstand + kRueckStaffel * static_cast<double>(staffel++);
             const bool selbst = kanten[e].von == kanten[e].nach;
-            const Punkt p{von.x + von.breite, von.y + von.hoehe * (selbst ? 0.7 : 0.5)};
-            const Punkt q{nach.x + nach.breite, nach.y + nach.hoehe * (selbst ? 0.3 : 0.5)};
-            linie = {p, {aussen, p.y}, {aussen, q.y}, q};
+            // Steht in der Schicht rechts daneben noch ein Knoten, ginge die Linie waagrecht durch
+            // ihn: dann unten aus der Quelle (oben ins Ziel) und auf einer Spur knapp an der Zeile
+            // entlang — nicht in der Mitte der Luecke, wo Kanten abbiegen und Beschriftungen stehen.
+            const auto rechtsFrei = [&](KnotenId v) {
+                for (KnotenId u = 0; u < knoten.size(); ++u)
+                    if (u != v && s.rang[u] == s.rang[v] && a.knoten[u].x > a.knoten[v].x) return false;
+                return true;
+            };
+            if (selbst || rechtsFrei(kanten[e].von))
+            {
+                const Punkt p{von.x + von.breite, von.y + von.hoehe * (selbst ? 0.7 : 0.5)};
+                linie = {p, {aussen, p.y}};
+            }
+            else
+            {
+                const Punkt p{von.mitte().x, von.y + von.hoehe};
+                const std::size_t darunter = static_cast<std::size_t>(rangVon) + 1;
+                const double spur = darunter < s.zeileOben.size() ? s.zeileOben[darunter] - kAbstandSchicht + kSpurAbstand
+                                                                  : p.y + kSpurAbstand;
+                linie = {p, {p.x, spur}, {aussen, spur}};
+            }
+            if (selbst || rechtsFrei(kanten[e].nach))
+            {
+                const Punkt q{nach.x + nach.breite, nach.y + nach.hoehe * (selbst ? 0.3 : 0.5)};
+                linie.push_back({aussen, q.y});
+                linie.push_back(q);
+            }
+            else
+            {
+                const Punkt q{nach.mitte().x, nach.y};
+                const double spur = s.zeileOben[static_cast<std::size_t>(rangNach)] - kSpurAbstand;
+                linie.push_back({aussen, spur});
+                linie.push_back({q.x, spur});
+                linie.push_back(q);
+            }
+            ort = {aussen, (linie[1].y + linie[linie.size() - 2].y) / 2};
         }
         a.kanten.push_back(std::move(linie));
+        a.beschriftungen.push_back(ort);
     }
 
     if (drehen)
@@ -316,6 +437,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         for (Rechteck& r : a.knoten) tausche(r);
         for (Linienzug& l : a.kanten)
             for (Punkt& p : l) std::swap(p.x, p.y);
+        for (Punkt& p : a.beschriftungen) std::swap(p.x, p.y);
     }
 
     // Rahmen der Gruppen: um ihre Knoten und um die Gruppen in ihnen — die inneren zuerst.
@@ -361,6 +483,18 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
             links = std::min(links, p.x - kRand);
             oben = std::min(oben, p.y - kRand);
         }
+    // eine Beschriftung, geschaetzt wie ein Knotentext
+    std::vector<Rechteck> schilder;
+    for (std::size_t e = 0; e < kanten.size(); ++e)
+    {
+        if (kanten[e].beschriftung.empty()) continue;
+        const double breite = static_cast<double>(kanten[e].beschriftung.size()) * optionen.zeichenBreite + 4;
+        const Punkt m = a.beschriftungen[e];
+        schilder.push_back({m.x - breite / 2, m.y - optionen.zeilenHoehe / 2, breite, optionen.zeilenHoehe});
+        links = std::min(links, schilder.back().x - kRand);
+        oben = std::min(oben, schilder.back().y - kRand);
+    }
+    for (Rechteck& r : schilder) r = {r.x - links, r.y - oben, r.breite, r.hoehe};
     const auto schiebe = [&](Rechteck& r) {
         r.x -= links;
         r.y -= oben;
@@ -369,6 +503,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     for (Rechteck& r : a.gruppen) schiebe(r);
     for (Linienzug& l : a.kanten)
         for (Punkt& p : l) p = {p.x - links, p.y - oben};
+    for (Punkt& p : a.beschriftungen) p = {p.x - links, p.y - oben};
 
     const auto weite = [&](const Rechteck& r) {
         a.breite = std::max(a.breite, r.x + r.breite + kRand);
@@ -376,6 +511,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     };
     for (const Rechteck& r : a.knoten) weite(r);
     for (const Rechteck& r : a.gruppen) weite(r);
+    for (const Rechteck& r : schilder) weite(r);
     for (const Linienzug& l : a.kanten)
         for (const Punkt& p : l) weite({p.x, p.y, 0, 0});
     return a;

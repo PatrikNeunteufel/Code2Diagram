@@ -1,29 +1,38 @@
 // c2d — Code2Diagram fuer die Kommandozeile.
 //
-// Aufruf:  c2d <datei> [--liste] [--funktion <name>] [--einbetten <name>]... [--struktur]
-//                      [--format <name>] [--richtung TD|LR] [--roh]
+// Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
+//                             [--struktur] [-D NAME[=wert]]... [--alle-zweige]
+//                             [--format <name>] [--richtung TD|LR] [--roh]
 //
+//   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
 //                  das Strukturdiagramm
-//   --liste        nennt, was die Datei enthaelt, und endet
-//   --funktion     das Flussdiagramm dieser Funktion (Name allein oder mit Bereich)
-//   --einbetten    den Ablauf dieser gerufenen Funktion hinter ihren ersten Aufruf setzen, umrahmt
-//   --struktur     das Diagramm der Datentypen
-//   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach erlaubt
+//   --liste        nennt, was die Datei (das Projekt: jede Datei) enthaelt, und endet
+//   --datei        im Projekt: die Datei, um die es geht (relativ zum Ordner)
+//   --funktion     das Flussdiagramm dieser Funktion (Name allein oder mit Bereich); im
+//                  Projekt muss sie eindeutig sein, sonst --datei
+//   --einbetten    den Ablauf dieser gerufenen Funktion hinter ihren ersten Aufruf setzen,
+//                  umrahmt — im Projekt auch aus einer anderen Datei
+//   --struktur     das Diagramm der Datentypen (im Projekt: aller Dateien, mit --datei: einer)
+//   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
+//                  erlaubt; geht der Projektdatei vor
 //   --alle-zweige  bedingte Uebersetzung nicht auswerten: alle Zweige lesen
-//   --format       mermaid (Vorgabe), dot oder drawio
+//   --format       mermaid (Vorgabe), svg, dot oder drawio
 //   --roh          je Anweisung ein Knoten, nichts gebuendelt
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
-// Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei nicht lesbar.
+// Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
 
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/projekt/Projekt.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -31,35 +40,79 @@
 namespace
 {
 
+namespace fs = std::filesystem;
+using c2d::projekt::Fundstelle;
+using c2d::projekt::Projekt;
+
+fs::path alsWeg(const std::string& text)
+{
+    return fs::path(std::u8string(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+}
+
+std::string alsText(const fs::path& weg)
+{
+    const std::u8string u8 = weg.u8string();
+    return {reinterpret_cast<const char*>(u8.data()), u8.size()};
+}
+
 int aufruf()
 {
-    std::cerr << "usage: c2d <file> [--liste] [--funktion <name>] [--einbetten <name>]... [--struktur]\n"
-                 "                  [-D NAME[=value]]... [--alle-zweige]\n"
-                 "                  [--format <name>] [--richtung TD|LR] [--roh]\n"
+    std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
+                 "                         [--struktur] [-D NAME[=value]]... [--alle-zweige]\n"
+                 "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
     return 1;
 }
 
+std::string ort(const Projekt& p, const Fundstelle& f)
+{
+    return p.dateien[f.datei].pfad + ":" + std::to_string(c2d::projekt::funktion(p, f).zeile);
+}
+
+std::string orte(const Projekt& p, const std::vector<Fundstelle>& stellen)
+{
+    std::string aus;
+    for (const Fundstelle& f : stellen) aus += (aus.empty() ? "" : ", ") + ort(p, f);
+    return aus;
+}
+
+void liste(const c2d::projekt::Datei& d)
+{
+    const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
+    for (const c2d::modell::Funktion& f : einheit.funktionen)
+        std::cout << (f.rumpf ? "function  " : "prototype ") << f.signatur() << (f.intern ? "  [static]" : "") << '\n';
+    for (const c2d::modell::Typ& t : einheit.typen)
+        std::cout << "type      " << t.vollerName() << " (" << t.felder.size() << " + " << t.methoden.size() << ")\n";
+    for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
+    for (const c2d::modell::Variable& v : einheit.variablen)
+        std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';
+    for (const c2d::modell::Makro& m : einheit.makros) std::cout << "macro     " << m.name << '\n';
+    for (const c2d::modell::Einbindung& e : einheit.einbindungen) std::cout << "include   " << e.ziel << '\n';
+    // wonach ein #if gefragt hat und was nirgends definiert ist: mit -D waehlbar
+    for (const std::string& name : d.ergebnis.unbekannteNamen) std::cout << "undefined " << name << '\n';
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
 {
-    std::string datei, funktion;
+    std::string ziel, datei, funktion;
     std::vector<std::string> einbetten;
-    c2d::sprache::LeseOptionen lesen;
+    c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
     std::string richtung = "TD";
-    bool liste = false, struktur = false, roh = false;
+    bool zeigeListe = false, struktur = false, roh = false;
 
     for (int i = 1; i < argc; ++i)
     {
         const std::string_view a = argv[i];
         const auto wert = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
-        if (a == "--liste") liste = true;
+        if (a == "--liste") zeigeListe = true;
         else if (a == "--struktur") struktur = true;
         else if (a == "--roh") roh = true;
+        else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
         else if (a == "--einbetten") einbetten.push_back(wert());
         else if (a == "--alle-zweige") lesen.alleZweige = true;
@@ -67,105 +120,167 @@ int main(int argc, char* argv[])
         else if (a.starts_with("-D")) lesen.definitionen.push_back(c2d::sprache::definitionAus(a.substr(2)));
         else if (a == "--format") formatName = wert();
         else if (a == "--richtung") richtung = wert();
-        else if (a.starts_with("-") || !datei.empty()) return aufruf();
-        else datei = a;
+        else if (a.starts_with("-") || !ziel.empty()) return aufruf();
+        else ziel = a;
     }
     const c2d::ausgabe::Format* format = c2d::ausgabe::format(formatName);
-    if (datei.empty() || format == nullptr || (richtung != "TD" && richtung != "LR")) return aufruf();
+    if (ziel.empty() || format == nullptr || (richtung != "TD" && richtung != "LR")) return aufruf();
 
-    std::ifstream strom(datei, std::ios::binary);
-    if (!strom)
+    std::error_code fehler;
+    const bool ordner = fs::is_directory(alsWeg(ziel), fehler);
+    Projekt p;
+    if (ordner)
+        p = c2d::projekt::liesOrdner(alsWeg(ziel), lesen);
+    else
     {
-        std::cerr << "c2d: cannot read " << datei << '\n';
-        return 2;
+        std::ifstream strom(alsWeg(ziel), std::ios::binary);
+        if (!strom)
+        {
+            std::cerr << "c2d: cannot read " << ziel << '\n';
+            return 2;
+        }
+        std::ostringstream inhalt;
+        inhalt << strom.rdbuf();
+        // die Einheit heisst wie die Datei, ohne den Weg dorthin
+        const std::size_t strich = ziel.find_last_of("/\\");
+        const std::string name = strich == std::string::npos ? ziel : ziel.substr(strich + 1);
+        if (c2d::sprache::spracheFuer(name) == nullptr)
+            std::cerr << "c2d: no reader for this file type - read as " << c2d::sprache::c().name() << '\n';
+        p = c2d::projekt::liesText(inhalt.str(), name, lesen);
     }
-    std::ostringstream inhalt;
-    inhalt << strom.rdbuf();
-    const std::string text = inhalt.str();
 
-    const c2d::sprache::Sprache* sprache = c2d::sprache::spracheFuer(datei, text);
-    if (sprache == nullptr)
+    // Meldungen: je Datei mit Zeile und Spalte, dann die des Projekts
+    const auto vorn = [&](const std::string& pfad) { return ordner ? pfad : ziel; };
+    for (const c2d::projekt::Datei& d : p.dateien)
+        for (const c2d::quelle::Meldung& m : d.ergebnis.meldungen)
+            std::cerr << vorn(d.pfad) << ':' << m.ort.zeile << ':' << m.ort.spalte << ": " << m.text << '\n';
+    for (const c2d::projekt::Projektmeldung& m : p.meldungen)
     {
-        sprache = &c2d::sprache::c();
-        std::cerr << "c2d: no reader for this file type - read as " << sprache->name() << '\n';
+        std::cerr << (m.pfad.empty() ? ziel : m.pfad);
+        if (m.meldung.ort.zeile > 0) std::cerr << ':' << m.meldung.ort.zeile;
+        std::cerr << ": " << m.meldung.text << '\n';
     }
-    // die Einheit heisst wie die Datei, ohne den Weg dorthin
-    const std::size_t strich = datei.find_last_of("/\\");
-    const c2d::sprache::Ergebnis ergebnis =
-        sprache->lies(text, strich == std::string::npos ? datei : datei.substr(strich + 1), lesen);
-    for (const c2d::quelle::Meldung& m : ergebnis.meldungen)
-        std::cerr << datei << ':' << m.ort.zeile << ':' << m.ort.spalte << ": " << m.text << '\n';
-    const c2d::modell::Einheit& einheit = ergebnis.einheit;
+    if (ordner)
+        std::cerr << "c2d: " << p.dateien.size() << " file(s), " << p.funktionen() << " function(s), " << p.typen()
+                  << " type(s), " << p.uebergangen.size() << " folder(s) skipped"
+                  << (p.mitProjektdatei ? ", with " : ", without ") << c2d::projekt::kProjektdatei << '\n';
 
-    if (liste)
+    // die Datei, um die es geht
+    std::size_t gewaehlteDatei = ordner ? c2d::projekt::kKeine : 0;
+    if (!datei.empty())
     {
-        for (const c2d::modell::Funktion& f : einheit.funktionen)
-            std::cout << (f.rumpf ? "function  " : "prototype ") << f.signatur() << '\n';
-        for (const c2d::modell::Typ& t : einheit.typen)
-            std::cout << "type      " << t.vollerName() << " (" << t.felder.size() << " + " << t.methoden.size()
-                      << ")\n";
-        for (const c2d::modell::Alias& a : einheit.aliase)
-            std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
-        for (const c2d::modell::Variable& v : einheit.variablen)
-            std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';
-        for (const c2d::modell::Makro& m : einheit.makros) std::cout << "macro     " << m.name << '\n';
-        for (const c2d::modell::Einbindung& e : einheit.einbindungen)
-            std::cout << "include   " << e.ziel << '\n';
-        // wonach ein #if gefragt hat und was nirgends definiert ist: mit -D waehlbar
-        for (const std::string& name : ergebnis.unbekannteNamen) std::cout << "undefined " << name << '\n';
+        if (!ordner)
+        {
+            std::cerr << "c2d: --datei needs a folder\n";
+            return 1;
+        }
+        std::string normal = datei;
+        std::replace(normal.begin(), normal.end(), '\\', '/');
+        gewaehlteDatei = p.finde(normal);
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: no file '" << datei << "' in the project\n";
+            return 1;
+        }
+    }
+
+    if (zeigeListe)
+    {
+        for (std::size_t i = 0; i < p.dateien.size(); ++i)
+        {
+            if (gewaehlteDatei != c2d::projekt::kKeine && i != gewaehlteDatei) continue;
+            if (ordner) std::cout << "== " << p.dateien[i].pfad << '\n';
+            liste(p.dateien[i]);
+        }
         return 0;
     }
 
     const c2d::ausgabe::Optionen optionen{.richtung = richtung};
-    const c2d::modell::Funktion* gewaehlt = nullptr;
+    std::optional<Fundstelle> gewaehlt;
     if (!struktur)
     {
-        for (const c2d::modell::Funktion& f : einheit.funktionen)
+        std::vector<Fundstelle> treffer;
+        for (std::size_t d = 0; d < p.dateien.size(); ++d)
         {
-            // der Name allein oder mit Bereich: `starte` oder `antrieb::Motor::starte`
-            if (!f.rumpf || (!funktion.empty() && f.name != funktion && f.vollerName() != funktion)) continue;
-            gewaehlt = &f;
-            break;
+            if (gewaehlteDatei != c2d::projekt::kKeine && d != gewaehlteDatei) continue;
+            const std::vector<c2d::modell::Funktion>& fs = p.dateien[d].ergebnis.einheit.funktionen;
+            for (std::size_t f = 0; f < fs.size(); ++f)
+            {
+                // der Name allein oder mit Bereich: `starte` oder `antrieb::Motor::starte`
+                if (!fs[f].rumpf || (!funktion.empty() && fs[f].name != funktion && fs[f].vollerName() != funktion))
+                    continue;
+                treffer.push_back({d, f});
+            }
         }
-        if (gewaehlt == nullptr && !funktion.empty())
+        if (funktion.empty() && !treffer.empty()) treffer.resize(1);  // ohne Auswahl: die erste
+        if (treffer.size() > 1)
         {
-            std::cerr << "c2d: no function '" << funktion << "' with a body in " << datei << '\n';
+            std::cerr << "c2d: '" << funktion << "' is ambiguous: " << orte(p, treffer) << " - choose one with --datei\n";
             return 1;
         }
+        if (treffer.empty() && !funktion.empty())
+        {
+            std::cerr << "c2d: no function '" << funktion << "' with a body in " << ziel << '\n';
+            return 1;
+        }
+        if (!treffer.empty()) gewaehlt = treffer.front();
     }
-    if (gewaehlt != nullptr)
+    if (gewaehlt)
     {
         using namespace c2d::diagramm;
         const auto ablauf = [&](const c2d::modell::Funktion& f) {
             Flussdiagramm d = flussVon(f);
             return roh ? d : fasseAnweisungsfolgenZusammen(d);
         };
-        Flussdiagramm d = ablauf(*gewaehlt);
-        // --einbetten: hinter den ersten Knoten, der die Funktion ruft und noch keine Einbettung traegt
+        Flussdiagramm d = ablauf(c2d::projekt::funktion(p, *gewaehlt));
+        // --einbetten: hinter den ersten Knoten, der die Funktion ruft und noch keine Einbettung traegt;
+        // was der Aufruf meint, entscheidet das Projekt (erst die eigene Datei, dann was nicht static ist)
         for (const std::string& name : einbetten)
         {
-            const c2d::modell::Funktion* gerufen = nullptr;
-            for (const c2d::modell::Funktion& f : einheit.funktionen)
-                if (f.rumpf && f.name == name && gerufen == nullptr) gerufen = &f;
             bool gelungen = false;
-            for (KnotenId i = 0; gerufen != nullptr && !gelungen && i < d.knoten().size(); ++i)
-            {
-                const std::vector<std::string>& aufrufe = d.knoten()[i].aufrufe;
-                if (std::find(aufrufe.begin(), aufrufe.end(), name) == aufrufe.end()) continue;
-                Flussdiagramm neu = betteEin(d, i, ablauf(*gerufen), gerufen->signatur());
-                gelungen = neu.gruppen().size() > d.gruppen().size();
-                if (gelungen) d = std::move(neu);
-            }
-            if (!gelungen) std::cerr << "c2d: cannot embed '" << name << "'\n";
+            std::vector<Fundstelle> mehrdeutig;
+            for (KnotenId i = 0; !gelungen && i < d.knoten().size(); ++i)
+                for (const std::string& a : d.knoten()[i].aufrufe)
+                {
+                    std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(p, gewaehlt->datei, a);
+                    std::erase_if(gemeint, [&](const Fundstelle& f) {
+                        const c2d::modell::Funktion& g = c2d::projekt::funktion(p, f);
+                        return g.name != name && g.vollerName() != name;
+                    });
+                    if (gemeint.size() > 1) mehrdeutig = gemeint;
+                    if (gemeint.size() != 1) continue;
+                    const c2d::modell::Funktion& gerufen = c2d::projekt::funktion(p, gemeint.front());
+                    Flussdiagramm neu = betteEin(d, i, ablauf(gerufen), gerufen.signatur());
+                    gelungen = neu.gruppen().size() > d.gruppen().size();
+                    if (gelungen) d = std::move(neu);
+                    break;
+                }
+            if (gelungen) continue;
+            if (!mehrdeutig.empty())
+                std::cerr << "c2d: cannot embed '" << name << "': the call is ambiguous (" << orte(p, mehrdeutig) << ")\n";
+            else
+                std::cerr << "c2d: cannot embed '" << name << "'\n";
         }
         std::cout << format->schreibe(d, optionen);
         return 0;
     }
-    if (einheit.typen.empty())
+
+    // die Datentypen: einer Datei, oder aller
+    c2d::modell::Einheit alle;
+    alle.name = ordner ? alsText(p.wurzel.filename()) : p.dateien[0].ergebnis.einheit.name;
+    for (std::size_t d = 0; d < p.dateien.size(); ++d)
     {
-        std::cerr << "c2d: nothing to draw in " << datei << '\n';
+        if (gewaehlteDatei != c2d::projekt::kKeine && d != gewaehlteDatei) continue;
+        const c2d::modell::Einheit& e = p.dateien[d].ergebnis.einheit;
+        if (gewaehlteDatei != c2d::projekt::kKeine) alle.name = e.name;
+        alle.typen.insert(alle.typen.end(), e.typen.begin(), e.typen.end());
+        alle.aliase.insert(alle.aliase.end(), e.aliase.begin(), e.aliase.end());
+    }
+    if (alle.typen.empty())
+    {
+        std::cerr << "c2d: nothing to draw in " << ziel << '\n';
         return 1;
     }
-    std::cout << format->schreibe(c2d::diagramm::strukturVon(einheit), optionen);
+    std::cout << format->schreibe(c2d::diagramm::strukturVon(alle), optionen);
     return 0;
 }

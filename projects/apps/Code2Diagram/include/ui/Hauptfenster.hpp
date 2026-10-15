@@ -1,31 +1,45 @@
 /**
  * @file Hauptfenster.hpp
- * @brief Das Fenster: links der Quelltext, rechts das gewaehlte Diagramm — gezeichnet und als Text
+ * @brief Das Fenster: links Dateien und Quelltext, rechts das gewaehlte Diagramm — gezeichnet und als Text
  *
- * Das Fenster ruft nur den Kern (Bibliothek C2dKern): eine Sprache liest den
- * Text ins Codemodell, die Ableitung baut das Diagramm, die Anordnung stellt
- * es auf, ein Format schreibt es. Welche Sprachen und Formate es gibt, fragt
- * es dort ab — eine neue Sprache oder ein neues Format braucht hier keine
- * Aenderung.
+ * Das Fenster ruft nur den Kern (Bibliothek C2dKern): ein Projekt liest die
+ * Dateien ins Codemodell (projekt/Projekt.hpp), die Ableitung baut das
+ * Diagramm, die Anordnung stellt es auf, ein Format schreibt es. Welche
+ * Sprachen und Formate es gibt, fragt es dort ab — eine neue Sprache oder ein
+ * neues Format braucht hier keine Aenderung.
  *
- * Im gezeichneten Flussdiagramm fuehrt ein Knoten, der eine Funktion der Datei
- * ruft, weiter: Doppelklick zeigt ihr Diagramm (Back fuehrt zurueck), das
- * Kontextmenue bettet ihren Ablauf umrahmt ein oder nimmt ihn wieder heraus.
+ * Gezeigt wird eine Datei oder ein Ordner (ein Projekt). Bei einem Projekt
+ * steht ueber dem Quelltext der Baum der Dateien; zur Wahl stehen die
+ * Diagramme der gewaehlten Datei.
+ *
+ * Im gezeichneten Flussdiagramm fuehrt ein Knoten, der eine Funktion ruft,
+ * weiter — auch in eine andere Datei des Projekts: Doppelklick zeigt ihr
+ * Diagramm (Back fuehrt zurueck), das Kontextmenue bettet ihren Ablauf
+ * umrahmt ein oder nimmt ihn wieder heraus. Meint ein Aufruf mehr als eine
+ * Funktion (projekt::kandidaten), waehlt man im Menue, welche.
  */
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
-#include "c2d/sprache/Sprache.hpp"
+#include "c2d/projekt/Projekt.hpp"
 
+#include <QImage>
+#include <QList>
 #include <QMainWindow>
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+#include <vector>
+
+class QAction;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
 class QTabWidget;
+class QTreeWidget;
+class QTreeWidgetItem;
 
 namespace c2d::ui
 {
@@ -40,9 +54,15 @@ public:
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
-    /// Eine Quelldatei laden, lesen und zeigen. false = nicht lesbar; `fehler`
-    /// nennt dann einen Satz dazu, und das Fenster bleibt, wie es war.
+    /// Eine Quelldatei laden, lesen und zeigen; ein Ordner wird als Projekt
+    /// geoeffnet (oeffneOrdner). false = nicht lesbar; `fehler` nennt dann einen
+    /// Satz dazu, und das Fenster bleibt, wie es war.
     bool oeffne(const QString& pfad, QString* fehler = nullptr);
+
+    /// Einen Ordner als Projekt oeffnen: alle Quelldateien darunter, mit
+    /// `code2diagram.json`, wenn es sie gibt. Gewaehlt ist danach die erste Datei
+    /// mit einer Funktion. false = kein Ordner.
+    bool oeffneOrdner(const QString& pfad, QString* fehler = nullptr);
 
     /// Einen Quelltext lesen und zeigen; `name` entscheidet ueber die Sprache
     /// (nach der Endung, bei `.h` nach dem Inhalt) und steht im Titel.
@@ -51,63 +71,124 @@ public:
     /// Das eingebaute Beispiel zeigen (beispiele/ampel.c).
     void zeigeBeispiel();
 
-    /// Was sich zeigen laesst: die Funktionen mit Rumpf (mit Bereich:
-    /// `Klasse::methode`), dann `types`, wenn es Datentypen gibt.
+    /// Ist ein Ordner offen?
+    [[nodiscard]] bool istProjekt() const;
+    /// Die Dateien des Projekts, relativ zum Ordner, mit `/`; bei einer Datei nur sie.
+    [[nodiscard]] QStringList dateien() const;
+    /// Die Datei, deren Diagramme zur Wahl stehen.
+    [[nodiscard]] QString datei() const;
+    /// Eine andere Datei des Projekts waehlen. false = so heisst keine.
+    bool waehleDatei(const QString& pfad);
+    /// Ordner, die beim Einlesen uebergangen wurden.
+    [[nodiscard]] QStringList uebergangeneOrdner() const;
+    /// Meldungen ueber das Projekt (Projektdatei, uebergangene Ordner, Koepfe, die sich nicht finden).
+    [[nodiscard]] QStringList projektMeldungen() const;
+
+    /// Der Text der Projektdatei, wie er auf der Platte steht; gibt es keine:
+    /// ein Vorschlag, in dem `uebergehen` aus der `.gitignore` des Ordners kommt.
+    [[nodiscard]] QString projektdateiText() const;
+    /// Schreibt die Projektdatei und liest das Projekt neu. false = der Text
+    /// passt nicht (kein JSON, ein unbekannter Schluessel, ...) oder die Datei
+    /// laesst sich nicht schreiben; `fehler` nennt die Meldungen, nichts wird geschrieben.
+    bool speichereProjektdatei(const QString& text, QString* fehler = nullptr);
+    /// Den Ordner (relativ) in `uebergehen` der Projektdatei eintragen und neu
+    /// lesen; gibt es noch keine Projektdatei, wird sie mit dem Vorschlag angelegt.
+    bool uebergeheOrdner(const QString& ordner, QString* fehler = nullptr);
+    /// Den Eintrag fuer diesen Ordner wieder aus `uebergehen` nehmen und neu lesen.
+    bool liesOrdnerWieder(const QString& ordner, QString* fehler = nullptr);
+
+    /// Was sich zeigen laesst: die Funktionen mit Rumpf der gewaehlten Datei
+    /// (mit Bereich: `Klasse::methode`), dann `types`, wenn es Datentypen gibt.
     [[nodiscard]] QStringList diagramme() const;
     /// Das Diagramm wechseln; das bisherige kommt in den Verlauf fuer zurueck(). false = so heisst keines.
     bool waehleDiagramm(const QString& name);
     [[nodiscard]] QString diagramm() const;
-    /// Zum Diagramm davor. false = es gibt keines.
+    /// Zum Diagramm davor, auch in einer anderen Datei. false = es gibt keines.
     bool zurueck();
 
-    /// `mermaid`, `dot`, `drawio`, ...; false = so heisst kein Format.
+    /// Wohin ein Aufruf aus dem gezeigten Diagramm fuehren kann: je Kandidat
+    /// `pfad:zeile` (projekt::kandidaten). Leer = nirgendwohin.
+    [[nodiscard]] QStringList ziele(const QString& aufruf) const;
+    /// Zum Diagramm der Funktion, die der Aufruf meint; `wahl` waehlt unter
+    /// mehreren Kandidaten (ab 0). false = keiner, oder mehrere und keine Wahl.
+    bool springe(const QString& aufruf, int wahl = -1);
+
+    /// `svg`, `mermaid`, `dot`, `drawio`, ...; false = so heisst kein Format.
     bool waehleFormat(const QString& name);
     /// `preview` oder `text`; false = so heisst keine Ansicht.
     bool waehleAnsicht(const QString& name);
 
-    /// Den Ablauf der Funktion `funktion` (Name ohne Bereich) hinter dem ersten
-    /// Knoten einbetten, der sie ruft und noch keine Einbettung traegt.
-    /// false = kein solcher Knoten, oder die Funktion hat keinen Rumpf in dieser Datei.
+    /// Den Ablauf der Funktion `funktion` (Name, auch mit Bereich) hinter dem
+    /// ersten Knoten einbetten, der sie eindeutig ruft und noch keine Einbettung
+    /// traegt — auch aus einer anderen Datei des Projekts. false = kein solcher Knoten.
     bool betteEin(const QString& funktion);
     /// Alle Einbettungen herausnehmen. false = es gab keine.
     bool loeseEinbettungen();
     [[nodiscard]] int einbettungen() const;
 
     /// Was beim Auswerten von #if/#ifdef als definiert gilt: `NAME` oder
-    /// `NAME=wert`, durch Leerzeichen, Komma oder Strichpunkt getrennt. Die
-    /// Datei wird neu gelesen; das gewaehlte Diagramm bleibt, wenn es das noch gibt.
+    /// `NAME=wert`, durch Leerzeichen, Komma oder Strichpunkt getrennt; geht der
+    /// Projektdatei vor. Alles wird neu gelesen; Datei und Diagramm bleiben, wenn es sie noch gibt.
     void setzeDefinitionen(const QString& definitionen);
     /// Bedingte Uebersetzung nicht auswerten, sondern alle Zweige lesen.
     void setzeAlleZweige(bool alle);
-    /// Namen, nach denen ein #if gefragt hat und die nirgends definiert sind.
+    /// Namen, nach denen ein #if der gewaehlten Datei gefragt hat und die nirgends definiert sind.
     [[nodiscard]] QStringList unbekannteNamen() const;
 
     [[nodiscard]] QString quelltext() const;
     [[nodiscard]] QString diagrammText() const;
     /// Wie viele Knoten oder Kaesten die Vorschau zeichnet.
     [[nodiscard]] int vorschauFormen() const;
-    /// Wie viele Meldungen das Lesen hinterlassen hat.
+    /// Das ganze gezeichnete Diagramm, in Originalgroesse — auch was das Fenster nicht zeigt.
+    [[nodiscard]] QImage vorschauBild() const;
+    /// Wie viele Meldungen das Lesen der gewaehlten Datei hinterlassen hat.
     [[nodiscard]] int meldungen() const;
 
     /// Die Filter des Dialogs Open, aus den Endungen der Sprachen des Kerns.
     [[nodiscard]] static QString dateiFilter();
 
 private:
+    /// Eine Stelle im Verlauf: welche Datei, welches Diagramm.
+    struct Stelle
+    {
+        std::size_t datei;
+        QString diagramm;
+    };
+
+    /// Mit den jetzigen Lese-Optionen (neu) einlesen: die Datei oder den Ordner.
+    void liesEin();
+    /// Neu einlesen; Datei und Diagramm bleiben, wenn es sie noch gibt.
+    void liesNeu();
+    /// Die Datei `index` zur gewaehlten machen: Quelltext, Auswahl, Diagramm.
+    void zeigeDatei(std::size_t index);
+    void fuelleBaum();
+    void zeigeLage();
     /// Das gewaehlte Diagramm neu aus dem Codemodell bauen (ohne Einbettungen) und zeigen.
     void baueNeu();
     /// Das Diagramm, wie es jetzt ist, zeichnen und als Text schreiben.
     void zeichne();
-    /// Den gezeigten Quelltext mit den jetzigen Lese-Optionen neu lesen.
-    void liesNeu();
     void speichereUnter();
-    void zeigeZeile(int zeile);
+    void bearbeiteProjektdatei();
+    void zeigeProjektMeldungen();
+    /// Eine Zeile einer Datei im Quelltext zeigen (die Datei wird dafuer geladen).
+    void zeigeZeile(std::size_t datei, int zeile);
     void kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort);
-    /// Die Funktion dieses Namens (ohne Bereich) mit Rumpf; nullptr = keine.
-    [[nodiscard]] const c2d::modell::Funktion* funktion(const std::string& name) const;
-    /// Die erste Funktion der Datei, die der Knoten ruft; nullptr = keine.
-    [[nodiscard]] const c2d::modell::Funktion* ziel(c2d::diagramm::KnotenId knoten) const;
-    bool betteEin(c2d::diagramm::KnotenId knoten, const c2d::modell::Funktion& gerufen);
+    void baumMenue(const QPoint& ort);
+    /// Aus welcher Datei ein Knoten stammt: die seiner Einbettung, sonst die gewaehlte.
+    [[nodiscard]] std::size_t dateiVon(c2d::diagramm::KnotenId knoten) const;
+    /// Was die Aufrufe eines Knotens meinen koennen, ohne Doppelte.
+    [[nodiscard]] std::vector<c2d::projekt::Fundstelle> zieleVon(c2d::diagramm::KnotenId knoten) const;
+    [[nodiscard]] QString beschreibe(const c2d::projekt::Fundstelle& stelle) const;
+    /// Zum Diagramm dieser Funktion, auch in einer anderen Datei.
+    void gehe(const c2d::projekt::Fundstelle& stelle);
+    bool betteEin(c2d::diagramm::KnotenId knoten, const c2d::projekt::Fundstelle& gerufen);
+    [[nodiscard]] QString projektdateiPfad() const;
+    /// Die Projektdatei, wie sie auf der Platte steht — oder der Vorschlag, wenn
+    /// es keine gibt. Leer, wenn sie Meldungen hat: dann wird sie nicht still neu geschrieben.
+    [[nodiscard]] std::optional<c2d::projekt::Projektdatei> einstellungenZumAendern(QString* fehler) const;
+    bool schreibeProjektdatei(const c2d::projekt::Projektdatei& datei, QString* fehler);
 
+    QTreeWidget* m_baum = nullptr;
     QPlainTextEdit* m_quelle = nullptr;
     QPlainTextEdit* m_text = nullptr;
     Vorschau* m_vorschau = nullptr;
@@ -117,14 +198,20 @@ private:
     QComboBox* m_richtung = nullptr;
     QLineEdit* m_definitionen = nullptr;
     QCheckBox* m_alleZweige = nullptr;
+    QAction* m_projektdateiAktion = nullptr;
+    QAction* m_meldungenAktion = nullptr;
 
-    QString m_name;
+    QString m_ordner;      ///< der Ordner des Projekts; leer = eine einzelne Datei
+    QString m_einzelText;  ///< bei einer einzelnen Datei: ihr Text, zum neu Lesen
+    QString m_einzelName;
     QString m_gelesenMit;  ///< der Text des Felds Defines beim letzten Lesen
-    c2d::sprache::Ergebnis m_ergebnis;
+    c2d::projekt::Projekt m_projekt;
+    std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
+    std::size_t m_quelleZeigt = c2d::projekt::kKeine;  ///< die Datei im Quelltext
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
     QString m_gezeigt;                      ///< wofuer m_fluss gebaut ist
-    QStringList m_verlauf;                  ///< die Diagramme davor, fuer zurueck()
-    bool m_ohneVerlauf = false;             ///< der Wechsel gerade ist ein zurueck()
+    QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()
+    bool m_ohneVerlauf = false;             ///< der Wechsel gerade ist ein zurueck() oder ein Sprung
 };
 
 }  // namespace c2d::ui

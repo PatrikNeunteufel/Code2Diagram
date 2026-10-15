@@ -10,7 +10,8 @@ namespace c2d::ausgabe
 std::span<const Format* const> formate()
 {
     // Ein neues Format hier eintragen.
-    static const Format* const liste[] = {&mermaid(), &dot(), &drawio()};
+    // Das eigene Format zuerst: es zeigt, was die Vorschau zeigt (Entscheid Patrik, 2026-10-15).
+    static const Format* const liste[] = {&svg(), &mermaid(), &dot(), &drawio()};
     return liste;
 }
 

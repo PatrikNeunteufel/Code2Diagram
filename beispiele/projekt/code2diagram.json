@@ -1,0 +1,20 @@
+{
+  "definitionen": [
+    "MIT_LOG"
+  ],
+  "includePfade": [
+    "inc"
+  ],
+  "uebergehen": [
+    "alt"
+  ],
+  "abschnitte": [
+    {
+      "ordner": "antrieb",
+      "definitionen": [
+        "MOTOREN=2"
+      ],
+      "includePfade": []
+    }
+  ]
+}

@@ -7,8 +7,9 @@ Fenster und als Text in einem wählbaren Format.
 |---|---|---|
 | **Sprachen** | C, C++ | weitere: je Sprache eine Tabelle und ein Leser |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen) | weitere: je Art ein Modell und eine Ableitung |
-| **Formate** | Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
+| **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
+| **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg | |
 
 Lexer, Leser und Anordnung sind Eigenbau, ohne Fremdbibliothek.
 
@@ -25,7 +26,7 @@ das fertige Paket (Version aus `sichttest.pin`) kommt als External der Art `arch
 | Target | Was |
 |---|---|
 | `C2dKern` | die Bibliothek mit allem Fachlichen — **ohne Qt** |
-| `c2d` | Kommandozeile: Quelldatei rein, Diagramm-Text raus |
+| `c2d` | Kommandozeile: Quelldatei oder Ordner rein, Diagramm-Text raus |
 | `Code2Diagram` | das Fenster (Qt 6) |
 | `C2dKern_UnitTests` | Tests des Kerns (doctest) |
 | `Code2Diagram.UnitTests` | Tests des Fensters (doctest, ohne es zu zeigen) |
@@ -46,8 +47,10 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
+| `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg | sprache, modell |
 
-Die Trennlinien sind der Punkt: ein Format kennt keine Sprache, ein Leser kennt kein Diagramm.
+Die Trennlinien sind der Punkt: ein Format kennt keine Sprache, ein Leser kennt kein Diagramm,
+das Projekt kennt kein Diagramm.
 
 - **Neue Sprache:** Ordner `src/sprache/<name>/` mit ihrer Tabelle und einer Klasse von
   `Sprache`, in `src/sprache/Sprache.cpp` in die Liste eintragen. Fenster und `c2d` finden sie von
@@ -114,9 +117,29 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei] [-D NAME[=wert]]... [--alle-zweige] [--diagramm <name>] [--einbetten <funktion>]... [--format <name>] [--ansicht preview|text] [--bild <datei.png>]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige] [--diagramm <name>] [--einbetten <funktion>]... [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
 ```
 
+- **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
+  (Strg + Umschalt + O) einen Ordner samt Unterordnern als Projekt. Dann steht über dem
+  Quelltext der **Baum der Dateien**; zur Wahl stehen die Diagramme der gewählten Datei.
+  Übergangene Ordner stehen grau dabei. Rechtsklick auf einen Ordner: *Skip this folder*
+  trägt ihn in die Projektdatei ein; auf einen übergangenen: *Read this folder again*.
+  `--datei` wählt beim Start die Datei im Projekt.
+- **Die Projektdatei** `code2diagram.json` im Ordner trägt die Projektparameter (Beispiel und
+  Regeln: `projects/libs/C2dKern/include/c2d/projekt/Projektdatei.hpp`, ein ganzes Projekt:
+  `beispiele/projekt/`):
+  - `definitionen` wie `-D`, `includePfade` wie `-I` (relativ zum Ordner),
+  - `abschnitte`: je Ordner (`"ordner": "firmware/Slave"`) eigene Definitionen und Include-Pfade,
+  - `uebergehen`: Ordnermuster, die nicht gelesen werden (`old`, `firmware/bak*`, `**/test`).
+  Immer übergangen werden Ordner, die mit `.` beginnen, und `out`, `build`, `node_modules`.
+  Project > Edit project file… bearbeitet sie; gibt es noch keine, steht ein Vorschlag da,
+  `uebergehen` aus der `.gitignore` des Ordners. Was nicht passt, wird nicht gespeichert.
+  Project > Show project messages nennt übergangene Ordner und Köpfe, die sich nicht finden.
+- **Gelesen** wird jede Datei mit den Definitionen aus Projekt, Abschnitten und den `#define`
+  der Köpfe, die sie einbindet (auch mittelbar); das Feld Defines geht allem vor. Ein Kopf
+  `"x.h"` wird neben der Datei gesucht, dann in den Include-Pfaden, zuletzt als einzige Datei
+  dieses Namens im Projekt; `<x.h>` nur in den Include-Pfaden.
 - Unter dem Quelltext: **Defines** — was beim Auswerten von `#if`/`#ifdef` zusätzlich als
   definiert gilt (`NAME` oder `NAME=wert`, durch Leerzeichen getrennt; Enter liest neu) — und
   der Haken **All #if branches**. Die Statuszeile nennt, wonach gefragt wurde und was nicht
@@ -125,8 +148,11 @@ Code2Diagram [--testing] [datei] [-D NAME[=wert]]... [--alle-zweige] [--diagramm
   Datentypen), **Format**, Richtung. Darunter zwei Ansichten: **Preview** zeichnet das Diagramm,
   **Text** zeigt es im gewählten Format. File > Save diagram as… legt den Text ab.
 - **In der Vorschau** (Strg + Mausrad vergrößert, Ziehen verschiebt):
-  - Ein Knoten, der eine Funktion der Datei ruft, ist farbig umrandet. **Doppelklick** zeigt deren
-    Diagramm; Diagram > Back (Alt + Pfeil links) führt zurück.
+  - Ein Knoten, der eine Funktion ruft, die es im Projekt gibt, ist farbig umrandet.
+    **Doppelklick** zeigt deren Diagramm, auch in einer anderen Datei; Diagram > Back
+    (Alt + Pfeil links) führt zurück. Welche Funktion ein Aufruf meint: zuerst eine der eigenen
+    Datei, sonst eine nicht-`static` einer anderen; `N::f(` nur eine, deren voller Name so endet.
+    Bleiben mehrere, wählt man im Menü (Pfad und Zeile) — nichts wird still gewählt.
   - **Rechtsklick** auf so einen Knoten: *Embed …() here* setzt den Ablauf der gerufenen Funktion
     umrahmt hinter den Aufruf — auch verschachtelt, in einer Einbettung weiter. Rechtsklick in
     einen Rahmen: *Remove embedding*. Diagram > Remove all embeddings nimmt alle heraus.
@@ -134,20 +160,30 @@ Code2Diagram [--testing] [datei] [-D NAME[=wert]]... [--alle-zweige] [--diagramm
   - Was eingebettet ist, steht auch im Text: als `subgraph` (Mermaid), `cluster` (DOT),
     Behälter (draw.io).
 - `--bild` legt das Fenster als PNG ab und endet — ohne Datei mit dem eingebauten Beispiel.
+  `--szene` legt das ganze gezeichnete Diagramm ab, in Originalgröße, auch was das Fenster
+  nicht zeigt; beide lassen sich zusammen geben.
 - `--testing` lädt die Sichttest-Steuerung. Aktionen: `datei_oeffnen pfad=<Datei>` (relativ ab
-  dem Projekt-Root), `beispiel_zeigen`, `diagramm_waehlen name=<Funktion|types>`,
-  `format_waehlen name=<mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
+  dem Projekt-Root), `ordner_oeffnen pfad=<Ordner>`, `datei_waehlen pfad=<Datei im Projekt>`,
+  `springen name=<Aufruf> [wahl=<0, 1, …>]`, `beispiel_zeigen`, `diagramm_waehlen name=<Funktion|types>`,
+  `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`.
 
 ### Kommandozeile
 
 ```bash
-c2d <datei> [--liste] [--funktion <name>] [--einbetten <name>]... [--struktur] [-D NAME[=wert]]... [--alle-zweige] [--format mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [-D NAME[=wert]]... [--alle-zweige] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
-- `--liste` nennt, was die Datei enthält — und als `undefined`, wonach ein `#if` gefragt hat
+- ein **Ordner** wird als Projekt gelesen (wie im Fenster); die Fehlerausgabe nennt danach
+  Dateien, Funktionen, Typen und übergangene Ordner. `--datei` wählt die Datei, um die es geht;
+  `--funktion` muss im Projekt eindeutig sein, sonst nennt `c2d` die Kandidaten.
+  `--einbetten` findet die Funktion auch in einer anderen Datei; `--struktur` ohne `--datei`
+  zeichnet die Datentypen aller Dateien
+- ohne `--format` schreibt `c2d` Mermaid
+- `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
+  Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
   als 1; `--alle-zweige` wertet nicht aus
 - `--funktion`: der Name allein (`starte`) oder mit Bereich (`antrieb::Motor::starte`)
@@ -156,6 +192,10 @@ c2d <datei> [--liste] [--funktion <name>] [--einbetten <name>]... [--struktur] [
 
 ```bash
 c2d beispiele\aufrufe.c --funktion main --einbetten summe --format drawio > main.drawio
+```
+
+```bash
+c2d beispiele\projekt --funktion main --einbetten motor_starte --format svg > main.svg
 ```
 
 ## Aufbau
@@ -170,7 +210,8 @@ Code2Diagram/
 ├── CMakeUserPresets.json       lokal: Pfade (nicht versioniert; Vorlage: *.example.json)
 ├── Solution.json               was gebaut wird, Name und Version (SSOT)
 ├── .sichttest/                 Projektdatei für den Tester
-├── beispiele/                  kleine Quelldateien zum Ausprobieren und für Tests
+├── beispiele/                  kleine Quelldateien zum Ausprobieren und für Tests;
+│                               projekt/: ein kleines Projekt mit code2diagram.json
 ├── docs/
 │   ├── Ernte_Vorgaenger.md     was aus den alten Anläufen übernommen ist und was nicht
 │   └── sichttest/              Sichttest-Listen
@@ -224,17 +265,30 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
 ## Was es noch nicht kann
 
 - **Vom Präprozessor nur die Bedingungen:** Makros werden im Code nicht ersetzt (`MAX(a, b)`
-  bleibt stehen), `#include` wird nicht verfolgt — eine Definition aus einem anderen Kopf kennt
-  die Auswertung nur, wenn man sie angibt. Die Varianten erscheinen nicht im Diagramm: gezeigt
-  wird die eine, die gilt.
+  bleibt stehen). `#include` wird nur im Projekt verfolgt, und nur für die `#define`: sie gelten
+  ab dem Anfang der einbindenden Datei, nicht erst ab der Zeile des `#include`; ein Kopf wird mit
+  seinen eigenen Definitionen gelesen, nicht mit denen, die vor dem `#include` galten. Ein
+  `#undef` im Kopf wirkt nicht auf die einbindende Datei. Ein Systemkopf (`<x.h>`), der nicht in
+  den Include-Pfaden liegt, bleibt ohne Meldung außen vor. Die Varianten erscheinen nicht im
+  Diagramm: gezeigt wird die eine, die gilt.
 - **C++-Schablonen** werden übergangen, nicht verstanden: `template<…>` vor einer Deklaration
   fällt weg, eine Spezialisierung heisst wie ihr Text. Überladene Funktionen: im Fenster steht
   die erste zur Wahl. Lambdas sind Text ihrer Anweisung, kein eigener Ablauf.
-- **Aufrufe werden am Namen erkannt**, ohne Typen: `a.starte()` führt zur ersten Funktion
-  `starte` der Datei, gleich welcher Klasse. Nur Funktionen derselben Datei.
-- **Die Anordnung ist einfach:** Schichten, Schwerpunkt, Kanten zurück außen herum. Kreuzungen
-  vermeidet sie nicht immer; ein Rahmen kann einen fremden Knoten derselben Schicht umfassen.
-- **Nur eine Datei:** keine Beziehungen über Dateien hinweg, kein Aufrufgraph.
+- **Aufrufe werden am Namen erkannt**, ohne Typen: `a.starte()` meint jede Funktion `starte`,
+  gleich welcher Klasse — gibt es mehrere, wählt man. Überladungen trennt nur ihr Ort, nicht die
+  Typen der Argumente. Über Dateien hinweg gilt: nicht `static`; welche Datei der Linker nähme,
+  weiß Code2Diagram nicht.
+- **Die Anordnung ist einfach:** Schichten, Schwerpunkt, Kanten zurück außen herum; eine Kante
+  über mehrere Schichten bekommt eine eigene Spalte; steht rechts neben der Quelle einer Kante
+  zurück noch ein Knoten, tritt sie unten aus. Kreuzungen vermeidet sie nicht immer; ein
+  Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
+  wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
+- **draw.io legt die Kanten selbst:** die Datei trägt die Orte der Knoten aus der Anordnung,
+  die Wege der Kanten nicht (`orthogonalEdgeStyle`).
+- **Im Projekt:** kein Aufrufgraph über das Projekt; die Datentypen zeigt das Fenster je Datei
+  (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
+  prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
+  (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
 - Ein Funktionszeiger als Glied gibt keine Beziehung zu den Typen seiner Parameter.
 - Code, den kein Weg erreicht (hinter `return`), steht als unverbundener Knoten im Diagramm.
 - Gebaut und geprüft ist nur Windows mit Release-clang. Die DOT-Ausgabe ist gegen erwarteten

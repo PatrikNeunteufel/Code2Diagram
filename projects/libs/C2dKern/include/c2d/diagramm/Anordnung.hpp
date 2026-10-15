@@ -7,9 +7,11 @@
  * Anordnung von hier. Ohne Qt: die Groesse eines Texts wird geschaetzt —
  * Zeichen mal `zeichenBreite` —, gedacht fuer eine Schrift fester Breite.
  *
- * Das Verfahren ist einfach gehalten: Schichten nach dem laengsten Weg,
- * Reihenfolge je Schicht nach dem Schwerpunkt der Nachbarn, Kanten zurueck
- * aussen herum. Es vermeidet nicht jede Kreuzung.
+ * Das Verfahren ist einfach gehalten: Schichten nach dem laengsten Weg; eine
+ * Kante ueber mehrere Schichten bekommt in jeder Schicht dazwischen einen
+ * Stuetzpunkt und damit eine eigene Spalte; Reihenfolge je Schicht nach dem
+ * Schwerpunkt der Nachbarn; Kanten zurueck aussen herum. Es vermeidet nicht
+ * jede Kreuzung.
  */
 #pragma once
 
@@ -53,6 +55,9 @@ struct FlussAnordnung
 {
     std::vector<Rechteck> knoten;    ///< je Knoten, in dessen Reihenfolge
     std::vector<Linienzug> kanten;   ///< je Kante: vom Rand der Quelle zum Rand des Ziels
+    /// je Kante: die Mitte ihrer Beschriftung — auf dem Stueck, das nur ihr gehoert,
+    /// nah an der Stelle, wo sie sich von den anderen Kanten ihrer Quelle trennt
+    std::vector<Punkt> beschriftungen;
     std::vector<Rechteck> gruppen;   ///< je Gruppe der Rahmen um alles, was in ihr liegt; oben Platz fuer den Titel
     double breite = 0;
     double hoehe = 0;
@@ -68,9 +73,6 @@ struct StrukturAnordnung
 
 [[nodiscard]] FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
-
-/// Wo die Beschriftung einer Kante steht: nah an ihrer Quelle, auf dem Linienzug.
-[[nodiscard]] Punkt beschriftungsOrt(const Linienzug& linie);
 
 /// Die Hoehe des Kopfs eines Kastens (Art und Name) bei diesen Optionen.
 [[nodiscard]] double kopfHoehe(const AnordnungOptionen& optionen);

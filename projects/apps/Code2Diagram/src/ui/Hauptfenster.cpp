@@ -1,6 +1,6 @@
 /**
  * @file Hauptfenster.cpp
- * @brief Das Fenster: Menue, Quelltext, Auswahl von Diagramm und Format, Vorschau mit Sprung und Einbettung
+ * @brief Das Fenster: Menue, Dateien, Quelltext, Auswahl von Diagramm und Format, Vorschau mit Sprung und Einbettung
  */
 #include "pch.h"
 #include "ui/Hauptfenster.hpp"
@@ -10,34 +10,48 @@
 #include "c2d/diagramm/Ableitung.hpp"
 #include "ui/Vorschau.hpp"
 
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
-#include <QLineEdit>
-#include <QRegularExpression>
+#include <QCursor>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTextBlock>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <filesystem>
+#include <map>
 
 namespace c2d::ui
 {
 
 namespace
 {
+
+using c2d::projekt::Fundstelle;
+using c2d::projekt::kKeine;
 
 /// Steht wortgleich in beispiele/ampel.c.
 constexpr std::string_view kBeispiel =
@@ -81,9 +95,21 @@ void ampel_takt(Ampel *ampel, uint16_t vergangen_ms)
 }
 )c";
 
+// Was ein Eintrag im Baum der Dateien ist (Daten unter kArt), und sein Pfad (unter kPfad).
+constexpr int kPfad = Qt::UserRole;
+constexpr int kArt = Qt::UserRole + 1;
+constexpr int kEintragDatei = 0;
+constexpr int kEintragOrdner = 1;
+constexpr int kEintragUebergangen = 2;
+
 QString ausStd(std::string_view text)
 {
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+}
+
+std::filesystem::path alsWeg(const QString& pfad)
+{
+    return std::filesystem::path(pfad.toStdU16String());
 }
 
 QPlainTextEdit* neuesTextfeld(QWidget* parent)
@@ -103,6 +129,11 @@ bool waehle(QComboBox* liste, const QString& daten)
     return true;
 }
 
+QString letzterName(const QString& pfad)
+{
+    return pfad.section(QLatin1Char('/'), -1);
+}
+
 }  // namespace
 
 Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
@@ -111,16 +142,23 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     resize(1300, 800);
 
     auto* teiler = new QSplitter(Qt::Horizontal, this);
-    auto* links = new QWidget(teiler);
+    auto* linksTeiler = new QSplitter(Qt::Vertical, teiler);
+    m_baum = new QTreeWidget(linksTeiler);
+    m_baum->setObjectName(QStringLiteral("dateien"));
+    m_baum->setHeaderHidden(true);
+    m_baum->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_baum->setToolTip(QStringLiteral("The files of the project. Right-click a folder to skip it."));
+    m_baum->hide();
+    auto* links = new QWidget(linksTeiler);
     m_quelle = neuesTextfeld(links);
     m_quelle->setObjectName(QStringLiteral("quelle"));
-    m_quelle->setPlaceholderText(QStringLiteral("Open a source file (File > Open...)"));
+    m_quelle->setPlaceholderText(QStringLiteral("Open a source file or a folder (File > Open...)"));
     m_definitionen = new QLineEdit(links);
     m_definitionen->setObjectName(QStringLiteral("definitionen"));
     m_definitionen->setPlaceholderText(QStringLiteral("NAME NAME=value ... (for #if / #ifdef)"));
     m_definitionen->setToolTip(QStringLiteral(
-        "What counts as defined when #if and #ifdef are evaluated, in addition to the #define of the file.\n"
-        "Separate with spaces. Press Enter to read the file again."));
+        "What counts as defined when #if and #ifdef are evaluated, in addition to the #define of the file\n"
+        "and to the project file. Separate with spaces. Press Enter to read again."));
     m_alleZweige = new QCheckBox(QStringLiteral("All #if branches"), links);
     m_alleZweige->setObjectName(QStringLiteral("alleZweige"));
     m_alleZweige->setToolTip(QStringLiteral("Do not evaluate #if and #ifdef: read every branch, one after the other."));
@@ -132,6 +170,10 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     linkeSpalte->setContentsMargins(0, 0, 0, 0);
     linkeSpalte->addWidget(m_quelle, 1);
     linkeSpalte->addLayout(lesen);
+    linksTeiler->addWidget(m_baum);
+    linksTeiler->addWidget(links);
+    linksTeiler->setStretchFactor(0, 1);
+    linksTeiler->setStretchFactor(1, 3);
     connect(m_definitionen, &QLineEdit::editingFinished, this, [this] {
         // das Feld meldet sich auch, wenn es nur verlassen wird: neu lesen nur, wenn sich etwas geaendert hat
         if (m_definitionen->text() != m_gelesenMit) liesNeu();
@@ -140,6 +182,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         m_definitionen->setEnabled(!alle);
         liesNeu();
     });
+    connect(m_baum, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* eintrag) {
+        if (eintrag != nullptr && eintrag->data(0, kArt).toInt() == kEintragDatei)
+            waehleDatei(eintrag->data(0, kPfad).toString());
+    });
+    connect(m_baum, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& ort) { baumMenue(ort); });
 
     auto* rechts = new QWidget(teiler);
     m_auswahl = new QComboBox(rechts);
@@ -174,16 +221,16 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     spalte->addLayout(leiste);
     spalte->addWidget(m_ansichten, 1);
 
-    teiler->addWidget(links);
+    teiler->addWidget(linksTeiler);
     teiler->addWidget(rechts);
     teiler->setStretchFactor(0, 2);
     teiler->setStretchFactor(1, 3);
     setCentralWidget(teiler);
 
     connect(m_auswahl, &QComboBox::currentIndexChanged, this, [this] {
-        // das bisherige Diagramm merken — ausser der Wechsel ist selbst ein Schritt zurueck
+        // das bisherige Diagramm merken — ausser der Wechsel ist selbst ein Schritt zurueck oder ein Sprung
         if (!m_ohneVerlauf && !m_gezeigt.isEmpty() && m_gezeigt != m_auswahl->currentData().toString())
-            m_verlauf << m_gezeigt;
+            m_verlauf << Stelle{m_datei, m_gezeigt};
         baueNeu();
     });
     for (QComboBox* liste : {m_format, m_richtung})
@@ -191,10 +238,24 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
 
     m_vorschau->beiDoppelklick = [this](c2d::diagramm::KnotenId knoten) {
         if (knoten >= m_fluss.knoten().size()) return;
-        if (const c2d::modell::Funktion* f = ziel(knoten))
-            waehleDiagramm(QString::fromStdString(f->vollerName()));
-        else
-            zeigeZeile(m_fluss.knoten()[knoten].quellZeile);
+        const std::vector<Fundstelle> ziele = zieleVon(knoten);
+        if (ziele.size() == 1)
+        {
+            gehe(ziele.front());
+            return;
+        }
+        if (ziele.empty())
+        {
+            zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
+            return;
+        }
+        // mehr als eine Funktion kommt in Frage: nicht still eine waehlen
+        statusBar()->showMessage(QStringLiteral("The call is ambiguous: %1 functions qualify").arg(ziele.size()), 5000);
+        QMenu wahl(this);
+        wahl.addSection(QStringLiteral("Which function?"));
+        for (const Fundstelle& z : ziele)
+            wahl.addAction(beschreibe(z), this, [this, z] { gehe(z); });
+        wahl.exec(QCursor::pos());
     };
     m_vorschau->beiKontext = [this](c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort) {
         kontextMenue(knoten, gruppe, ort);
@@ -208,10 +269,24 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         QString fehler;
         if (!oeffne(pfad, &fehler)) QMessageBox::warning(this, windowTitle(), fehler);
     });
+    datei->addAction(QStringLiteral("Open &folder..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O), this, [this] {
+        const QString pfad = QFileDialog::getExistingDirectory(this, QStringLiteral("Open a folder as project"));
+        if (pfad.isEmpty()) return;
+        QString fehler;
+        if (!oeffneOrdner(pfad, &fehler)) QMessageBox::warning(this, windowTitle(), fehler);
+    });
     datei->addAction(QStringLiteral("&Save diagram as..."), QKeySequence::Save, this,
                      [this] { speichereUnter(); });
     datei->addSeparator();
     datei->addAction(QStringLiteral("E&xit"), QKeySequence::Quit, this, &QWidget::close);
+
+    QMenu* projekt = menuBar()->addMenu(QStringLiteral("&Project"));
+    m_projektdateiAktion =
+        projekt->addAction(QStringLiteral("&Edit project file..."), this, [this] { bearbeiteProjektdatei(); });
+    m_meldungenAktion =
+        projekt->addAction(QStringLiteral("Show project &messages"), this, [this] { zeigeProjektMeldungen(); });
+    m_projektdateiAktion->setEnabled(false);
+    m_meldungenAktion->setEnabled(false);
 
     QMenu* diagramm = menuBar()->addMenu(QStringLiteral("&Diagram"));
     diagramm->addAction(QStringLiteral("&Back"), QKeySequence(Qt::ALT | Qt::Key_Left), this, [this] {
@@ -237,8 +312,13 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     statusBar()->showMessage(QStringLiteral("Ready"));
 }
 
+// ---------------------------------------------------------------------------
+// Lesen: eine Datei, ein Ordner
+// ---------------------------------------------------------------------------
+
 bool Hauptfenster::oeffne(const QString& pfad, QString* fehler)
 {
+    if (QFileInfo(pfad).isDir()) return oeffneOrdner(pfad, fehler);
     QFile datei(pfad);
     if (!datei.open(QIODevice::ReadOnly))
     {
@@ -250,18 +330,50 @@ bool Hauptfenster::oeffne(const QString& pfad, QString* fehler)
     return true;
 }
 
+bool Hauptfenster::oeffneOrdner(const QString& pfad, QString* fehler)
+{
+    const QFileInfo info(pfad);
+    if (!info.isDir())
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("Not a folder: %1").arg(pfad);
+        return false;
+    }
+    m_ordner = info.absoluteFilePath();
+    m_einzelText.clear();
+    m_einzelName.clear();
+    liesEin();
+    // zuerst eine Datei, die etwas zu zeichnen hat
+    std::size_t erste = 0;
+    for (std::size_t i = 0; i < m_projekt.dateien.size(); ++i)
+    {
+        const auto& fs = m_projekt.dateien[i].ergebnis.einheit.funktionen;
+        if (std::any_of(fs.begin(), fs.end(), [](const c2d::modell::Funktion& f) { return f.rumpf != nullptr; }))
+        {
+            erste = i;
+            break;
+        }
+    }
+    zeigeDatei(erste);
+    return true;
+}
+
 void Hauptfenster::zeige(const QString& quelltext, const QString& name)
 {
-    m_name = name;
-    m_quelle->setPlainText(quelltext);
-    m_quelle->setExtraSelections({});
+    m_ordner.clear();
+    m_einzelText = quelltext;
+    m_einzelName = name;
+    liesEin();
+    zeigeDatei(0);
+}
 
-    const std::string dateiname = name.toStdString();
-    const std::string inhalt = quelltext.toStdString();
-    const c2d::sprache::Sprache* sprache = c2d::sprache::spracheFuer(dateiname, inhalt);
-    const bool ersatz = sprache == nullptr;
-    if (ersatz) sprache = &c2d::sprache::c();
-    c2d::sprache::LeseOptionen optionen;
+void Hauptfenster::zeigeBeispiel()
+{
+    zeige(ausStd(kBeispiel), QStringLiteral("ampel.c"));
+}
+
+void Hauptfenster::liesEin()
+{
+    c2d::projekt::ProjektOptionen optionen;
     optionen.alleZweige = m_alleZweige->isChecked();
     m_gelesenMit = m_definitionen->text();
     static const QRegularExpression kTrenner(QStringLiteral("[\\s,;]+"));
@@ -270,39 +382,156 @@ void Hauptfenster::zeige(const QString& quelltext, const QString& name)
         c2d::sprache::Definition d = c2d::sprache::definitionAus(stueck.toStdString());
         if (!d.name.empty()) optionen.definitionen.push_back(std::move(d));
     }
-    m_ergebnis = sprache->lies(inhalt, dateiname, optionen);
-    const c2d::modell::Einheit& einheit = m_ergebnis.einheit;
+    if (m_ordner.isEmpty())
+        m_projekt = c2d::projekt::liesText(m_einzelText.toStdString(), m_einzelName.toStdString(), optionen);
+    else
+        m_projekt = c2d::projekt::liesOrdner(alsWeg(m_ordner), optionen);
 
-    int funktionen = 0;
+    // was vorher galt, verweist nicht mehr sicher in dieses Projekt
+    m_datei = kKeine;
+    m_quelleZeigt = kKeine;
+    m_gezeigt.clear();
+    m_verlauf.clear();
+    m_projektdateiAktion->setEnabled(istProjekt());
+    m_meldungenAktion->setEnabled(istProjekt());
+    fuelleBaum();
+}
+
+void Hauptfenster::liesNeu()
+{
+    if (m_projekt.dateien.empty() && m_ordner.isEmpty()) return;
+    const QString datei = this->datei();
+    const QString gezeigt = m_gezeigt;
+    liesEin();
+    const std::size_t index = m_projekt.finde(datei.toStdString());
+    zeigeDatei(index == kKeine ? 0 : index);
+    // das Diagramm von vorher wieder zeigen, wenn es das noch gibt — ohne Eintrag im Verlauf
+    m_ohneVerlauf = true;
+    waehle(m_auswahl, gezeigt);
+    m_ohneVerlauf = false;
+}
+
+void Hauptfenster::zeigeDatei(std::size_t index)
+{
+    if (!m_ohneVerlauf && !m_gezeigt.isEmpty() && index != m_datei) m_verlauf << Stelle{m_datei, m_gezeigt};
+    if (index >= m_projekt.dateien.size())
+    {
+        // ein Ordner ohne Quelldateien
+        m_datei = kKeine;
+        m_quelleZeigt = kKeine;
+        m_quelle->clear();
+        {
+            const QSignalBlocker ruhe(m_auswahl);
+            m_auswahl->clear();
+        }
+        baueNeu();
+        zeigeLage();
+        return;
+    }
+    m_datei = index;
+    const c2d::projekt::Datei& d = m_projekt.dateien[index];
+    m_quelle->setPlainText(QString::fromUtf8(d.text));
+    m_quelle->setExtraSelections({});
+    m_quelleZeigt = index;
+
     {
         const QSignalBlocker ruhe(m_auswahl);
         m_auswahl->clear();
+        const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
         for (const c2d::modell::Funktion& f : einheit.funktionen)
         {
             // mit Bereich (`Klasse::methode`); von ueberladenen Funktionen steht die erste zur Wahl
             const QString fname = QString::fromStdString(f.vollerName());
             if (!f.rumpf || m_auswahl->findData(fname) >= 0) continue;
             m_auswahl->addItem(fname + QStringLiteral("()"), fname);
-            ++funktionen;
         }
         if (!einheit.typen.empty())
             m_auswahl->addItem(QStringLiteral("Data types (%1)").arg(einheit.typen.size()),
                                QString::fromLatin1(kDatentypen));
     }
-    m_verlauf.clear();
-    baueNeu();
-
-    setWindowTitle(QStringLiteral("%1 - %2").arg(name, ausStd(appName())));
-    QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
-                       .arg(name, ausStd(sprache->name()),
-                            ersatz ? QStringLiteral(" (no reader for this file type)") : QString())
-                       .arg(funktionen)
-                       .arg(einheit.typen.size());
-    if (!m_ergebnis.meldungen.empty())
     {
-        const c2d::quelle::Meldung& erste = m_ergebnis.meldungen.front();
+        // im Baum die Datei markieren, ohne dass er sie noch einmal waehlt
+        const QSignalBlocker ruhe(m_baum);
+        const QString pfad = ausStd(d.pfad);
+        for (QTreeWidgetItemIterator it(m_baum); *it != nullptr; ++it)
+            if ((*it)->data(0, kArt).toInt() == kEintragDatei && (*it)->data(0, kPfad).toString() == pfad)
+            {
+                m_baum->setCurrentItem(*it);
+                break;
+            }
+    }
+    baueNeu();
+    zeigeLage();
+}
+
+void Hauptfenster::fuelleBaum()
+{
+    const QSignalBlocker ruhe(m_baum);
+    m_baum->clear();
+    m_baum->setVisible(istProjekt());
+    if (!istProjekt()) return;
+
+    std::map<QString, QTreeWidgetItem*> ordner;
+    const auto ordnerFuer = [&](const QString& pfad, auto& selbst) -> QTreeWidgetItem* {
+        if (pfad.isEmpty()) return m_baum->invisibleRootItem();
+        if (const auto it = ordner.find(pfad); it != ordner.end()) return it->second;
+        const int strich = pfad.lastIndexOf(QLatin1Char('/'));
+        QTreeWidgetItem* oben = selbst(strich < 0 ? QString() : pfad.left(strich), selbst);
+        auto* eintrag = new QTreeWidgetItem(oben, {letzterName(pfad)});
+        eintrag->setData(0, kPfad, pfad);
+        eintrag->setData(0, kArt, kEintragOrdner);
+        ordner[pfad] = eintrag;
+        return eintrag;
+    };
+    for (const c2d::projekt::Datei& d : m_projekt.dateien)
+    {
+        const QString pfad = ausStd(d.pfad);
+        const int strich = pfad.lastIndexOf(QLatin1Char('/'));
+        QTreeWidgetItem* oben = ordnerFuer(strich < 0 ? QString() : pfad.left(strich), ordnerFuer);
+        auto* eintrag = new QTreeWidgetItem(oben, {letzterName(pfad)});
+        eintrag->setData(0, kPfad, pfad);
+        eintrag->setData(0, kArt, kEintragDatei);
+        if (!d.ergebnis.meldungen.empty())
+            eintrag->setToolTip(0, QStringLiteral("%1 message(s) from reading").arg(d.ergebnis.meldungen.size()));
+    }
+    // was uebergangen wurde, steht grau dabei — es laesst sich wieder einlesen
+    for (const std::string& u : m_projekt.uebergangen)
+    {
+        const QString pfad = ausStd(u);
+        const int strich = pfad.lastIndexOf(QLatin1Char('/'));
+        QTreeWidgetItem* oben = ordnerFuer(strich < 0 ? QString() : pfad.left(strich), ordnerFuer);
+        auto* eintrag = new QTreeWidgetItem(oben, {letzterName(pfad) + QStringLiteral("  (skipped)")});
+        eintrag->setData(0, kPfad, pfad);
+        eintrag->setData(0, kArt, kEintragUebergangen);
+        eintrag->setForeground(0, palette().color(QPalette::Disabled, QPalette::Text));
+    }
+    if (m_projekt.dateien.size() <= 100) m_baum->expandAll();
+    else m_baum->expandToDepth(0);
+}
+
+void Hauptfenster::zeigeLage()
+{
+    if (m_datei >= m_projekt.dateien.size())
+    {
+        setWindowTitle(QStringLiteral("%1 - %2").arg(letzterName(m_ordner), ausStd(appName())));
+        statusBar()->showMessage(QStringLiteral("%1: no source files (%2 folder(s) skipped)")
+                                     .arg(m_ordner)
+                                     .arg(m_projekt.uebergangen.size()));
+        return;
+    }
+    const c2d::projekt::Datei& d = m_projekt.dateien[m_datei];
+    const QString name = istProjekt() ? ausStd(d.pfad) : m_einzelName;
+    const bool ersatz = c2d::sprache::spracheFuer(letzterName(name).toStdString()) == nullptr;
+    QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
+                       .arg(name, ausStd(d.sprache->name()),
+                            ersatz ? QStringLiteral(" (no reader for this file type)") : QString())
+                       .arg(m_auswahl->count() - (d.ergebnis.einheit.typen.empty() ? 0 : 1))
+                       .arg(d.ergebnis.einheit.typen.size());
+    if (!d.ergebnis.meldungen.empty())
+    {
+        const c2d::quelle::Meldung& erste = d.ergebnis.meldungen.front();
         lage += QStringLiteral(" - %1 message(s), first in line %2: %3")
-                    .arg(m_ergebnis.meldungen.size())
+                    .arg(d.ergebnis.meldungen.size())
                     .arg(erste.ort.zeile)
                     .arg(QString::fromStdString(erste.text));
     }
@@ -312,18 +541,20 @@ void Hauptfenster::zeige(const QString& quelltext, const QString& name)
         lage += QStringLiteral(" - not defined in #if: %1%2")
                     .arg(offen.mid(0, 6).join(QStringLiteral(", ")), offen.size() > 6 ? QStringLiteral(", ...") : QString());
     }
+    if (istProjekt())
+    {
+        lage = QStringLiteral("%1: %2 file(s), %3 function(s), %4 folder(s) skipped, %5 project message(s) | %6")
+                   .arg(letzterName(m_ordner))
+                   .arg(m_projekt.dateien.size())
+                   .arg(m_projekt.funktionen())
+                   .arg(m_projekt.uebergangen.size())
+                   .arg(m_projekt.meldungen.size())
+                   .arg(lage);
+        setWindowTitle(QStringLiteral("%1 / %2 - %3").arg(letzterName(m_ordner), name, ausStd(appName())));
+    }
+    else
+        setWindowTitle(QStringLiteral("%1 - %2").arg(name, ausStd(appName())));
     statusBar()->showMessage(lage);
-}
-
-void Hauptfenster::liesNeu()
-{
-    if (m_name.isEmpty()) return;
-    const QString gezeigt = m_gezeigt;
-    zeige(m_quelle->toPlainText(), m_name);
-    // das Diagramm von vorher wieder zeigen, wenn es das noch gibt — ohne Eintrag im Verlauf
-    m_ohneVerlauf = true;
-    waehle(m_auswahl, gezeigt);
-    m_ohneVerlauf = false;
 }
 
 void Hauptfenster::setzeDefinitionen(const QString& definitionen)
@@ -341,14 +572,258 @@ void Hauptfenster::setzeAlleZweige(bool alle)
 QStringList Hauptfenster::unbekannteNamen() const
 {
     QStringList namen;
-    for (const std::string& name : m_ergebnis.unbekannteNamen) namen << QString::fromStdString(name);
+    if (m_datei >= m_projekt.dateien.size()) return namen;
+    for (const std::string& name : m_projekt.dateien[m_datei].ergebnis.unbekannteNamen)
+        namen << QString::fromStdString(name);
     return namen;
 }
 
-void Hauptfenster::zeigeBeispiel()
+// ---------------------------------------------------------------------------
+// Das Projekt: Dateien, Projektdatei, uebergangene Ordner
+// ---------------------------------------------------------------------------
+
+bool Hauptfenster::istProjekt() const
 {
-    zeige(ausStd(kBeispiel), QStringLiteral("ampel.c"));
+    return !m_ordner.isEmpty();
 }
+
+QStringList Hauptfenster::dateien() const
+{
+    QStringList pfade;
+    for (const c2d::projekt::Datei& d : m_projekt.dateien) pfade << ausStd(d.pfad);
+    return pfade;
+}
+
+QString Hauptfenster::datei() const
+{
+    return m_datei < m_projekt.dateien.size() ? ausStd(m_projekt.dateien[m_datei].pfad) : QString();
+}
+
+bool Hauptfenster::waehleDatei(const QString& pfad)
+{
+    const std::size_t index = m_projekt.finde(pfad.toStdString());
+    if (index == kKeine) return false;
+    if (index != m_datei) zeigeDatei(index);
+    return true;
+}
+
+QStringList Hauptfenster::uebergangeneOrdner() const
+{
+    QStringList ordner;
+    for (const std::string& u : m_projekt.uebergangen) ordner << ausStd(u);
+    return ordner;
+}
+
+QStringList Hauptfenster::projektMeldungen() const
+{
+    QStringList zeilen;
+    for (const c2d::projekt::Projektmeldung& m : m_projekt.meldungen)
+    {
+        QString ort = m.pfad.empty() ? m_ordner : ausStd(m.pfad);
+        if (m.meldung.ort.zeile > 0) ort += QStringLiteral(":%1").arg(m.meldung.ort.zeile);
+        zeilen << QStringLiteral("%1: %2").arg(ort, QString::fromStdString(m.meldung.text));
+    }
+    return zeilen;
+}
+
+QString Hauptfenster::projektdateiPfad() const
+{
+    return QDir(m_ordner).filePath(ausStd(c2d::projekt::kProjektdatei));
+}
+
+QString Hauptfenster::projektdateiText() const
+{
+    if (!istProjekt()) return {};
+    QFile datei(projektdateiPfad());
+    if (datei.open(QIODevice::ReadOnly)) return QString::fromUtf8(datei.readAll());
+    // noch keine: ein Vorschlag, `uebergehen` aus der .gitignore
+    c2d::projekt::Projektdatei vorschlag;
+    QFile gitignore(QDir(m_ordner).filePath(QStringLiteral(".gitignore")));
+    if (gitignore.open(QIODevice::ReadOnly))
+        vorschlag.uebergehen = c2d::projekt::ausGitignore(gitignore.readAll().toStdString()).uebergehen;
+    return ausStd(c2d::projekt::schreibe(vorschlag));
+}
+
+bool Hauptfenster::speichereProjektdatei(const QString& text, QString* fehler)
+{
+    if (!istProjekt())
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("No folder is open");
+        return false;
+    }
+    std::vector<c2d::quelle::Meldung> meldungen;
+    (void)c2d::projekt::liesProjektdatei(text.toStdString(), meldungen);
+    if (!meldungen.empty())
+    {
+        if (fehler != nullptr)
+        {
+            QStringList zeilen;
+            for (const c2d::quelle::Meldung& m : meldungen)
+                zeilen << QStringLiteral("Line %1, column %2: %3")
+                              .arg(m.ort.zeile)
+                              .arg(m.ort.spalte)
+                              .arg(QString::fromStdString(m.text));
+            *fehler = zeilen.join(QLatin1Char('\n'));
+        }
+        return false;
+    }
+    QFile datei(projektdateiPfad());
+    if (!datei.open(QIODevice::WriteOnly | QIODevice::Truncate) || datei.write(text.toUtf8()) < 0)
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("Cannot write %1: %2").arg(projektdateiPfad(), datei.errorString());
+        return false;
+    }
+    datei.close();
+    liesNeu();
+    return true;
+}
+
+std::optional<c2d::projekt::Projektdatei> Hauptfenster::einstellungenZumAendern(QString* fehler) const
+{
+    std::vector<c2d::quelle::Meldung> meldungen;
+    c2d::projekt::Projektdatei p = c2d::projekt::liesProjektdatei(projektdateiText().toStdString(), meldungen);
+    if (meldungen.empty()) return p;
+    // neu geschrieben ginge verloren, was nicht verstanden wurde
+    if (fehler != nullptr)
+        *fehler = QStringLiteral("The project file has %1 problem(s); fix it first (Project > Edit project file...)")
+                      .arg(meldungen.size());
+    return std::nullopt;
+}
+
+bool Hauptfenster::schreibeProjektdatei(const c2d::projekt::Projektdatei& datei, QString* fehler)
+{
+    return speichereProjektdatei(ausStd(c2d::projekt::schreibe(datei)), fehler);
+}
+
+bool Hauptfenster::uebergeheOrdner(const QString& ordner, QString* fehler)
+{
+    if (!istProjekt())
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("No folder is open");
+        return false;
+    }
+    std::optional<c2d::projekt::Projektdatei> p = einstellungenZumAendern(fehler);
+    if (!p) return false;
+    const std::string eintrag = ordner.toStdString();
+    if (std::find(p->uebergehen.begin(), p->uebergehen.end(), eintrag) == p->uebergehen.end())
+        p->uebergehen.push_back(eintrag);
+    return schreibeProjektdatei(*p, fehler);
+}
+
+bool Hauptfenster::liesOrdnerWieder(const QString& ordner, QString* fehler)
+{
+    std::optional<c2d::projekt::Projektdatei> p = istProjekt() ? einstellungenZumAendern(fehler) : std::nullopt;
+    if (!p) return false;
+    if (std::erase(p->uebergehen, ordner.toStdString()) == 0)
+    {
+        if (fehler != nullptr)
+            *fehler = QStringLiteral("'%1' is not listed in \"uebergehen\" - it is always skipped, or by a pattern").arg(ordner);
+        return false;
+    }
+    return schreibeProjektdatei(*p, fehler);
+}
+
+void Hauptfenster::bearbeiteProjektdatei()
+{
+    if (!istProjekt()) return;
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Project file"));
+    dialog.resize(700, 520);
+    const bool gibtEs = QFileInfo::exists(projektdateiPfad());
+    QString hinweis = gibtEs ? QStringLiteral("%1").arg(projektdateiPfad())
+                             : QStringLiteral("There is no project file yet. This is a suggestion for %1; "
+                                              "\"uebergehen\" comes from the .gitignore of the folder.")
+                                   .arg(projektdateiPfad());
+    if (!gibtEs)
+    {
+        QFile gitignore(QDir(m_ordner).filePath(QStringLiteral(".gitignore")));
+        if (gitignore.open(QIODevice::ReadOnly))
+        {
+            const c2d::projekt::Vorschlag v = c2d::projekt::ausGitignore(gitignore.readAll().toStdString());
+            QStringList nicht;
+            for (const std::string& z : v.nichtUebernommen) nicht << ausStd(z);
+            if (!nicht.isEmpty())
+                hinweis += QStringLiteral("\nNot taken from .gitignore (not a folder): %1").arg(nicht.join(QStringLiteral(", ")));
+        }
+    }
+    auto* oben = new QLabel(hinweis, &dialog);
+    oben->setWordWrap(true);
+    auto* feld = new QPlainTextEdit(projektdateiText(), &dialog);
+    feld->setObjectName(QStringLiteral("projektdatei"));
+    feld->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    auto* fehlerZeile = new QLabel(&dialog);
+    fehlerZeile->setWordWrap(true);
+    fehlerZeile->setStyleSheet(QStringLiteral("color: #c0392b;"));
+    fehlerZeile->hide();
+    auto* knoepfe = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    auto* spalte = new QVBoxLayout(&dialog);
+    spalte->addWidget(oben);
+    spalte->addWidget(feld, 1);
+    spalte->addWidget(fehlerZeile);
+    spalte->addWidget(knoepfe);
+    connect(knoepfe, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(knoepfe, &QDialogButtonBox::accepted, &dialog, [&] {
+        QString fehler;
+        if (speichereProjektdatei(feld->toPlainText(), &fehler))
+        {
+            dialog.accept();
+            return;
+        }
+        fehlerZeile->setText(fehler);
+        fehlerZeile->show();
+    });
+    dialog.exec();
+}
+
+void Hauptfenster::zeigeProjektMeldungen()
+{
+    const QStringList zeilen = projektMeldungen();
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("Project messages"));
+    box.setText(zeilen.isEmpty() ? QStringLiteral("No messages.")
+                                 : QStringLiteral("%1 message(s) about the project - folders, project file, headers.")
+                                       .arg(zeilen.size()));
+    if (!zeilen.isEmpty()) box.setDetailedText(zeilen.join(QLatin1Char('\n')));
+    box.exec();
+}
+
+void Hauptfenster::baumMenue(const QPoint& ort)
+{
+    QTreeWidgetItem* eintrag = m_baum->itemAt(ort);
+    if (eintrag == nullptr) return;
+    const QString pfad = eintrag->data(0, kPfad).toString();
+    const int art = eintrag->data(0, kArt).toInt();
+    QMenu menue(this);
+    const auto melde = [this](bool gelungen, const QString& fehler) {
+        if (!gelungen) QMessageBox::warning(this, windowTitle(), fehler);
+    };
+    if (art == kEintragOrdner)
+        menue.addAction(QStringLiteral("Skip this folder (project file)"), this, [this, pfad, melde] {
+            QString fehler;
+            melde(uebergeheOrdner(pfad, &fehler), fehler);
+        });
+    else if (art == kEintragUebergangen)
+    {
+        const bool eingetragen = std::find(m_projekt.einstellungen.uebergehen.begin(), m_projekt.einstellungen.uebergehen.end(),
+                                           pfad.toStdString()) != m_projekt.einstellungen.uebergehen.end();
+        if (eingetragen)
+            menue.addAction(QStringLiteral("Read this folder again (project file)"), this, [this, pfad, melde] {
+                QString fehler;
+                melde(liesOrdnerWieder(pfad, &fehler), fehler);
+            });
+        else if (c2d::projekt::wirdImmerUebergangen(letzterName(pfad).toStdString()))
+            menue.addAction(QStringLiteral("Always skipped (starts with '.', or out, build, node_modules)"))->setEnabled(false);
+        else
+            menue.addAction(QStringLiteral("Skipped by a pattern - see Project > Edit project file..."))->setEnabled(false);
+    }
+    else
+        return;
+    menue.exec(m_baum->viewport()->mapToGlobal(ort));
+}
+
+// ---------------------------------------------------------------------------
+// Diagramme: waehlen, springen, einbetten
+// ---------------------------------------------------------------------------
 
 QStringList Hauptfenster::diagramme() const
 {
@@ -370,9 +845,10 @@ QString Hauptfenster::diagramm() const
 bool Hauptfenster::zurueck()
 {
     if (m_verlauf.isEmpty()) return false;
-    const QString davor = m_verlauf.takeLast();
+    const Stelle davor = m_verlauf.takeLast();
     m_ohneVerlauf = true;
-    const bool gefunden = waehle(m_auswahl, davor);
+    if (davor.datei != m_datei) zeigeDatei(davor.datei);
+    const bool gefunden = waehle(m_auswahl, davor.diagramm);
     m_ohneVerlauf = false;
     return gefunden;
 }
@@ -393,26 +869,76 @@ bool Hauptfenster::waehleAnsicht(const QString& name)
     return true;
 }
 
-const c2d::modell::Funktion* Hauptfenster::funktion(const std::string& name) const
+std::size_t Hauptfenster::dateiVon(c2d::diagramm::KnotenId knoten) const
 {
-    for (const c2d::modell::Funktion& f : m_ergebnis.einheit.funktionen)
-        if (f.rumpf && f.name == name) return &f;
-    return nullptr;
+    if (knoten < m_fluss.knoten().size())
+    {
+        const std::size_t gruppe = m_fluss.knoten()[knoten].gruppe;
+        if (gruppe < m_fluss.gruppen().size() && !m_fluss.gruppen()[gruppe].herkunft.empty())
+            if (const std::size_t d = m_projekt.finde(m_fluss.gruppen()[gruppe].herkunft); d != kKeine) return d;
+    }
+    return m_datei;
 }
 
-const c2d::modell::Funktion* Hauptfenster::ziel(c2d::diagramm::KnotenId knoten) const
+std::vector<Fundstelle> Hauptfenster::zieleVon(c2d::diagramm::KnotenId knoten) const
 {
-    if (knoten >= m_fluss.knoten().size()) return nullptr;
-    for (const std::string& name : m_fluss.knoten()[knoten].aufrufe)
-        if (const c2d::modell::Funktion* f = funktion(name)) return f;
-    return nullptr;
+    std::vector<Fundstelle> aus;
+    if (knoten >= m_fluss.knoten().size()) return aus;
+    const std::size_t von = dateiVon(knoten);
+    for (const std::string& aufruf : m_fluss.knoten()[knoten].aufrufe)
+        for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, aufruf))
+            // find_if: std::find nimmt fuer diese Struktur einen vektorisierten Weg, den MSVC 14.51 nicht uebersetzt
+            if (std::find_if(aus.begin(), aus.end(), [&](const Fundstelle& a) { return a == f; }) == aus.end())
+                aus.push_back(f);
+    return aus;
 }
 
-bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const c2d::modell::Funktion& gerufen)
+QString Hauptfenster::beschreibe(const Fundstelle& stelle) const
+{
+    const c2d::modell::Funktion& f = c2d::projekt::funktion(m_projekt, stelle);
+    return QStringLiteral("%1() - %2:%3")
+        .arg(QString::fromStdString(f.vollerName()), ausStd(m_projekt.dateien[stelle.datei].pfad))
+        .arg(f.zeile);
+}
+
+QStringList Hauptfenster::ziele(const QString& aufruf) const
+{
+    QStringList aus;
+    for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, m_datei, aufruf.toStdString()))
+        aus << QStringLiteral("%1:%2").arg(ausStd(m_projekt.dateien[f.datei].pfad)).arg(c2d::projekt::funktion(m_projekt, f).zeile);
+    return aus;
+}
+
+bool Hauptfenster::springe(const QString& aufruf, int wahl)
+{
+    const std::vector<Fundstelle> k = c2d::projekt::kandidaten(m_projekt, m_datei, aufruf.toStdString());
+    if (wahl < 0 && k.size() == 1) wahl = 0;
+    if (wahl < 0 || static_cast<std::size_t>(wahl) >= k.size()) return false;
+    gehe(k[static_cast<std::size_t>(wahl)]);
+    return true;
+}
+
+void Hauptfenster::gehe(const Fundstelle& stelle)
+{
+    const QString name = QString::fromStdString(c2d::projekt::funktion(m_projekt, stelle).vollerName());
+    if (stelle.datei == m_datei)
+    {
+        waehleDiagramm(name);
+        return;
+    }
+    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt};
+    m_ohneVerlauf = true;
+    zeigeDatei(stelle.datei);
+    waehle(m_auswahl, name);
+    m_ohneVerlauf = false;
+}
+
+bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const Fundstelle& gerufen)
 {
     using namespace c2d::diagramm;
-    Flussdiagramm neu =
-        c2d::diagramm::betteEin(m_fluss, knoten, fasseAnweisungsfolgenZusammen(flussVon(gerufen)), gerufen.signatur());
+    const c2d::modell::Funktion& f = c2d::projekt::funktion(m_projekt, gerufen);
+    Flussdiagramm neu = c2d::diagramm::betteEin(m_fluss, knoten, fasseAnweisungsfolgenZusammen(flussVon(f)), f.signatur(),
+                                                m_projekt.dateien[gerufen.datei].pfad);
     if (neu.gruppen().size() == m_fluss.gruppen().size()) return false;
     m_fluss = std::move(neu);
     zeichne();
@@ -422,13 +948,17 @@ bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const c2d::modell::F
 bool Hauptfenster::betteEin(const QString& funktionName)
 {
     const std::string name = funktionName.toStdString();
-    const c2d::modell::Funktion* gerufen = funktion(name);
-    if (gerufen == nullptr) return false;
     for (c2d::diagramm::KnotenId i = 0; i < m_fluss.knoten().size(); ++i)
-    {
-        const std::vector<std::string>& aufrufe = m_fluss.knoten()[i].aufrufe;
-        if (std::find(aufrufe.begin(), aufrufe.end(), name) != aufrufe.end() && betteEin(i, *gerufen)) return true;
-    }
+        for (const std::string& aufruf : m_fluss.knoten()[i].aufrufe)
+        {
+            std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, dateiVon(i), aufruf);
+            std::erase_if(gemeint, [&](const Fundstelle& f) {
+                const c2d::modell::Funktion& g = c2d::projekt::funktion(m_projekt, f);
+                return g.name != name && g.vollerName() != name;
+            });
+            // eindeutig muss es sein — sonst waehlt man im Kontextmenue
+            if (gemeint.size() == 1 && betteEin(i, gemeint.front())) return true;
+        }
     return false;
 }
 
@@ -459,9 +989,14 @@ int Hauptfenster::vorschauFormen() const
     return m_vorschau->formen();
 }
 
+QImage Hauptfenster::vorschauBild() const
+{
+    return m_vorschau->alsBild();
+}
+
 int Hauptfenster::meldungen() const
 {
-    return static_cast<int>(m_ergebnis.meldungen.size());
+    return m_datei < m_projekt.dateien.size() ? static_cast<int>(m_projekt.dateien[m_datei].ergebnis.meldungen.size()) : 0;
 }
 
 QString Hauptfenster::dateiFilter()
@@ -482,10 +1017,10 @@ void Hauptfenster::baueNeu()
     using namespace c2d::diagramm;
     m_gezeigt = m_auswahl->currentData().toString();
     m_fluss = Flussdiagramm();
-    if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen))
+    if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
     {
         const std::string name = m_gezeigt.toStdString();
-        for (const c2d::modell::Funktion& f : m_ergebnis.einheit.funktionen)
+        for (const c2d::modell::Funktion& f : m_projekt.dateien[m_datei].ergebnis.einheit.funktionen)
         {
             if (!f.rumpf || f.vollerName() != name) continue;
             m_fluss = fasseAnweisungsfolgenZusammen(flussVon(f));
@@ -500,7 +1035,7 @@ void Hauptfenster::zeichne()
     using namespace c2d::diagramm;
 
     const c2d::ausgabe::Format* format = c2d::ausgabe::format(m_format->currentData().toString().toStdString());
-    if (m_gezeigt.isEmpty() || format == nullptr)
+    if (m_gezeigt.isEmpty() || format == nullptr || m_datei >= m_projekt.dateien.size())
     {
         m_text->clear();
         m_vorschau->leere();
@@ -512,14 +1047,14 @@ void Hauptfenster::zeichne()
 
     if (m_gezeigt == QLatin1String(kDatentypen))
     {
-        const Strukturdiagramm typen = strukturVon(m_ergebnis.einheit);
+        const Strukturdiagramm typen = strukturVon(m_projekt.dateien[m_datei].ergebnis.einheit);
         m_vorschau->zeige(typen, nachRechts);
         m_text->setPlainText(QString::fromStdString(format->schreibe(typen, optionen)));
         return;
     }
-    // hervorgehoben wird, was weiterfuehrt: ein Knoten, der eine Funktion dieser Datei ruft
+    // hervorgehoben wird, was weiterfuehrt: ein Knoten, dessen Aufruf eine Funktion des Projekts meint
     std::vector<bool> verweis(m_fluss.knoten().size(), false);
-    for (KnotenId i = 0; i < verweis.size(); ++i) verweis[i] = ziel(i) != nullptr;
+    for (KnotenId i = 0; i < verweis.size(); ++i) verweis[i] = !zieleVon(i).empty();
     m_vorschau->zeige(m_fluss, nachRechts, verweis);
     m_text->setPlainText(QString::fromStdString(format->schreibe(m_fluss, optionen)));
 }
@@ -534,19 +1069,37 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
         const Knoten& k = m_fluss.knoten()[knoten];
         const bool traegtSchon = std::any_of(m_fluss.gruppen().begin(), m_fluss.gruppen().end(),
                                              [&](const Gruppe& g) { return g.aufrufer == knoten; });
-        for (const std::string& name : k.aufrufe)
+        const std::size_t von = dateiVon(knoten);
+        for (const std::string& aufruf : k.aufrufe)
         {
-            const c2d::modell::Funktion* f = funktion(name);
-            if (f == nullptr) continue;
-            const QString voll = QString::fromStdString(f->vollerName());
-            menue.addAction(QStringLiteral("Go to %1()").arg(voll), this, [this, voll] { waehleDiagramm(voll); });
-            QAction* ein = menue.addAction(QStringLiteral("Embed %1() here").arg(voll), this,
-                                           [this, knoten, f] { betteEin(knoten, *f); });
-            ein->setEnabled(!traegtSchon);
+            const std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, von, aufruf);
+            if (gemeint.size() == 1)
+            {
+                const Fundstelle f = gemeint.front();
+                const QString voll = QString::fromStdString(c2d::projekt::funktion(m_projekt, f).vollerName());
+                const QString wo = f.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[f.datei].pfad));
+                menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f] { gehe(f); });
+                menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
+                    ->setEnabled(!traegtSchon);
+            }
+            else if (gemeint.size() > 1)
+            {
+                // mehrdeutig: alle zur Wahl, mit Pfad und Zeile
+                QMenu* wahl = menue.addMenu(QStringLiteral("%1(): %2 functions qualify").arg(ausStd(aufruf)).arg(gemeint.size()));
+                for (const Fundstelle& f : gemeint)
+                    wahl->addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f] { gehe(f); });
+                wahl->addSeparator();
+                for (const Fundstelle& f : gemeint)
+                    wahl->addAction(QStringLiteral("Embed here: %1").arg(beschreibe(f)), this, [this, knoten, f] { betteEin(knoten, f); })
+                        ->setEnabled(!traegtSchon);
+            }
         }
-        if (k.quellZeile > 0)
-            menue.addAction(QStringLiteral("Show line %1 in the source").arg(k.quellZeile), this,
-                            [this, zeile = k.quellZeile] { zeigeZeile(zeile); });
+        if (k.quellZeile > 0 && von < m_projekt.dateien.size())
+        {
+            const QString wo = von == m_datei ? QString() : QStringLiteral(" (%1)").arg(ausStd(m_projekt.dateien[von].pfad));
+            menue.addAction(QStringLiteral("Show line %1 in the source%2").arg(k.quellZeile).arg(wo), this,
+                            [this, von, zeile = k.quellZeile] { zeigeZeile(von, zeile); });
+        }
     }
     if (gruppe < m_fluss.gruppen().size())
     {
@@ -562,13 +1115,24 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
     if (!m_verlauf.isEmpty())
     {
         if (!menue.isEmpty()) menue.addSeparator();
-        menue.addAction(QStringLiteral("Back to %1").arg(m_verlauf.last()), this, [this] { zurueck(); });
+        const Stelle& davor = m_verlauf.last();
+        const QString wo = davor.datei == m_datei || davor.datei >= m_projekt.dateien.size()
+                               ? QString()
+                               : QStringLiteral(" (%1)").arg(ausStd(m_projekt.dateien[davor.datei].pfad));
+        menue.addAction(QStringLiteral("Back to %1%2").arg(davor.diagramm, wo), this, [this] { zurueck(); });
     }
     if (!menue.isEmpty()) menue.exec(ort);
 }
 
-void Hauptfenster::zeigeZeile(int zeile)
+void Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
 {
+    if (datei >= m_projekt.dateien.size()) return;
+    if (datei != m_quelleZeigt)
+    {
+        // eine Zeile aus einer eingebetteten Funktion einer anderen Datei: deren Text zeigen
+        m_quelle->setPlainText(QString::fromUtf8(m_projekt.dateien[datei].text));
+        m_quelleZeigt = datei;
+    }
     const QTextBlock block = m_quelle->document()->findBlockByNumber(zeile - 1);
     if (zeile <= 0 || !block.isValid()) return;
     QTextCursor zeiger(block);
@@ -593,7 +1157,8 @@ void Hauptfenster::speichereUnter()
     const QString endung = ausStd(format->endung());
     // im Dateinamen steht kein `::`
     const QString teil = QString(m_gezeigt).replace(QStringLiteral("::"), QStringLiteral("_"));
-    const QString vorschlag = QStringLiteral("%1_%2.%3").arg(QFileInfo(m_name).completeBaseName(), teil, endung);
+    const QString vorschlag =
+        QStringLiteral("%1_%2.%3").arg(QFileInfo(letzterName(datei())).completeBaseName(), teil, endung);
     const QString pfad = QFileDialog::getSaveFileName(
         this, QStringLiteral("Save diagram"), vorschlag,
         QStringLiteral("%1 (*.%2);;All files (*)").arg(ausStd(format->name()), endung));

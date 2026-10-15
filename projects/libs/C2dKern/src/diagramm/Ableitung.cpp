@@ -51,8 +51,9 @@ bool istAufruf(std::string_view text)
     return false;
 }
 
-/// Die Funktionen, die ein Text ruft: jeder Name vor einer `(`, ohne Bereich
-/// und Objekt davor (`a::b(`, `x.b(`, `p->b(` geben `b`), jeder einmal.
+/// Die Funktionen, die ein Text ruft: jeder Name vor einer `(`, mit seinem
+/// Bereich (`a::b(` gibt `a::b`), ohne Objekt davor (`x.b(`, `p->b(` geben `b`),
+/// jeder einmal.
 /// Woerter der Sprache, die so aussehen (`if (`, `sizeof(`), zaehlen nicht.
 std::vector<std::string> aufrufeIn(std::string_view text)
 {
@@ -87,7 +88,17 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         while (k < text.size() && text[k] == ' ') ++k;
         if (k >= text.size() || text[k] != '(') continue;
         if (std::find(std::begin(kKeineFunktion), std::end(kKeineFunktion), name) != std::end(kKeineFunktion)) continue;
-        if (std::find(aus.begin(), aus.end(), name) == aus.end()) aus.emplace_back(name);
+        // ein Bereich davor gehoert dazu (`N::q`, `a::N::q`); `::q` meint den globalen
+        std::size_t vorn = anfang;
+        while (vorn >= 2 && text.substr(vorn - 2, 2) == "::")
+        {
+            std::size_t w = vorn - 2;
+            while (w > 0 && istNamenZeichen(text[w - 1])) --w;
+            if (w == vorn - 2) break;  // `::q` ohne Namen davor
+            vorn = w;
+        }
+        const std::string_view voll = text.substr(vorn, i - vorn);
+        if (std::find(aus.begin(), aus.end(), voll) == aus.end()) aus.emplace_back(voll);
     }
     return aus;
 }

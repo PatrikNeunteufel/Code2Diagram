@@ -12,6 +12,7 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 using namespace c2d::diagramm;
 
@@ -92,10 +93,10 @@ TEST_SUITE("Einbettung")
         CHECK(d.knoten()[4].art == KnotenArt::Aufruf);
         CHECK(d.knoten()[4].aufrufe == std::vector<std::string>{"drucke", "summe"});
 
-        // Bereich und Objekt vor dem Namen zaehlen nicht, Woerter der Sprache und Literale auch nicht
-        const Flussdiagramm e =
-            fluss("f", "void f(void) { a = sizeof(b) + g(h(1), \"k(\") + o.m(2) + p->n(3) + N::q(4) + g(5) + 0x1Fu; }");
-        CHECK(e.knoten()[1].aufrufe == std::vector<std::string>{"g", "h", "m", "n", "q"});
+        // ein Objekt vor dem Namen zaehlt nicht, ein Bereich bleibt; Woerter der Sprache und Literale zaehlen nicht
+        const Flussdiagramm e = fluss(
+            "f", "void f(void) { a = sizeof(b) + g(h(1), \"k(\") + o.m(2) + p->n(3) + N::q(4) + g(5) + ::r(6) + 0x1Fu; }");
+        CHECK(e.knoten()[1].aufrufe == std::vector<std::string>{"g", "h", "m", "n", "N::q", "r"});
 
         // beim Buendeln sammeln sich die Aufrufe
         const Flussdiagramm s = fluss("summe");
@@ -244,6 +245,148 @@ TEST_SUITE("Anordnung")
         optionen.nachRechts = true;
         const FlussAnordnung rechts = ordneAn(d, optionen);
         CHECK(rechts.knoten[1].x > rechts.knoten[0].x + rechts.knoten[0].breite);
+    }
+
+    TEST_CASE("Flussdiagramm: ein switch — jede Kante ihr eigener Weg, jede Beschriftung an ihrer Kante")
+    {
+        // nach SELECT_CONTROL_INTERFACE einer Firmware: ein Fall mit verschachteltem if,
+        // Faelle mit einer Zeile, zwei leere Faelle, default
+        constexpr std::string_view kAuswahl = R"c(
+void waehle(int art)
+{
+    static long zeit;
+    switch (art)
+    {
+        case HW: a = 0; if (a != b) { if (zeit - t >= 5) { a = b; } } else { zeit = t; } break;
+        case SCI_A: a = 0; break;
+        case SCI_B: a = 0; break;
+        case UART_B: a = 0; break;
+        case SPANNUNG: break;
+        case STROM: break;
+        default: fehler = 1; a = 0; break;
+    }
+}
+)c";
+        const Flussdiagramm d = fluss("waehle", kAuswahl);
+        for (const bool nachRechts : {false, true})
+        {
+            CAPTURE(nachRechts);
+            AnordnungOptionen optionen;
+            optionen.nachRechts = nachRechts;
+            const FlussAnordnung a = ordneAn(d, optionen);
+            REQUIRE(a.beschriftungen.size() == d.kanten().size());
+
+            // Liegt p auf dem Linienzug (bis auf eine Toleranz)?
+            const auto aufLinie = [](const Linienzug& l, const Punkt& p) {
+                for (std::size_t i = 1; i < l.size(); ++i)
+                {
+                    const double x1 = std::min(l[i - 1].x, l[i].x) - 1, x2 = std::max(l[i - 1].x, l[i].x) + 1;
+                    const double y1 = std::min(l[i - 1].y, l[i].y) - 1, y2 = std::max(l[i - 1].y, l[i].y) + 1;
+                    if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) return true;
+                }
+                return false;
+            };
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+            {
+                CAPTURE(e);
+                const Linienzug& l = a.kanten[e];
+                // rechtwinklig
+                for (std::size_t i = 1; i < l.size(); ++i)
+                    CHECK((std::abs(l[i].x - l[i - 1].x) < 0.5 || std::abs(l[i].y - l[i - 1].y) < 0.5));
+                // durch keinen fremden Knoten
+                for (std::size_t v = 0; v < a.knoten.size(); ++v)
+                {
+                    if (v == d.kanten()[e].von || v == d.kanten()[e].nach) continue;
+                    const Rechteck& r = a.knoten[v];
+                    for (std::size_t i = 1; i < l.size(); ++i)
+                    {
+                        const Rechteck stueck{std::min(l[i - 1].x, l[i].x), std::min(l[i - 1].y, l[i].y),
+                                              std::abs(l[i].x - l[i - 1].x), std::abs(l[i].y - l[i - 1].y)};
+                        CHECK_FALSE(ueberlappen(stueck, r));
+                    }
+                }
+                if (d.kanten()[e].beschriftung.empty()) continue;
+                // die Beschriftung auf ihrer eigenen Kante, auf keiner anderen
+                CHECK(aufLinie(l, a.beschriftungen[e]));
+                for (std::size_t f = 0; f < a.kanten.size(); ++f)
+                    if (f != e) CHECK_FALSE(aufLinie(a.kanten[f], a.beschriftungen[e]));
+            }
+            // Zwei Kanten teilen kein Stueck — ausser sie haben dieselbe Quelle (sie trennen
+            // sich erst) oder dasselbe Ziel (sie laufen zusammen).
+            const auto teilen = [](const Linienzug& l, const Linienzug& m) {
+                for (std::size_t i = 1; i < l.size(); ++i)
+                    for (std::size_t k = 1; k < m.size(); ++k)
+                    {
+                        const Punkt a1 = l[i - 1], a2 = l[i], b1 = m[k - 1], b2 = m[k];
+                        const bool waagrecht = std::abs(a1.y - a2.y) < 0.5 && std::abs(b1.y - b2.y) < 0.5 &&
+                                               std::abs(a1.y - b1.y) < 0.5;
+                        const bool senkrecht = std::abs(a1.x - a2.x) < 0.5 && std::abs(b1.x - b2.x) < 0.5 &&
+                                               std::abs(a1.x - b1.x) < 0.5;
+                        const auto deckt = [](double p1, double p2, double q1, double q2) {
+                            return std::min(std::max(p1, p2), std::max(q1, q2)) - std::max(std::min(p1, p2), std::min(q1, q2)) > 1;
+                        };
+                        if (waagrecht && deckt(a1.x, a2.x, b1.x, b2.x)) return true;
+                        if (senkrecht && deckt(a1.y, a2.y, b1.y, b2.y)) return true;
+                    }
+                return false;
+            };
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+                for (std::size_t f = e + 1; f < a.kanten.size(); ++f)
+                {
+                    if (d.kanten()[e].von == d.kanten()[f].von || d.kanten()[e].nach == d.kanten()[f].nach) continue;
+                    CAPTURE(e);
+                    CAPTURE(f);
+                    CHECK_FALSE(teilen(a.kanten[e], a.kanten[f]));
+                }
+            for (const Punkt& p : a.beschriftungen) CHECK(liegtIn({p.x - 30, p.y - 7, 60, 14}, {0, 0, a.breite, a.hoehe}));
+
+            // die Schilder der Faelle stossen nicht aneinander (geschaetzt wie in der Vorschau)
+            if (nachRechts) continue;
+            const auto schild = [&](std::size_t e) {
+                const double breite = static_cast<double>(d.kanten()[e].beschriftung.size()) * 7.2 + 4;
+                return Rechteck{a.beschriftungen[e].x - breite / 2, a.beschriftungen[e].y - 7, breite, 14};
+            };
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+                for (std::size_t f = e + 1; f < a.kanten.size(); ++f)
+                    if (!d.kanten()[e].beschriftung.empty() && !d.kanten()[f].beschriftung.empty())
+                    {
+                        CAPTURE(d.kanten()[e].beschriftung);
+                        CAPTURE(d.kanten()[f].beschriftung);
+                        CHECK_FALSE(ueberlappen(schild(e), schild(f)));
+                    }
+        }
+    }
+
+    TEST_CASE("Flussdiagramm: eine Kante zurueck laeuft durch keinen Knoten, der rechts neben ihrer Quelle steht")
+    {
+        // wie beispiele/projekt/main.c: das Ende steht in der Schicht des letzten Schritts der Schleife
+        const Flussdiagramm d = fluss("haupt", "int haupt(void) { if (!pruefe()) return 1; motor_starte(2);"
+                                               " while (1) { regle(100); protokolliere(1); } return 0; }");
+        for (const bool nachRechts : {false, true})
+        {
+            CAPTURE(nachRechts);
+            AnordnungOptionen optionen;
+            optionen.nachRechts = nachRechts;
+            const FlussAnordnung a = ordneAn(d, optionen);
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+            {
+                CAPTURE(e);
+                const Linienzug& l = a.kanten[e];
+                for (std::size_t v = 0; v < a.knoten.size(); ++v)
+                {
+                    if (v == d.kanten()[e].von || v == d.kanten()[e].nach) continue;
+                    for (std::size_t i = 1; i < l.size(); ++i)
+                    {
+                        const Rechteck stueck{std::min(l[i - 1].x, l[i].x), std::min(l[i - 1].y, l[i].y),
+                                              std::abs(l[i].x - l[i - 1].x), std::abs(l[i].y - l[i - 1].y)};
+                        CHECK_FALSE(ueberlappen(stueck, a.knoten[v]));
+                    }
+                }
+                // und sie endet am Rand ihres Ziels
+                const Rechteck& ziel = a.knoten[d.kanten()[e].nach];
+                CHECK(liegtIn({l.back().x, l.back().y, 0, 0}, {ziel.x - 1, ziel.y - 1, ziel.breite + 2, ziel.hoehe + 2}));
+            }
+        }
     }
 
     TEST_CASE("Strukturdiagramm: die Basis steht ueber dem, was von ihr erbt")

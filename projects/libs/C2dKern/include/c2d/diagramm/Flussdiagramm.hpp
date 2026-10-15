@@ -42,9 +42,9 @@ struct Knoten
     KnotenArt art = KnotenArt::Anweisung;
     std::vector<std::string> zeilen;  ///< Text, je Anweisung eine Zeile
     int quellZeile = 0;               ///< Zeile im Quelltext, 0 = keine
-    /// Die Funktionen, die der Text ruft — die Namen ohne Bereich, in der
-    /// Reihenfolge des Texts, jeder einmal. Auch bei Knoten anderer Art
-    /// (`x = lies(a)`, `if (pruefe(x))`).
+    /// Die Funktionen, die der Text ruft — mit dem Bereich, den der Text nennt
+    /// (`N::q`), ohne Objekt davor; in der Reihenfolge des Texts, jeder einmal.
+    /// Auch bei Knoten anderer Art (`x = lies(a)`, `if (pruefe(x))`).
     std::vector<std::string> aufrufe;
     std::size_t gruppe = kKeine;  ///< die innerste Gruppe, in der der Knoten liegt
 };
@@ -63,6 +63,9 @@ struct Gruppe
     std::size_t eltern = kKeine;     ///< die Gruppe, in der diese liegt
     KnotenId aufrufer = kKeine;      ///< der Knoten, hinter dem sie haengt
     std::vector<Kante> ersetzt;      ///< die Kanten des Aufrufers vor dem Einbetten
+    /// Woher der Ablauf stammt — fuer wen das Diagramm zeigt, etwa der Pfad der
+    /// Datei. Das Diagramm deutet ihn nicht; leer = von dort, wo das Diagramm herkommt.
+    std::string herkunft;
 };
 
 class Flussdiagramm
@@ -108,7 +111,7 @@ private:
 /// Unveraendert zurueck kommt `haupt`, wenn `stelle` kein Knoten ist, schon
 /// eine Einbettung traegt oder `unter` ausser Start und Ende nichts enthaelt.
 [[nodiscard]] Flussdiagramm betteEin(const Flussdiagramm& haupt, KnotenId stelle, const Flussdiagramm& unter,
-                                     std::string_view titel);
+                                     std::string_view titel, std::string_view herkunft = {});
 
 /// Nimmt die Gruppe samt allem, was in ihr liegt, wieder heraus; der Aufrufer
 /// bekommt seine Kanten zurueck. Die Kennungen aendern sich.

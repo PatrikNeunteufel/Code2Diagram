@@ -11,7 +11,9 @@
 #include <QFontDatabase>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QImage>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPainterPath>
 #include <QWheelEvent>
 
@@ -238,6 +240,17 @@ Vorschau::Vorschau(QWidget* parent) : QGraphicsView(parent)
     setAlignment(Qt::AlignCenter);
 }
 
+QImage Vorschau::alsBild() const
+{
+    const QRectF ganz = scene()->sceneRect();
+    QImage bild(ganz.size().toSize().expandedTo({1, 1}), QImage::Format_ARGB32);
+    bild.fill(backgroundBrush().color());
+    QPainter maler(&bild);
+    maler.setRenderHint(QPainter::Antialiasing);
+    scene()->render(&maler, QRectF(QPointF(0, 0), ganz.size()), ganz);
+    return bild;
+}
+
 void Vorschau::leere()
 {
     scene()->clear();
@@ -258,7 +271,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     for (std::size_t g = 0; g < a.gruppen.size(); ++g)
         z.rahmen(g, gekuerzt(diagramm.gruppen()[g].titel), alsRect(a.gruppen[g]));
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
-        z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), beschriftungsOrt(a.kanten[e]));
+        z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
         z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < verweis.size() && verweis[i]);
 

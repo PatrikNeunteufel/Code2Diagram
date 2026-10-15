@@ -969,6 +969,7 @@ private:
             // `void Motor::start()`: der Bereich steht vor dem Namen
             const std::string davor = kopf.letzter > kopf.anfang ? textVon(kopf.anfang, kopf.letzter - 1) : "";
             f.bereich = davor.empty() ? r.bereich : vollerName(r.bereich, davor);
+            f.intern = statisch;  // `static` vor einer freien Funktion: nur in dieser Datei
         }
 
         if (rumpf)

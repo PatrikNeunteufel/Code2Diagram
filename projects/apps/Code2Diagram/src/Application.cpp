@@ -38,6 +38,46 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return fenster.oeffne(pfad, &fehler) ? st::ok(pfad) : st::fehler(fehler);
                      });
 
+    anbindung.aktion(QStringLiteral("ordner_oeffnen"), QStringLiteral("Opens a folder as project"),
+                     QStringLiteral("pfad=<folder, relative to the project root>"),
+                     [&anbindung, &fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString angabe = st::argument(argumente, QStringLiteral("pfad"));
+                         if (angabe.isEmpty()) return st::ungueltig(QStringLiteral("pfad is missing"));
+                         const QString pfad = st::loeseAuf(angabe, anbindung.root());
+                         if (pfad.isEmpty())
+                             return st::fehler(QStringLiteral("Folder not found: %1").arg(angabe));
+                         QString fehler;
+                         return fenster.oeffneOrdner(pfad, &fehler)
+                                    ? st::ok(QStringLiteral("%1 file(s)").arg(fenster.dateien().size()))
+                                    : st::fehler(fehler);
+                     });
+
+    anbindung.aktion(QStringLiteral("datei_waehlen"), QStringLiteral("Selects a file of the open project"),
+                     QStringLiteral("pfad=<file, relative to the project folder>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString pfad = st::argument(argumente, QStringLiteral("pfad"));
+                         if (pfad.isEmpty()) return st::ungueltig(QStringLiteral("pfad is missing"));
+                         return fenster.waehleDatei(pfad)
+                                    ? st::ok()
+                                    : st::fehler(QStringLiteral("No file '%1' - there are: %2")
+                                                     .arg(pfad, fenster.dateien().join(QStringLiteral(", "))));
+                     });
+
+    anbindung.aktion(QStringLiteral("springen"),
+                     QStringLiteral("Goes to the function a call means, also in another file"),
+                     QStringLiteral("name=<called name> wahl=<0, 1, ... if more than one qualify>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         const QString wahl = st::argument(argumente, QStringLiteral("wahl"));
+                         const QStringList ziele = fenster.ziele(name);
+                         if (!fenster.springe(name, wahl.isEmpty() ? -1 : wahl.toInt()))
+                             return st::fehler(QStringLiteral("'%1' leads to: %2")
+                                                   .arg(name, ziele.isEmpty() ? QStringLiteral("nothing")
+                                                                              : ziele.join(QStringLiteral(", "))));
+                         return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.diagramm()));
+                     });
+
     anbindung.aktion(QStringLiteral("beispiel_zeigen"),
                      QStringLiteral("Shows the built-in sample with its diagram"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
@@ -108,7 +148,7 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                      });
 
     anbindung.aktion(QStringLiteral("format_waehlen"), QStringLiteral("Selects the output format"),
-                     QStringLiteral("name=<mermaid | dot | drawio>"),
+                     QStringLiteral("name=<svg | mermaid | dot | drawio>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
                          const QString name = st::argument(argumente, QStringLiteral("name"));
                          if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
@@ -127,6 +167,7 @@ struct Application::Impl
     std::unique_ptr<c2d::ui::Hauptfenster> fenster;
     std::unique_ptr<c2d::sichttest::Anbindung> steuerung;
     QString bild;     ///< --bild: wohin das Fenster als PNG kommt; leer = gewoehnlicher Lauf
+    QString szene;    ///< --szene: wohin das ganze Diagramm der Vorschau als PNG kommt
     QString format;
     QString ansicht;
 };
@@ -170,7 +211,7 @@ bool Application::init(int argc, char* argv[])
     }
 
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
-    QString datei, diagramm;
+    QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen;
     bool alleZweige = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
@@ -178,7 +219,9 @@ bool Application::init(int argc, char* argv[])
         const QString& a = argumente[i];
         const auto wert = [&] { return i + 1 < argumente.size() ? argumente[++i] : QString(); };
         if (a == QLatin1String("--bild")) m_impl->bild = wert();
+        else if (a == QLatin1String("--szene")) m_impl->szene = wert();
         else if (a == QLatin1String("--diagramm")) diagramm = wert();
+        else if (a == QLatin1String("--datei")) imProjekt = wert();
         else if (a == QLatin1String("--einbetten")) einbetten << wert();
         else if (a == QLatin1String("--format")) m_impl->format = wert();
         else if (a == QLatin1String("--ansicht")) m_impl->ansicht = wert();
@@ -196,8 +239,10 @@ bool Application::init(int argc, char* argv[])
         QString fehler;
         if (!fenster.oeffne(datei, &fehler)) qWarning().noquote() << fehler;
     }
-    else if (!m_impl->bild.isEmpty())
+    else if (!m_impl->bild.isEmpty() || !m_impl->szene.isEmpty())
         fenster.zeigeBeispiel();
+    if (!imProjekt.isEmpty() && !fenster.waehleDatei(imProjekt))
+        qWarning().noquote() << "No file" << imProjekt << "in the project";
     if (!diagramm.isEmpty() && !fenster.waehleDiagramm(diagramm))
         qWarning().noquote() << "No diagram" << diagramm << "- there are:" << fenster.diagramme().join(QStringLiteral(", "));
     for (const QString& name : einbetten)
@@ -213,11 +258,14 @@ bool Application::init(int argc, char* argv[])
 int Application::run()
 {
     if (!m_initialized) return 1;
-    if (!m_impl->bild.isEmpty())
+    if (!m_impl->bild.isEmpty() || !m_impl->szene.isEmpty())
     {
-        // --bild: das Fenster ablegen und enden (Exit 0 = abgelegt)
+        // --bild / --szene: das Fenster oder das ganze Diagramm ablegen und enden (Exit 0 = abgelegt)
         QCoreApplication::processEvents();
-        return m_impl->fenster->grab().save(m_impl->bild) ? 0 : 2;
+        bool abgelegt = true;
+        if (!m_impl->bild.isEmpty()) abgelegt = m_impl->fenster->grab().save(m_impl->bild) && abgelegt;
+        if (!m_impl->szene.isEmpty()) abgelegt = m_impl->fenster->vorschauBild().save(m_impl->szene) && abgelegt;
+        return abgelegt ? 0 : 2;
     }
     return QApplication::exec();
 }

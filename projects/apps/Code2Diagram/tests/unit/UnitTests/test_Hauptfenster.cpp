@@ -24,7 +24,11 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramme() == QStringList{"dauer_ms", "ampel_takt", "types"});
         CHECK(fenster.meldungen() == 0);
         CHECK(fenster.quelltext().contains("ampel_takt"));
-        // die erste Funktion ist gewaehlt, das erste Format ist Mermaid
+        // die erste Funktion ist gewaehlt, das erste Format ist SVG
+        CHECK(fenster.diagrammText().startsWith("<svg xmlns="));
+        CHECK(fenster.diagrammText().contains("<title>dauer_ms</title>"));
+        CHECK(fenster.diagrammText().contains(">ROT_GELB, GELB</tspan>"));
+        CHECK(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText().startsWith("%% dauer_ms\nflowchart TD\n"));
         CHECK(fenster.diagrammText().contains("-->|\"ROT_GELB, GELB\"|"));
     }
@@ -33,6 +37,7 @@ TEST_SUITE("Hauptfenster")
     {
         Hauptfenster fenster;
         fenster.zeigeBeispiel();
+        CHECK(fenster.waehleFormat("mermaid"));
 
         CHECK(fenster.waehleDiagramm("ampel_takt"));
         CHECK(fenster.diagrammText().contains("ampel_takt(Ampel *ampel, uint16_t vergangen_ms)"));
@@ -45,7 +50,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().startsWith("digraph \"ampel.c\" {"));
 
         CHECK_FALSE(fenster.waehleDiagramm("gibt_es_nicht"));
-        CHECK_FALSE(fenster.waehleFormat("svg"));
+        CHECK_FALSE(fenster.waehleFormat("png"));
         CHECK(fenster.diagrammText().startsWith("digraph"));  // eine falsche Wahl aendert nichts
     }
 
@@ -60,6 +65,7 @@ TEST_SUITE("Hauptfenster")
 
         fenster.zeige("namespace n { struct A { int x; int f() { return g(); } int g() { return x; } }; }", "a.hpp");
         CHECK(fenster.diagramme() == QStringList{"n::A::f", "n::A::g", "types"});
+        CHECK(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText().startsWith("%% f\nflowchart TD\n    n0([\"n::A::f()\"])"));
         CHECK(fenster.waehleFormat("drawio"));
         CHECK(fenster.diagrammText().startsWith("<mxfile host=\"Code2Diagram\">"));
@@ -72,6 +78,7 @@ TEST_SUITE("Hauptfenster")
     {
         Hauptfenster fenster;
         fenster.zeigeBeispiel();
+        CHECK(fenster.waehleFormat("mermaid"));
         CHECK(fenster.waehleDiagramm("ampel_takt"));
         CHECK(fenster.diagramm() == "ampel_takt");
         const int ohne = fenster.vorschauFormen();
@@ -147,6 +154,129 @@ TEST_SUITE("Hauptfenster")
         CHECK_FALSE(fenster.oeffne(QDir(ordner.path()).filePath("fehlt.c"), &fehler));
         CHECK(fehler.contains("fehlt.c"));
         CHECK(fenster.diagramme().size() == 3);
+    }
+
+    TEST_CASE("Ein Ordner als Projekt: Dateien, Spruenge ueber Dateien, Mehrdeutiges, Projektdatei")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            const QString pfad = wurzel.filePath(relativ);
+            REQUIRE(QDir().mkpath(QFileInfo(pfad).absolutePath()));
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("code2diagram.json", R"({"includePfade": ["inc"], "uebergehen": ["alt"],
+              "abschnitte": [{"ordner": "antrieb", "definitionen": ["MOTOREN=2"]}]})");
+        lege("inc/config.h", "#define MIT_DIAGNOSE\n");
+        lege("main.c", "#include \"config.h\"\nstatic int pruefe(void) { return 1; }\n"
+                       "int main(void) { pruefe(); motor_starte(2); regle(1);\n#ifdef MIT_DIAGNOSE\n diagnose();\n#endif\n"
+                       " return 0; }\nvoid diagnose(void) {}\n");
+        lege("antrieb/motor.c", "static int pruefe(int n) { return n; }\nvoid motor_starte(int n) { pruefe(n); }\n"
+                                "#if MOTOREN > 1\nvoid motor_zwei(void) {}\n#endif\n");
+        lege("antrieb/regler.c", "void regle(int s) { (void)s; }\n");
+        lege("sim/regler_sim.c", "void regle(int s) { (void)s; }\n");
+        lege("alt/x.c", "void alt(void) {}\n");
+
+        Hauptfenster fenster;
+        QString fehler;
+        CHECK_FALSE(fenster.oeffneOrdner(wurzel.filePath("gibt_es_nicht"), &fehler));
+        CHECK(fehler.contains("Not a folder"));
+        REQUIRE(fenster.oeffneOrdner(ordner.path(), &fehler));
+        CHECK(fenster.istProjekt());
+        CHECK(fenster.dateien() == QStringList{"antrieb/motor.c", "antrieb/regler.c", "inc/config.h", "main.c", "sim/regler_sim.c"});
+        CHECK(fenster.uebergangeneOrdner() == QStringList{"alt"});
+        CHECK(fenster.datei() == "antrieb/motor.c");  // die erste mit einer Funktion
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei"});  // MOTOREN aus dem Abschnitt
+        CHECK(fenster.windowTitle().contains("antrieb/motor.c"));
+
+        REQUIRE(fenster.waehleDatei("main.c"));
+        CHECK_FALSE(fenster.waehleDatei("alt/x.c"));
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose"});
+        CHECK(fenster.waehleDiagramm("main"));
+        CHECK(fenster.diagrammText().contains("diagnose()"));  // MIT_DIAGNOSE aus inc/config.h
+
+        // static: der Aufruf in main.c meint die eigene pruefe
+        CHECK(fenster.ziele("pruefe") == QStringList{"main.c:2"});
+        // zwei Dateien definieren regle: nicht still waehlen
+        CHECK(fenster.ziele("regle") == QStringList{"antrieb/regler.c:1", "sim/regler_sim.c:1"});
+        CHECK_FALSE(fenster.springe("regle"));
+        CHECK_FALSE(fenster.betteEin("regle"));
+        CHECK(fenster.datei() == "main.c");
+        // eindeutig in einer anderen Datei: springen, und zurueck
+        CHECK(fenster.springe("motor_starte"));
+        CHECK(fenster.datei() == "antrieb/motor.c");
+        CHECK(fenster.diagramm() == "motor_starte");
+        CHECK(fenster.ziele("pruefe") == QStringList{"antrieb/motor.c:1"});
+        CHECK(fenster.zurueck());
+        CHECK(fenster.datei() == "main.c");
+        CHECK(fenster.diagramm() == "main");
+        // die Wahl unter mehreren
+        CHECK(fenster.springe("regle", 1));
+        CHECK(fenster.datei() == "sim/regler_sim.c");
+        CHECK(fenster.zurueck());
+        // einbetten aus einer anderen Datei
+        CHECK(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.betteEin("motor_starte"));
+        CHECK(fenster.einbettungen() == 1);
+        CHECK(fenster.diagrammText().contains("subgraph g0[\"motor_starte(int n)\"]"));
+
+        // von aussen geht der Projektdatei vor; Datei und Diagramm bleiben
+        REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
+        fenster.setzeDefinitionen("MOTOREN=1");
+        CHECK(fenster.datei() == "antrieb/motor.c");
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte"});
+        fenster.setzeDefinitionen("");
+
+        // die Projektdatei: was nicht passt, wird nicht geschrieben
+        CHECK(fenster.projektdateiText().contains("\"alt\""));
+        CHECK_FALSE(fenster.speichereProjektdatei("{ kaputt", &fehler));
+        CHECK(fehler.startsWith("Line 1"));
+        CHECK(fenster.projektdateiText().contains("\"alt\""));
+        // einen Ordner uebergehen und wieder einlesen
+        REQUIRE(fenster.uebergeheOrdner("sim", &fehler));
+        CHECK_FALSE(fenster.dateien().contains("sim/regler_sim.c"));
+        CHECK(fenster.uebergangeneOrdner().contains("sim"));
+        CHECK(fenster.projektdateiText().contains("\"sim\""));
+        CHECK(fenster.datei() == "antrieb/motor.c");
+        REQUIRE(fenster.waehleDatei("main.c"));
+        CHECK(fenster.ziele("regle") == QStringList{"antrieb/regler.c:1"});
+        CHECK_FALSE(fenster.liesOrdnerWieder("gibt_es_nicht", &fehler));
+        REQUIRE(fenster.liesOrdnerWieder("sim", &fehler));
+        CHECK(fenster.dateien().contains("sim/regler_sim.c"));
+        CHECK(fenster.projektMeldungen().contains("alt: folder skipped (\"uebergehen\": \"alt\")"));
+    }
+
+    TEST_CASE("Ohne Projektdatei: der Vorschlag kommt aus der .gitignore; Uebergehen legt sie an")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        {
+            QFile git(wurzel.filePath(".gitignore"));
+            REQUIRE(git.open(QIODevice::WriteOnly));
+            git.write("out/\nlogs/\n*.o\n");
+            REQUIRE(QDir().mkpath(wurzel.filePath("logs")));
+            REQUIRE(QDir().mkpath(wurzel.filePath("b")));
+            QFile a(wurzel.filePath("a.c"));
+            REQUIRE(a.open(QIODevice::WriteOnly));
+            a.write("void a(void) {}\n");
+            QFile b(wurzel.filePath("b/b.c"));
+            REQUIRE(b.open(QIODevice::WriteOnly));
+            b.write("void b(void) {}\n");
+        }
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        CHECK(fenster.dateien() == QStringList{"a.c", "b/b.c"});
+        CHECK(fenster.projektdateiText().contains("\"uebergehen\": [\n    \"logs\"\n  ]"));
+        CHECK_FALSE(QFileInfo::exists(wurzel.filePath("code2diagram.json")));
+        QString fehler;
+        REQUIRE(fenster.uebergeheOrdner("b", &fehler));
+        CHECK(QFileInfo::exists(wurzel.filePath("code2diagram.json")));
+        CHECK(fenster.dateien() == QStringList{"a.c"});
+        CHECK(fenster.projektdateiText().contains("\"logs\",\n    \"b\""));
     }
 
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")

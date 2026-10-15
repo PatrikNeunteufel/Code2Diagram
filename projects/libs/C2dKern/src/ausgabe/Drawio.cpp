@@ -44,26 +44,6 @@ std::string html(std::string_view text)
     return aus;
 }
 
-/// Text als Wert eines XML-Attributs.
-std::string xml(std::string_view text)
-{
-    std::string aus;
-    for (const char c : text)
-    {
-        switch (c)
-        {
-            case '&': aus += "&amp;"; break;
-            case '<': aus += "&lt;"; break;
-            case '>': aus += "&gt;"; break;
-            case '"': aus += "&quot;"; break;
-            case '\r': break;
-            case '\n': aus += "&#10;"; break;
-            default: aus += c; break;
-        }
-    }
-    return aus;
-}
-
 std::string zahl(double wert)
 {
     return std::to_string(std::lround(wert));
@@ -136,13 +116,6 @@ std::string_view stereotyp(KastenArt art)
     return {};
 }
 
-AnordnungOptionen anordnung(const Optionen& optionen)
-{
-    AnordnungOptionen a;
-    a.nachRechts = optionen.richtung == "LR";
-    a.maxZeilenLaenge = optionen.maxZeilenLaenge;
-    return a;
-}
 
 class Drawio final : public Format
 {

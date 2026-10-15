@@ -5,8 +5,8 @@
 Exe: `out/build/windows-ninja-release-clang/exec/Code2Diagram/bin/Release/Code2Diagram.exe`
 
 Geprüft wird die Version 0.1.0: das Fenster, das Lesen von C und C++, die zwei Diagrammarten
-(Ablauf einer Funktion, Datentypen), die Vorschau mit Sprung und Einbettung und die drei Formate
-(Mermaid, DOT, draw.io). Die Abschnitte A bis D prüfen den Text (Ansicht **Text**; zum Ansehen
+(Ablauf einer Funktion, Datentypen), die Vorschau mit Sprung und Einbettung und die vier Formate
+(SVG, Mermaid, DOT, draw.io). Die Abschnitte A bis D prüfen den Text (Ansicht **Text**; zum Ansehen
 in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vorschau.
 
 ## A. Fenster und Beispiel
@@ -156,3 +156,71 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
       `protokolliere` und `pruefe` unabhängig von den Definitionen. Haken wieder weg: die
       Variante von vorher.
       `aktion: zweige_waehlen name=alle`
+
+## I. Das eigene Format SVG; ein switch in Spalten
+
+- [ ] **I0 Vorbereiten:** Das Beispiel zeigen, `dauer_ms` in der Vorschau.
+      `aktion: beispiel_zeigen` `aktion: diagramm_waehlen name=dauer_ms` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **I1 SVG ist die Vorgabe:** Nach dem Start steht das Feld **Format** auf `svg`; die Liste
+      bietet `svg`, `mermaid`, `dot`, `drawio`. Die Ansicht **Text** beginnt mit `<svg xmlns=`.
+- [ ] **I2 Jeder Fall seine Spalte:** In der Vorschau führt aus der Raute des `switch` eine
+      gemeinsame Linie zu den Fällen. Jede Beschriftung steht **unter** dieser Linie, auf der
+      Senkrechten ihres Falls — keine auf der gemeinsamen Linie, keine zwei übereinander. Keine
+      Kante läuft außen um das Diagramm herum oder durch einen Knoten.
+- [ ] **I3 Die Datei zeigt, was die Vorschau zeigt:** File > Save diagram as… als `.svg`
+      ablegen und im Browser öffnen: dieselben Formen, Wege und Beschriftungen wie in der
+      Vorschau, nichts abgeschnitten. Im dunklen Modus des Browsers dunkle Farben, sonst helle.
+- [ ] **I4 Datentypen als SVG:** `motor.cpp`, `Data types`, als `.svg` ablegen und im Browser
+      öffnen: Kästen mit grauem Kopf, die Art in Guillemets (`«struct»`), Glieder und Methoden;
+      die Vererbung mit hohler Spitze, die Komposition mit gefüllter Raute.
+
+## J. Ein Ordner als Projekt
+
+`beispiele/projekt/`: `main.c` ruft Funktionen aus `antrieb/`, `log/` und `sim/`; die
+Projektdatei setzt `MIT_LOG`, den Include-Pfad `inc`, für `antrieb` `MOTOREN=2`, und übergeht
+`alt`. J8 und J9 schreiben die Projektdatei — danach muss sie wieder genau so dastehen
+(`git diff beispiele/projekt` ist leer).
+
+- [ ] **J0 Vorbereiten:** Den Ordner öffnen (File > Open folder…), Vorschau.
+      `aktion: zweige_waehlen name=auswerten` `aktion: definitionen_setzen wert=""` `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **J1 Der Baum:** Über dem Quelltext steht der Baum: `antrieb` (`motor.c`, `motor.h`,
+      `regler.c`), `inc` (`config.h`), `log` (`log.c`), `main.c`, `sim` (`regler_sim.c`) und grau
+      `alt  (skipped)`. Gewählt ist `antrieb/motor.c`, die erste Datei mit einer Funktion; zur
+      Wahl stehen `pruefe()`, `motor_starte()` und `motor_zwei_gleich()` (`MOTOREN=2` aus dem
+      Abschnitt). Die Statuszeile beginnt mit
+      `projekt: 7 file(s), 8 function(s), 1 folder(s) skipped, 1 project message(s) |`.
+- [ ] **J2 Eine andere Datei:** Im Baum `main.c` anklicken, `main()` wählen. Der Ablauf zeigt
+      `protokolliere("Takt")` — `MIT_DIAGNOSE` kommt aus `inc/config.h`. Blau umrandet sind
+      `!pruefe()`, `motor_starte(2)`, `regle(100)` und `protokolliere("Takt")`.
+      `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main`
+- [ ] **J3 Sprung in eine andere Datei:** Doppelklick auf `motor_starte(2)`: gezeigt wird
+      `motor_starte()` aus `antrieb/motor.c`, im Baum ist `motor.c` markiert, links steht sein
+      Quelltext. Diagram > Back führt zu `main()` in `main.c` zurück.
+      `aktion: springen name=motor_starte` `aktion: zurueck`
+- [ ] **J4 static bleibt in seiner Datei:** Doppelklick auf `!pruefe()`: gezeigt wird `pruefe()`
+      aus `main.c` (ohne Parameter) — nicht die gleichnamige aus `antrieb/motor.c`. Zurück.
+- [ ] **J5 Mehrdeutig: man wählt:** Doppelklick auf `regle(100)`: ein Menü *Which function?*
+      bietet `regle() - antrieb/regler.c:4` und `regle() - sim/regler_sim.c:5`, die Statuszeile
+      sagt `The call is ambiguous: 2 functions qualify`. Die zweite wählen: gezeigt wird `regle()`
+      aus `sim/regler_sim.c` (eine Zeile `ist = soll`). Zurück.
+      `aktion: springen name=regle wahl=1` `aktion: zurueck`
+- [ ] **J6 Einbetten aus einer anderen Datei:** Rechtsklick auf `motor_starte(2)`:
+      *Embed motor_starte() in antrieb/motor.c here*. Der Ablauf steht umrahmt unter
+      `motor_starte(int anzahl)`. Rechtsklick auf `bereit[i] = 1` im Rahmen:
+      *Show line 15 in the source (antrieb/motor.c)* — links steht `motor.c`, Zeile 15 hinterlegt.
+      `aktion: einbetten name=motor_starte`
+- [ ] **J7 Mehrdeutig im Kontextmenü:** Rechtsklick auf `regle(100)`: ein Untermenü
+      `regle(): 2 functions qualify` mit je *Go to* und *Embed here* für beide Dateien, mit Pfad
+      und Zeile.
+- [ ] **J8 Die Projektdatei:** Project > Edit project file…: der Text der Projektdatei mit
+      `"alt"` unter `uebergehen`. Ans Ende ein `x` schreiben, Save: der Dialog bleibt offen, rot
+      steht `Line …, column …: not valid JSON: …`. Cancel — nichts wurde geschrieben.
+- [ ] **J9 Einen Ordner übergehen:** Rechtsklick im Baum auf `sim`: *Skip this folder
+      (project file)*. `sim` steht grau als `(skipped)`, in der Projektdatei steht `"sim"`. Ein
+      Doppelklick auf `regle(100)` führt jetzt ohne Menü zu `antrieb/regler.c`. Zurück;
+      Rechtsklick auf `sim  (skipped)`: *Read this folder again* — alles wie vorher.
+- [ ] **J10 Defines gehen der Projektdatei vor:** `antrieb/motor.c` wählen, in Defines
+      `MOTOREN=1`, Enter: `motor_zwei_gleich()` steht nicht mehr zur Wahl, die Datei bleibt
+      gewählt. Defines leeren, Enter.
+      `aktion: datei_waehlen pfad=antrieb/motor.c` `aktion: definitionen_setzen wert="MOTOREN=1"` `aktion: definitionen_setzen wert=""`
+- [ ] **J11 Project > Show project messages:** eine Meldung `alt: folder skipped ("uebergehen": "alt")`.

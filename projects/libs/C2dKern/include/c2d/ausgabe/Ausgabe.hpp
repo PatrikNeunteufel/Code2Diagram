@@ -53,6 +53,10 @@ public:
 /// Das Format dieses Namens; nullptr = keines.
 [[nodiscard]] const Format* format(std::string_view name);
 
+/// SVG: das Diagramm gezeichnet wie in der Vorschau, mit den Orten und Wegen aus
+/// diagramm/Anordnung.hpp — das eigene Format, die Vorgabe.
+[[nodiscard]] const Format& svg();
+
 /// Mermaid: `flowchart` und `classDiagram`.
 [[nodiscard]] const Format& mermaid();
 

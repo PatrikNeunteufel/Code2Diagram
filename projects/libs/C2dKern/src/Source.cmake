@@ -12,6 +12,8 @@
 #   sprache/   je Sprache eine Tabelle und ein Leser (Token -> Codemodell)
 #   diagramm/  die Diagramm-Modelle und ihre Ableitung aus dem Codemodell
 #   ausgabe/   die Formate (Diagramm -> Text)
+#   projekt/   ein Ordner als Projekt: Projektdatei, Suche, Lesen ueber Dateien
+#              hinweg, Aufloesen von Aufrufen (kennt sprache und modell, kein Diagramm)
 # ==============================================================================
 
 dbg(${DBG_OFTEN}
@@ -36,6 +38,10 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Dot.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Drawio.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Mermaid.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Svg.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Projekt.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Projektdatei.cpp"
 )
 
 set(_local_headers
@@ -48,6 +54,9 @@ set(_local_headers
     "${_c2d_inc}/diagramm/Flussdiagramm.hpp"
     "${_c2d_inc}/diagramm/Strukturdiagramm.hpp"
     "${_c2d_inc}/ausgabe/Ausgabe.hpp"
+    "${_c2d_inc}/projekt/Projekt.hpp"
+    "${_c2d_inc}/projekt/Projektdatei.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/Leser.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/Bedingt.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/CFamilie.hpp"

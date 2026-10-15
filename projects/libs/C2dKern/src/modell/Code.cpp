@@ -34,6 +34,15 @@ std::string vollerName(const std::string& bereich, const std::string& name)
     return bereich.empty() ? name : bereich + "::" + name;
 }
 
+bool Funktion::heisst(std::string_view aufruf) const
+{
+    if (aufruf.find("::") == std::string_view::npos) return name == aufruf;
+    const std::string voll = vollerName();
+    if (voll == aufruf) return true;
+    return voll.size() > aufruf.size() + 2 && voll.ends_with(aufruf) &&
+           std::string_view(voll).substr(voll.size() - aufruf.size() - 2, 2) == "::";
+}
+
 std::string signatur(const std::string& name, const std::vector<Parameter>& parameter)
 {
     std::string s = name + "(";

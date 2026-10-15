@@ -34,6 +34,8 @@ public:
     [[nodiscard]] int formen() const { return m_formen; }
     /// Wie viele Rahmen (Gruppen) gezeichnet sind.
     [[nodiscard]] int rahmen() const { return m_rahmen; }
+    /// Die ganze Szene als Bild, Massstab 1, auf dem Grund der Vorschau.
+    [[nodiscard]] QImage alsBild() const;
 
     /// Doppelklick auf einen Knoten des Flussdiagramms.
     std::function<void(c2d::diagramm::KnotenId knoten)> beiDoppelklick;
