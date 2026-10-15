@@ -21,6 +21,7 @@
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
+#include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Projekt.hpp"
 
 #include <QImage>
@@ -36,6 +37,7 @@ class QAction;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
+class QMenu;
 class QPlainTextEdit;
 class QTabWidget;
 class QTreeWidget;
@@ -51,6 +53,9 @@ class Hauptfenster : public QMainWindow
 public:
     /// Der Name, unter dem das Diagramm der Datentypen gewaehlt wird.
     static constexpr const char* kDatentypen = "types";
+    /// So beginnt der Name eines Zustandsautomaten: `automat:<Variable>`
+    /// (bei zweien mit derselben Variable `automat:<Variable>@<Funktion>`).
+    static constexpr const char* kAutomat = "automat:";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -98,13 +103,23 @@ public:
     bool liesOrdnerWieder(const QString& ordner, QString* fehler = nullptr);
 
     /// Was sich zeigen laesst: die Funktionen mit Rumpf der gewaehlten Datei
-    /// (mit Bereich: `Klasse::methode`), dann `types`, wenn es Datentypen gibt.
+    /// (mit Bereich: `Klasse::methode`), dann die erkannten Zustandsautomaten
+    /// (`automat:...`), dann `types`, wenn es Datentypen gibt.
     [[nodiscard]] QStringList diagramme() const;
     /// Das Diagramm wechseln; das bisherige kommt in den Verlauf fuer zurueck(). false = so heisst keines.
     bool waehleDiagramm(const QString& name);
     [[nodiscard]] QString diagramm() const;
-    /// Zum Diagramm davor, auch in einer anderen Datei. false = es gibt keines.
+    /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
+    /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
     bool zurueck();
+    /// Der Text des hervorgehobenen Knotens (Zeilen durch `\n`); leer = keiner.
+    [[nodiscard]] QString markiert() const;
+
+    /// Wer die gezeigte Funktion ruft, im ganzen Projekt: je Aufrufer `funktion() - pfad:zeile`.
+    [[nodiscard]] QStringList aufrufer() const;
+    /// Zum Aufrufer Nummer `wahl` (ab 0, wie aufrufer()); dort ist der Knoten
+    /// hervorgehoben, der ruft. false = keinen solchen.
+    bool springeZuAufrufer(int wahl);
 
     /// Wohin ein Aufruf aus dem gezeigten Diagramm fuehren kann: je Kandidat
     /// `pfad:zeile` (projekt::kandidaten). Leer = nirgendwohin.
@@ -153,6 +168,8 @@ private:
     {
         std::size_t datei;
         QString diagramm;
+        /// der Knoten, von dem aus man weiterging (ein Aufruf); kKeine = keiner
+        c2d::diagramm::KnotenId knoten = c2d::diagramm::kKeine;
     };
 
     /// Mit den jetzigen Lese-Optionen (neu) einlesen: die Datei oder den Ordner.
@@ -179,8 +196,16 @@ private:
     /// Was die Aufrufe eines Knotens meinen koennen, ohne Doppelte.
     [[nodiscard]] std::vector<c2d::projekt::Fundstelle> zieleVon(c2d::diagramm::KnotenId knoten) const;
     [[nodiscard]] QString beschreibe(const c2d::projekt::Fundstelle& stelle) const;
-    /// Zum Diagramm dieser Funktion, auch in einer anderen Datei.
-    void gehe(const c2d::projekt::Fundstelle& stelle);
+    /// Zum Diagramm dieser Funktion, auch in einer anderen Datei; `von` ist der
+    /// Knoten, von dem aus man geht — zurueck() hebt ihn hervor.
+    void gehe(const c2d::projekt::Fundstelle& stelle, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    /// Die Funktion, deren Ablauf gezeigt wird; leer bei den Datentypen.
+    [[nodiscard]] std::optional<c2d::projekt::Fundstelle> gezeigteFunktion() const;
+    /// Den ersten Knoten hervorheben, dessen Aufruf `ziel` meinen kann.
+    void markiereAufrufVon(const c2d::projekt::Fundstelle& ziel);
+    /// Knopf Back und Menue Called from auf den Stand bringen.
+    void aktualisiereLeiste();
+    void fuelleAufruferMenue(QMenu* menue);
     bool betteEin(c2d::diagramm::KnotenId knoten, const c2d::projekt::Fundstelle& gerufen);
     [[nodiscard]] QString projektdateiPfad() const;
     /// Die Projektdatei, wie sie auf der Platte steht — oder der Vorschlag, wenn
@@ -198,6 +223,8 @@ private:
     QComboBox* m_richtung = nullptr;
     QLineEdit* m_definitionen = nullptr;
     QCheckBox* m_alleZweige = nullptr;
+    QAction* m_zurueckAktion = nullptr;
+    QAction* m_aufruferAktion = nullptr;
     QAction* m_projektdateiAktion = nullptr;
     QAction* m_meldungenAktion = nullptr;
 
@@ -209,6 +236,8 @@ private:
     std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
     std::size_t m_quelleZeigt = c2d::projekt::kKeine;  ///< die Datei im Quelltext
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
+    std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
+    QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
     QString m_gezeigt;                      ///< wofuer m_fluss gebaut ist
     QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()
     bool m_ohneVerlauf = false;             ///< der Wechsel gerade ist ein zurueck() oder ein Sprung

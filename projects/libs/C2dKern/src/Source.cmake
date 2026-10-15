@@ -53,6 +53,7 @@ set(_local_headers
     "${_c2d_inc}/diagramm/Anordnung.hpp"
     "${_c2d_inc}/diagramm/Flussdiagramm.hpp"
     "${_c2d_inc}/diagramm/Strukturdiagramm.hpp"
+    "${_c2d_inc}/diagramm/Zustandsdiagramm.hpp"
     "${_c2d_inc}/ausgabe/Ausgabe.hpp"
     "${_c2d_inc}/projekt/Projekt.hpp"
     "${_c2d_inc}/projekt/Projektdatei.hpp"

@@ -103,6 +103,15 @@ struct Funktion
     [[nodiscard]] std::string signatur() const { return modell::signatur(vollerName(), parameter); }
 };
 
+/// Die Funktionen, die ein Text ruft: jeder Name vor einer `(`, mit seinem
+/// Bereich (`a::b(` gibt `a::b`), ohne Objekt davor (`x.b(`, `p->b(` geben `b`),
+/// jeder einmal, in der Reihenfolge des Texts. Woerter der C-Familie, die so
+/// aussehen (`if (`, `sizeof(`), zaehlen nicht; in Literalen wird nichts gerufen.
+[[nodiscard]] std::vector<std::string> aufrufeIn(std::string_view text);
+
+/// Was der Rumpf einer Funktion ruft, ueber alle Anweisungen, jeder einmal.
+[[nodiscard]] std::vector<std::string> aufrufeVon(const Funktion& funktion);
+
 enum class TypArt
 {
     Struktur,

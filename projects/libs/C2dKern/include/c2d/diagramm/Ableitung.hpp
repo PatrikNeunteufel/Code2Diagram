@@ -10,7 +10,10 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/modell/Code.hpp"
+
+#include <vector>
 
 namespace c2d::diagramm
 {
@@ -33,5 +36,18 @@ namespace c2d::diagramm
 /// Beziehung: als Wert `Enthaelt`, ueber einen Zeiger oder zu einer
 /// Aufzaehlung `Verweist`.
 [[nodiscard]] Strukturdiagramm strukturVon(const modell::Einheit& einheit);
+
+/// Die Zustandsautomaten einer Einheit, in der Reihenfolge der Funktionen.
+///
+/// Ein Automat ist ein `switch (V)`, in dessen Faellen mindestens zweimal
+/// `V = K` steht, wobei `K` eine Fall-Marke desselben `switch` ist — so ruht er
+/// auf einem Signal im Code, nicht auf einem Namen. Zustaende sind die
+/// Fall-Marken (dazu Werte, die zugewiesen, aber nicht behandelt werden),
+/// Uebergaenge jede solche Zuweisung, beschriftet mit den Bedingungen, unter
+/// denen sie steht. Wo dieselbe Variable ausserhalb des `switch` einen Zustand
+/// bekommt (in derselben oder einer anderen Funktion der Einheit — auch ueber
+/// einen anderen Weg zum selben Glied, `a.zustand` statt `p->zustand`), fuehrt
+/// ein Uebergang "von aussen" dorthin.
+[[nodiscard]] std::vector<Zustandsdiagramm> automatenVon(const modell::Einheit& einheit);
 
 }  // namespace c2d::diagramm

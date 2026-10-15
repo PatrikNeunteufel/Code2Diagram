@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++ | weitere: je Sprache eine Tabelle und ein Leser |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg | |
@@ -117,7 +117,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige] [--diagramm <name>] [--einbetten <funktion>]... [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -144,8 +144,16 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
   definiert gilt (`NAME` oder `NAME=wert`, durch Leerzeichen getrennt; Enter liest neu) — und
   der Haken **All #if branches**. Die Statuszeile nennt, wonach gefragt wurde und was nicht
   definiert ist.
-- Rechts oben: **Diagram** (eine Funktion, mit Bereich wie `Klasse::methode`, oder die
-  Datentypen), **Format**, Richtung. Darunter zwei Ansichten: **Preview** zeichnet das Diagramm,
+- Rechts oben: **Diagram** (eine Funktion, mit Bereich wie `Klasse::methode`, ein erkannter
+  Zustandsautomat — *State machine: …* — oder die Datentypen), **Format**, Richtung.
+- **Zustandsautomaten** werden erkannt, nicht geraten: ein `switch (V)`, in dessen Fällen
+  mindestens zweimal `V = K` steht, wobei `K` eine Fall-Marke desselben `switch` ist. Zustände
+  sind die Fall-Marken (dazu zugewiesene Werte ohne eigenen Fall), Übergänge die Zuweisungen,
+  beschriftet mit den Bedingungen (`if`, `else`, ein `switch` darin), unter denen sie stehen;
+  gleiche Wege werden eins, ihre Bedingungen mit `||`. Wo dieselbe Variable — oder dasselbe Glied
+  auf anderem Weg (`eeprom.st` statt `p->st`) — anderswo in der Datei einen Zustand bekommt,
+  kommt ein Übergang **von außen** (gefüllter Punkt, beschriftet `in init(): …`). Beispiel:
+  `beispiele/automat.c`. Darunter zwei Ansichten: **Preview** zeichnet das Diagramm,
   **Text** zeigt es im gewählten Format. File > Save diagram as… legt den Text ab.
 - **In der Vorschau** (Strg + Mausrad vergrößert, Ziehen verschiebt):
   - Ein Knoten, der eine Funktion ruft, die es im Projekt gibt, ist farbig umrandet.
@@ -153,6 +161,9 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
     (Alt + Pfeil links) führt zurück. Welche Funktion ein Aufruf meint: zuerst eine der eigenen
     Datei, sonst eine nicht-`static` einer anderen; `N::f(` nur eine, deren voller Name so endet.
     Bleiben mehrere, wählt man im Menü (Pfad und Zeile) — nichts wird still gewählt.
+  - In der Leiste oben: **Back** führt zurück und umringt den Aufruf, von dem man kam;
+    **Called from** nennt jede Funktion im Projekt, die die gezeigte ruft, und führt hin — der
+    Aufruf dort ist umringt. Dasselbe steht im Kontextmenü (*Back to …*, *Called from*).
   - **Rechtsklick** auf so einen Knoten: *Embed …() here* setzt den Ablauf der gerufenen Funktion
     umrahmt hinter den Aufruf — auch verschachtelt, in einer Einbettung weiter. Rechtsklick in
     einen Rahmen: *Remove embedding*. Diagram > Remove all embeddings nimmt alle heraus.
@@ -164,7 +175,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
   nicht zeigt; beide lassen sich zusammen geben.
 - `--testing` lädt die Sichttest-Steuerung. Aktionen: `datei_oeffnen pfad=<Datei>` (relativ ab
   dem Projekt-Root), `ordner_oeffnen pfad=<Ordner>`, `datei_waehlen pfad=<Datei im Projekt>`,
-  `springen name=<Aufruf> [wahl=<0, 1, …>]`, `beispiel_zeigen`, `diagramm_waehlen name=<Funktion|types>`,
+  `springen name=<Aufruf> [wahl=<0, 1, …>]`, `zum_aufrufer [wahl=<0, 1, …>]`, `beispiel_zeigen`, `diagramm_waehlen name=<Funktion|types>`,
   `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`.
@@ -172,7 +183,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [-D NAME[=wert]]... [--alle-zweige] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert]]... [--alle-zweige] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -181,6 +192,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   `--funktion` muss im Projekt eindeutig sein, sonst nennt `c2d` die Kandidaten.
   `--einbetten` findet die Funktion auch in einer anderen Datei; `--struktur` ohne `--datei`
   zeichnet die Datentypen aller Dateien
+- `--automat Bus_State` zeichnet den Zustandsautomaten über diese Variable (ganz oder ihr
+  letztes Glied); `--liste` nennt die erkannten als `automaton …`
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
@@ -283,6 +296,11 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   zurück noch ein Knoten, tritt sie unten aus. Kreuzungen vermeidet sie nicht immer; ein
   Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
   wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
+- **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
+  (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
+  Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand
+  mit diesem Text. Ein Fall, der ohne `break` in den nächsten fällt, gibt keinen Übergang. Von
+  außen zählt nur die eigene Datei.
 - **draw.io legt die Kanten selbst:** die Datei trägt die Orte der Knoten aus der Anordnung,
   die Wege der Kanten nicht (`orthogonalEdgeStyle`).
 - **Im Projekt:** kein Aufrufgraph über das Projekt; die Datentypen zeigt das Fenster je Datei

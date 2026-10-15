@@ -14,6 +14,8 @@
 //   --einbetten    den Ablauf dieser gerufenen Funktion hinter ihren ersten Aufruf setzen,
 //                  umrahmt — im Projekt auch aus einer anderen Datei
 //   --struktur     das Diagramm der Datentypen (im Projekt: aller Dateien, mit --datei: einer)
+//   --automat      das Zustandsdiagramm des Automaten mit dieser Variable (auch nur ihr
+//                  letztes Glied: Bus_State); --liste nennt die erkannten
 //   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
 //                  erlaubt; geht der Projektdatei vor
 //   --alle-zweige  bedingte Uebersetzung nicht auswerten: alle Zweige lesen
@@ -58,7 +60,7 @@ std::string alsText(const fs::path& weg)
 int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
-                 "                         [--struktur] [-D NAME[=value]]... [--alle-zweige]\n"
+                 "                         [--struktur] [--automat <variable>] [-D NAME[=value]]... [--alle-zweige]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
@@ -92,13 +94,24 @@ void liste(const c2d::projekt::Datei& d)
     for (const c2d::modell::Einbindung& e : einheit.einbindungen) std::cout << "include   " << e.ziel << '\n';
     // wonach ein #if gefragt hat und was nirgends definiert ist: mit -D waehlbar
     for (const std::string& name : d.ergebnis.unbekannteNamen) std::cout << "undefined " << name << '\n';
+    for (const c2d::diagramm::Zustandsdiagramm& z : c2d::diagramm::automatenVon(einheit))
+        std::cout << "automaton " << z.titel << " (" << z.zustaende.size() << " states, " << z.uebergaenge.size()
+                  << " transitions)\n";
+}
+
+/// Passt der Name auf den Automaten: die Variable, ihr letztes Glied, oder der Titel?
+bool istAutomat(const c2d::diagramm::Zustandsdiagramm& z, const std::string& name)
+{
+    if (z.variable == name || z.titel == name) return true;
+    const std::size_t punkt = z.variable.find_last_of(".>");
+    return punkt != std::string::npos && z.variable.substr(punkt + 1) == name;
 }
 
 }  // namespace
 
 int main(int argc, char* argv[])
 {
-    std::string ziel, datei, funktion;
+    std::string ziel, datei, funktion, automat;
     std::vector<std::string> einbetten;
     c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
@@ -114,6 +127,7 @@ int main(int argc, char* argv[])
         else if (a == "--roh") roh = true;
         else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
+        else if (a == "--automat") automat = wert();
         else if (a == "--einbetten") einbetten.push_back(wert());
         else if (a == "--alle-zweige") lesen.alleZweige = true;
         else if (a == "-D") lesen.definitionen.push_back(c2d::sprache::definitionAus(wert()));
@@ -196,6 +210,33 @@ int main(int argc, char* argv[])
     }
 
     const c2d::ausgabe::Optionen optionen{.richtung = richtung};
+
+    // --automat: ein Zustandsautomat, erkannt im Code
+    if (!automat.empty())
+    {
+        std::vector<c2d::diagramm::Zustandsdiagramm> treffer;
+        std::vector<std::string> wo;
+        for (std::size_t d = 0; d < p.dateien.size(); ++d)
+        {
+            if (gewaehlteDatei != c2d::projekt::kKeine && d != gewaehlteDatei) continue;
+            for (c2d::diagramm::Zustandsdiagramm& z : c2d::diagramm::automatenVon(p.dateien[d].ergebnis.einheit))
+                if (istAutomat(z, automat))
+                {
+                    wo.push_back(vorn(p.dateien[d].pfad) + ":" + std::to_string(z.zeile));
+                    treffer.push_back(std::move(z));
+                }
+        }
+        if (treffer.size() != 1)
+        {
+            std::cerr << "c2d: " << (treffer.empty() ? "no automaton '" + automat + "'" : "'" + automat + "' is ambiguous:");
+            for (const std::string& w : wo) std::cerr << ' ' << w;
+            std::cerr << (treffer.empty() ? " - see --liste\n" : " - choose one with --datei\n");
+            return 1;
+        }
+        std::cout << format->schreibe(treffer.front(), optionen);
+        return 0;
+    }
+
     std::optional<Fundstelle> gewaehlt;
     if (!struktur)
     {

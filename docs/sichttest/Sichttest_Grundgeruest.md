@@ -224,3 +224,35 @@ Projektdatei setzt `MIT_LOG`, den Include-Pfad `inc`, für `antrieb` `MOTOREN=2`
       gewählt. Defines leeren, Enter.
       `aktion: datei_waehlen pfad=antrieb/motor.c` `aktion: definitionen_setzen wert="MOTOREN=1"` `aktion: definitionen_setzen wert=""`
 - [ ] **J11 Project > Show project messages:** eine Meldung `alt: folder skipped ("uebergehen": "alt")`.
+- [ ] **J12 Zurück zum Aufruf:** In `main()` Doppelklick auf `motor_starte(2)`, dann in der
+      Leiste oben **Back**: wieder `main()`, und um `motor_starte(2)` liegt ein Ring — der Aufruf,
+      von dem man kam. Der Knopf Back ist grau, wenn es nichts gibt, wohin er führt; sein Tooltip
+      nennt das Ziel.
+      `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main` `aktion: springen name=motor_starte` `aktion: zurueck`
+- [ ] **J13 Called from:** `antrieb/motor.c`, `motor_starte()` wählen. Der Knopf **Called from**
+      (auch Rechtsklick im Diagramm > *Called from*) zeigt `main() - main.c:14`; ein Klick führt
+      zu `main()` in `main.c`, der Aufruf `motor_starte(2)` ist dort umringt. Bei `main()` steht
+      im Menü `No caller in the project`.
+      `aktion: datei_waehlen pfad=antrieb/motor.c` `aktion: diagramm_waehlen name=motor_starte` `aktion: zum_aufrufer wahl=0`
+
+## K. Zustandsautomaten
+
+- [ ] **K0 Vorbereiten:** `beispiele/automat.c` öffnen, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/automat.c` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **K1 Erkannt:** Die Auswahl Diagram bietet nach `motor_takt()` und `motor_quittiere()` den
+      Eintrag `State machine: motor.zustand in motor_takt()`; die Statuszeile endet mit
+      `1 state machine(s)`.
+- [ ] **K2 Gezeichnet:** Den Automaten wählen. Vier Zustände mit runden Ecken — `AUS`, `STARTE`,
+      `LAEUFT`, `FEHLER` — und oben ein gefüllter Punkt. Pfeile: Punkt → `AUS` mit
+      `in motor_quittiere()`, `AUS` → `STARTE` mit `bereit`, `STARTE` → `FEHLER` mit
+      `stoerung && motor.versuche > 3`, `STARTE` → `LAEUFT` mit `!(stoerung)`, `LAEUFT` → `FEHLER`
+      mit `stoerung`, `LAEUFT` → `AUS` mit `!(stoerung) && !bereit`. Keine Beschriftung liegt auf
+      einer anderen.
+      `aktion: diagramm_waehlen name=automat:motor.zustand`
+- [ ] **K3 Als Text:** Format mermaid, Ansicht Text: `stateDiagram-v2`, der Punkt als `[*]`. In
+      mermaid.live ergibt es dasselbe Bild.
+      `aktion: format_waehlen name=mermaid` `aktion: ansicht_waehlen name=text`
+- [ ] **K4 An echtem Code (wenn vorhanden):** `../LLC/firmware/Global/Source_Files/I2C.c`
+      öffnen: zwei Automaten, `ptr_Handler->Bus_State in I2C_PROCESS()` (11 Zustände und der Punkt
+      von außen aus `CHECK_TIMEOUT()`) und `Scan_State in I2CBusScan()`. Die Beschriftungen stehen
+      nebeneinander, nicht übereinander.

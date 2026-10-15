@@ -10,8 +10,12 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <QGraphicsView>
+#include <QRectF>
+
+class QGraphicsItem;
 
 #include <functional>
 #include <vector>
@@ -28,6 +32,7 @@ public:
     /// sich zeigen laesst) — er wird hervorgehoben. Darf kuerzer sein als die Knoten.
     void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts, const std::vector<bool>& verweis = {});
     void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts);
+    void zeige(const c2d::diagramm::Zustandsdiagramm& diagramm, bool nachRechts);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.
@@ -36,6 +41,12 @@ public:
     [[nodiscard]] int rahmen() const { return m_rahmen; }
     /// Die ganze Szene als Bild, Massstab 1, auf dem Grund der Vorschau.
     [[nodiscard]] QImage alsBild() const;
+
+    /// Einen Knoten des Flussdiagramms hervorheben (ein Ring) und ins Bild ruecken;
+    /// kKeine nimmt die Marke weg. false = so einen Knoten gibt es nicht.
+    bool markiere(c2d::diagramm::KnotenId knoten);
+    /// Der hervorgehobene Knoten; kKeine = keiner.
+    [[nodiscard]] c2d::diagramm::KnotenId markiert() const { return m_markiert; }
 
     /// Doppelklick auf einen Knoten des Flussdiagramms.
     std::function<void(c2d::diagramm::KnotenId knoten)> beiDoppelklick;
@@ -53,6 +64,9 @@ private:
 
     int m_formen = 0;
     int m_rahmen = 0;
+    std::vector<QRectF> m_orte;  ///< je Knoten des Flussdiagramms sein Rechteck
+    QGraphicsItem* m_marke = nullptr;
+    c2d::diagramm::KnotenId m_markiert = c2d::diagramm::kKeine;
 };
 
 }  // namespace c2d::ui

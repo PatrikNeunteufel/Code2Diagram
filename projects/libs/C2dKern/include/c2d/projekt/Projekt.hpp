@@ -108,6 +108,11 @@ struct Fundstelle
 /// der anderen Dateien. Mehr als eine: es ist nicht entschieden, welche.
 [[nodiscard]] std::vector<Fundstelle> kandidaten(const Projekt& projekt, std::size_t ausDatei, std::string_view aufruf);
 
+/// Wer die Funktion an `ziel` ruft: jede Funktion mit Rumpf im Projekt, von der
+/// ein Aufruf sie meinen kann (nach `kandidaten`, auch wenn er mehrdeutig ist),
+/// jede einmal, in der Reihenfolge der Dateien.
+[[nodiscard]] std::vector<Fundstelle> aufrufer(const Projekt& projekt, const Fundstelle& ziel);
+
 /// Die Funktionen mit Rumpf, deren Name oder voller Name `name` ist, ueber alle Dateien.
 [[nodiscard]] std::vector<Fundstelle> funktionenNamens(const Projekt& projekt, std::string_view name);
 

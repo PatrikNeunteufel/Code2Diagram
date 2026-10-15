@@ -5,7 +5,9 @@
 #include "c2d/diagramm/Ableitung.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <map>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -51,57 +53,7 @@ bool istAufruf(std::string_view text)
     return false;
 }
 
-/// Die Funktionen, die ein Text ruft: jeder Name vor einer `(`, mit seinem
-/// Bereich (`a::b(` gibt `a::b`), ohne Objekt davor (`x.b(`, `p->b(` geben `b`),
-/// jeder einmal.
-/// Woerter der Sprache, die so aussehen (`if (`, `sizeof(`), zaehlen nicht.
-std::vector<std::string> aufrufeIn(std::string_view text)
-{
-    static constexpr std::string_view kKeineFunktion[] = {
-        "if",     "while",   "for",     "switch",   "return", "sizeof",  "catch",    "throw",
-        "new",    "delete",  "alignof", "decltype", "typeid", "defined", "co_return", "case",
-        "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast", "noexcept", "alignas"};
-    std::vector<std::string> aus;
-    std::size_t i = 0;
-    while (i < text.size())
-    {
-        if (text[i] == '"' || text[i] == '\'')  // in einem Literal wird nichts gerufen
-        {
-            const char ende = text[i++];
-            while (i < text.size() && text[i] != ende) i += text[i] == '\\' ? 2 : 1;
-            ++i;
-            continue;
-        }
-        if (!istNamenZeichen(text[i]) || (text[i] >= '0' && text[i] <= '9'))
-        {
-            // eine Zahl samt Anhang (0x1Fu) ist kein Name
-            if (i < text.size() && text[i] >= '0' && text[i] <= '9')
-                while (i < text.size() && istNamenZeichen(text[i])) ++i;
-            else
-                ++i;
-            continue;
-        }
-        const std::size_t anfang = i;
-        while (i < text.size() && istNamenZeichen(text[i])) ++i;
-        const std::string_view name = text.substr(anfang, i - anfang);
-        std::size_t k = i;
-        while (k < text.size() && text[k] == ' ') ++k;
-        if (k >= text.size() || text[k] != '(') continue;
-        if (std::find(std::begin(kKeineFunktion), std::end(kKeineFunktion), name) != std::end(kKeineFunktion)) continue;
-        // ein Bereich davor gehoert dazu (`N::q`, `a::N::q`); `::q` meint den globalen
-        std::size_t vorn = anfang;
-        while (vorn >= 2 && text.substr(vorn - 2, 2) == "::")
-        {
-            std::size_t w = vorn - 2;
-            while (w > 0 && istNamenZeichen(text[w - 1])) --w;
-            if (w == vorn - 2) break;  // `::q` ohne Namen davor
-            vorn = w;
-        }
-        const std::string_view voll = text.substr(vorn, i - vorn);
-        if (std::find(aus.begin(), aus.end(), voll) == aus.end()) aus.emplace_back(voll);
-    }
-    return aus;
-}
+using modell::aufrufeIn;
 
 /// Offene Enden: Kanten, die noch kein Ziel haben — (von, Beschriftung).
 using Enden = std::vector<std::pair<KnotenId, std::string>>;
@@ -474,6 +426,309 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         }
     }
     return diagramm;
+}
+
+// ---------------------------------------------------------------------------
+// Zustandsautomaten
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+/// Wie oft `V = K` mit K einer Fall-Marke mindestens im switch stehen muss, damit er ein Automat ist.
+constexpr std::size_t kMindestUebergaenge = 2;
+
+/// Ohne Leerraum und ohne Klammern, die alles umschliessen: `( p->zustand )` -> `p->zustand`.
+std::string normiert(std::string_view text)
+{
+    std::string aus;
+    for (const char c : text)
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') aus += c;
+    while (aus.size() >= 2 && aus.front() == '(' && aus.back() == ')')
+    {
+        // nur, wenn die erste Klammer erst am Ende schliesst
+        int tiefe = 0;
+        bool umschliesst = true;
+        for (std::size_t i = 0; i + 1 < aus.size(); ++i)
+        {
+            tiefe += aus[i] == '(' ? 1 : aus[i] == ')' ? -1 : 0;
+            if (tiefe == 0)
+            {
+                umschliesst = false;
+                break;
+            }
+        }
+        if (!umschliesst) break;
+        aus = aus.substr(1, aus.size() - 2);
+    }
+    return aus;
+}
+
+std::string_view getrimmt(std::string_view text)
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == ';')) text.remove_suffix(1);
+    return text;
+}
+
+/// `links = rechts` auf oberster Ebene — kein `==`, `<=`, `+=` ...; false = keine Zuweisung.
+bool zuweisung(std::string_view text, std::string& links, std::string& rechts)
+{
+    int tiefe = 0;
+    for (std::size_t i = 0; i < text.size(); ++i)
+    {
+        const char c = text[i];
+        if (c == '"' || c == '\'') return false;  // ein Literal vor dem `=`: kein einfacher Fall
+        if (c == '(' || c == '[' || c == '{') ++tiefe;
+        if (c == ')' || c == ']' || c == '}') --tiefe;
+        if (c != '=' || tiefe != 0) continue;
+        if (i + 1 < text.size() && text[i + 1] == '=') return false;
+        if (i > 0 && std::string_view("=!<>+-*/%&|^").find(text[i - 1]) != std::string_view::npos) return false;
+        links = normiert(text.substr(0, i));
+        rechts = std::string(getrimmt(text.substr(i + 1)));
+        return !links.empty() && !rechts.empty();
+    }
+    return false;
+}
+
+/// Das Glied am Ende: `a.b->zustand` -> `zustand`; ohne `.` oder `->` leer.
+std::string_view glied(std::string_view ausdruck)
+{
+    const std::size_t punkt = ausdruck.rfind('.');
+    const std::size_t pfeil = ausdruck.rfind("->");
+    std::size_t ab = std::string_view::npos;
+    if (punkt != std::string_view::npos) ab = punkt + 1;
+    if (pfeil != std::string_view::npos && (ab == std::string_view::npos || pfeil + 2 > ab)) ab = pfeil + 2;
+    return ab == std::string_view::npos ? std::string_view() : ausdruck.substr(ab);
+}
+
+std::string verbunden(const std::vector<std::string>& bedingungen)
+{
+    std::string aus;
+    for (const std::string& b : bedingungen) aus += (aus.empty() ? "" : " && ") + b;
+    return aus;
+}
+
+/// Eine Zuweisung an eine Variable, unter ihren Bedingungen.
+struct Fund
+{
+    std::string wert;
+    std::string bedingung;
+    int zeile = 0;
+};
+
+/// Geht eine Anweisung durch, haelt die Bedingungen fest, unter denen jede steht,
+/// und meldet jede Zuweisung an `ziel`. Den switch `ausser` (samt Inhalt) uebergeht er.
+class Sucher
+{
+public:
+    using Treffer = std::function<bool(const std::string& links)>;
+
+    Sucher(Treffer trifft, const Anweisung* ausser) : m_trifft(std::move(trifft)), m_ausser(ausser) {}
+
+    void gehe(const Anweisung& a, std::vector<std::string>& bedingungen, std::vector<Fund>& funde) const
+    {
+        if (&a == m_ausser) return;
+        switch (a.art)
+        {
+            case AnweisungArt::Einfach:
+            {
+                std::string links, rechts;
+                if (zuweisung(a.text, links, rechts) && m_trifft(links))
+                    funde.push_back({rechts, verbunden(bedingungen), a.zeile});
+                return;
+            }
+            case AnweisungArt::Wenn:
+            {
+                bedingungen.push_back(std::string(getrimmt(a.text)));
+                gehe(*a.kinder[0], bedingungen, funde);
+                bedingungen.back() = "!(" + std::string(getrimmt(a.text)) + ")";
+                if (a.sonst) gehe(*a.sonst, bedingungen, funde);
+                bedingungen.pop_back();
+                return;
+            }
+            case AnweisungArt::Solange:
+            case AnweisungArt::TueSolange:
+            case AnweisungArt::Fuer:
+            {
+                const bool mit = !getrimmt(a.text).empty();
+                if (mit) bedingungen.push_back(std::string(getrimmt(a.text)));
+                for (const modell::AnweisungPtr& k : a.kinder) gehe(*k, bedingungen, funde);
+                if (mit) bedingungen.pop_back();
+                return;
+            }
+            case AnweisungArt::Auswahl:
+            {
+                // ein anderer switch darin: je Fall die Bedingung `x == wert`
+                const std::string x(getrimmt(a.text));
+                const Anweisung& rumpf = *a.kinder[0];
+                std::vector<std::string> marken;
+                bool davorFall = false;
+                const auto schritt = [&](const Anweisung& s) {
+                    if (s.art == AnweisungArt::Fall)
+                    {
+                        if (!davorFall) marken.clear();
+                        marken.push_back(s.text.empty() ? std::string("default") : x + " == " + std::string(getrimmt(s.text)));
+                        davorFall = true;
+                        return;
+                    }
+                    davorFall = false;
+                    std::string fall;
+                    for (const std::string& m : marken) fall += (fall.empty() ? "" : " || ") + m;
+                    const bool mit = !fall.empty();
+                    if (mit) bedingungen.push_back(marken.size() > 1 ? "(" + fall + ")" : fall);
+                    gehe(s, bedingungen, funde);
+                    if (mit) bedingungen.pop_back();
+                };
+                if (rumpf.art == AnweisungArt::Block)
+                    for (const modell::AnweisungPtr& s : rumpf.kinder) schritt(*s);
+                else
+                    schritt(rumpf);
+                return;
+            }
+            default:
+                for (const modell::AnweisungPtr& k : a.kinder) gehe(*k, bedingungen, funde);
+                if (a.sonst) gehe(*a.sonst, bedingungen, funde);
+                return;
+        }
+    }
+
+private:
+    Treffer m_trifft;
+    const Anweisung* m_ausser;
+};
+
+/// Alle switch einer Anweisung, in der Reihenfolge des Texts.
+void sammleAuswahl(const Anweisung& a, std::vector<const Anweisung*>& aus)
+{
+    if (a.art == AnweisungArt::Auswahl) aus.push_back(&a);
+    for (const modell::AnweisungPtr& k : a.kinder) sammleAuswahl(*k, aus);
+    if (a.sonst) sammleAuswahl(*a.sonst, aus);
+}
+
+/// Ein switch als Automat; leer, wenn er keiner ist.
+std::optional<Zustandsdiagramm> alsAutomat(const Anweisung& auswahl, const modell::Funktion& funktion,
+                                           const modell::Einheit& einheit)
+{
+    const std::string variable = normiert(auswahl.text);
+    if (variable.empty()) return std::nullopt;
+
+    Zustandsdiagramm d;
+    d.variable = variable;
+    d.funktion = funktion.vollerName();
+    d.zeile = auswahl.zeile;
+    d.titel = variable + " in " + d.funktion + "()";
+    const auto zustand = [&](const std::string& name, int zeile) -> std::size_t {
+        for (std::size_t i = 0; i < d.zustaende.size(); ++i)
+            if (!d.zustaende[i].aussen && d.zustaende[i].name == name) return i;
+        d.zustaende.push_back({name, false, zeile});
+        return d.zustaende.size() - 1;
+    };
+
+    // die Faelle, je Gruppe von Marken (`case A: case B:`) ihre Anweisungen
+    struct Gruppe
+    {
+        std::vector<std::size_t> marken;
+        std::vector<const Anweisung*> anweisungen;
+    };
+    std::vector<Gruppe> gruppen;
+    std::vector<std::string> markenNamen;
+    bool davorFall = false;
+    const Anweisung& rumpf = *auswahl.kinder[0];
+    const auto schritt = [&](const Anweisung& s) {
+        if (s.art == AnweisungArt::Fall)
+        {
+            if (!davorFall) gruppen.emplace_back();
+            const std::string name = s.text.empty() ? std::string("default") : normiert(s.text);
+            gruppen.back().marken.push_back(zustand(name, s.zeile));
+            markenNamen.push_back(name);
+            davorFall = true;
+            return;
+        }
+        davorFall = false;
+        if (!gruppen.empty()) gruppen.back().anweisungen.push_back(&s);
+    };
+    if (rumpf.art == AnweisungArt::Block)
+        for (const modell::AnweisungPtr& s : rumpf.kinder) schritt(*s);
+    else
+        schritt(rumpf);
+    const auto istMarke = [&](const std::string& wert) {
+        return std::find(markenNamen.begin(), markenNamen.end(), wert) != markenNamen.end();
+    };
+
+    // die Uebergaenge im switch
+    const Sucher imSwitch([&](const std::string& links) { return links == variable; }, nullptr);
+    std::size_t aufMarken = 0;
+    std::vector<Uebergang> uebergaenge;
+    for (const Gruppe& g : gruppen)
+    {
+        std::vector<Fund> funde;
+        std::vector<std::string> bedingungen;
+        for (const Anweisung* a : g.anweisungen) imSwitch.gehe(*a, bedingungen, funde);
+        for (const Fund& f : funde)
+        {
+            const std::string wert = normiert(f.wert);
+            if (istMarke(wert)) ++aufMarken;
+            const std::size_t nach = zustand(wert, 0);
+            for (const std::size_t von : g.marken) uebergaenge.push_back({von, nach, f.bedingung, f.zeile});
+        }
+    }
+    if (aufMarken < kMindestUebergaenge) return std::nullopt;
+
+    // von aussen: dieselbe Variable — oder dasselbe Glied auf anderem Weg — bekommt einen Zustand
+    const std::string_view sein = glied(variable);
+    const Sucher draussen(
+        [&](const std::string& links) { return links == variable || (!sein.empty() && glied(links) == sein); }, &auswahl);
+    std::size_t aussen = d.zustaende.size();
+    for (const modell::Funktion& f : einheit.funktionen)
+    {
+        if (!f.rumpf) continue;
+        std::vector<Fund> funde;
+        std::vector<std::string> bedingungen;
+        draussen.gehe(*f.rumpf, bedingungen, funde);
+        for (const Fund& fund : funde)
+        {
+            const std::string wert = normiert(fund.wert);
+            if (!istMarke(wert)) continue;  // nur, was ein Zustand des Automaten ist
+            if (aussen == d.zustaende.size()) d.zustaende.push_back({{}, true, 0});
+            const std::string wo = "in " + f.vollerName() + "()";
+            uebergaenge.push_back({aussen, zustand(wert, 0), fund.bedingung.empty() ? wo : wo + ": " + fund.bedingung,
+                                   fund.zeile});
+        }
+    }
+
+    // gleiche Wege zusammen: ihre Bedingungen mit `||`, ein Weg ohne Bedingung gilt immer
+    for (const Uebergang& u : uebergaenge)
+    {
+        const auto gleich = std::find_if(d.uebergaenge.begin(), d.uebergaenge.end(),
+                                         [&](const Uebergang& x) { return x.von == u.von && x.nach == u.nach; });
+        if (gleich == d.uebergaenge.end())
+        {
+            d.uebergaenge.push_back(u);
+            continue;
+        }
+        if (gleich->bedingung.empty() || u.bedingung.empty())
+            gleich->bedingung.clear();
+        else if (gleich->bedingung != u.bedingung)
+            gleich->bedingung += " || " + u.bedingung;
+    }
+    return d;
+}
+
+}  // namespace
+
+std::vector<Zustandsdiagramm> automatenVon(const modell::Einheit& einheit)
+{
+    std::vector<Zustandsdiagramm> aus;
+    for (const modell::Funktion& f : einheit.funktionen)
+    {
+        if (!f.rumpf) continue;
+        std::vector<const Anweisung*> auswahlen;
+        sammleAuswahl(*f.rumpf, auswahlen);
+        for (const Anweisung* a : auswahlen)
+            if (std::optional<Zustandsdiagramm> d = alsAutomat(*a, f, einheit)) aus.push_back(std::move(*d));
+    }
+    return aus;
 }
 
 }  // namespace c2d::diagramm

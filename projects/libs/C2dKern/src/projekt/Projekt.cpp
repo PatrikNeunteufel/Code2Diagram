@@ -407,6 +407,33 @@ std::vector<Fundstelle> kandidaten(const Projekt& projekt, std::size_t ausDatei,
     return aus;
 }
 
+std::vector<Fundstelle> aufrufer(const Projekt& projekt, const Fundstelle& ziel)
+{
+    std::vector<Fundstelle> aus;
+    if (ziel.datei >= projekt.dateien.size()) return aus;
+    const modell::Funktion& gerufen = funktion(projekt, ziel);
+    for (std::size_t d = 0; d < projekt.dateien.size(); ++d)
+    {
+        const std::vector<modell::Funktion>& fs = projekt.dateien[d].ergebnis.einheit.funktionen;
+        for (std::size_t f = 0; f < fs.size(); ++f)
+        {
+            if (!fs[f].rumpf) continue;
+            for (const std::string& aufruf : modell::aufrufeVon(fs[f]))
+            {
+                // erst der billige Vergleich am Namen, dann die Regeln des Projekts
+                if (!gerufen.heisst(aufruf)) continue;
+                const std::vector<Fundstelle> gemeint = kandidaten(projekt, d, aufruf);
+                if (std::any_of(gemeint.begin(), gemeint.end(), [&](const Fundstelle& g) { return g == ziel; }))
+                {
+                    aus.push_back({d, f});
+                    break;
+                }
+            }
+        }
+    }
+    return aus;
+}
+
 std::vector<Fundstelle> funktionenNamens(const Projekt& projekt, std::string_view name)
 {
     std::vector<Fundstelle> aus;

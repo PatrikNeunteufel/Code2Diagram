@@ -36,6 +36,9 @@
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTextBlock>
+#include <QStyle>
+#include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
@@ -241,7 +244,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         const std::vector<Fundstelle> ziele = zieleVon(knoten);
         if (ziele.size() == 1)
         {
-            gehe(ziele.front());
+            gehe(ziele.front(), knoten);
             return;
         }
         if (ziele.empty())
@@ -254,7 +257,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         QMenu wahl(this);
         wahl.addSection(QStringLiteral("Which function?"));
         for (const Fundstelle& z : ziele)
-            wahl.addAction(beschreibe(z), this, [this, z] { gehe(z); });
+            wahl.addAction(beschreibe(z), this, [this, z, knoten] { gehe(z, knoten); });
         wahl.exec(QCursor::pos());
     };
     m_vorschau->beiKontext = [this](c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort) {
@@ -288,10 +291,36 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_projektdateiAktion->setEnabled(false);
     m_meldungenAktion->setEnabled(false);
 
-    QMenu* diagramm = menuBar()->addMenu(QStringLiteral("&Diagram"));
-    diagramm->addAction(QStringLiteral("&Back"), QKeySequence(Qt::ALT | Qt::Key_Left), this, [this] {
+    // Back und Called from: im Menue und als Knoepfe in der Leiste
+    m_zurueckAktion = new QAction(style()->standardIcon(QStyle::SP_ArrowBack), QStringLiteral("&Back"), this);
+    m_zurueckAktion->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
+    m_zurueckAktion->setEnabled(false);
+    connect(m_zurueckAktion, &QAction::triggered, this, [this] {
         if (!zurueck()) statusBar()->showMessage(QStringLiteral("No diagram to go back to"), 3000);
     });
+    auto* aufruferMenue = new QMenu(this);
+    aufruferMenue->setObjectName(QStringLiteral("aufrufer"));
+    connect(aufruferMenue, &QMenu::aboutToShow, this, [this, aufruferMenue] {
+        // erst beim Oeffnen: das Suchen geht ueber das ganze Projekt
+        aufruferMenue->clear();
+        fuelleAufruferMenue(aufruferMenue);
+    });
+    m_aufruferAktion = new QAction(style()->standardIcon(QStyle::SP_ArrowUp), QStringLiteral("Called &from"), this);
+    m_aufruferAktion->setMenu(aufruferMenue);
+    m_aufruferAktion->setEnabled(false);
+    m_aufruferAktion->setToolTip(QStringLiteral("The functions in the project that call the one shown"));
+    QToolBar* navigation = addToolBar(QStringLiteral("Navigation"));
+    navigation->setObjectName(QStringLiteral("navigation"));
+    navigation->setMovable(false);
+    navigation->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    navigation->addAction(m_zurueckAktion);
+    navigation->addAction(m_aufruferAktion);
+    if (auto* knopf = qobject_cast<QToolButton*>(navigation->widgetForAction(m_aufruferAktion)))
+        knopf->setPopupMode(QToolButton::InstantPopup);
+
+    QMenu* diagramm = menuBar()->addMenu(QStringLiteral("&Diagram"));
+    diagramm->addAction(m_zurueckAktion);
+    diagramm->addAction(m_aufruferAktion);
     diagramm->addAction(QStringLiteral("&Remove all embeddings"), this, [this] {
         if (!loeseEinbettungen()) statusBar()->showMessage(QStringLiteral("Nothing is embedded"), 3000);
     });
@@ -424,6 +453,8 @@ void Hauptfenster::zeigeDatei(std::size_t index)
             const QSignalBlocker ruhe(m_auswahl);
             m_auswahl->clear();
         }
+        m_automaten.clear();
+        m_automatNamen.clear();
         baueNeu();
         zeigeLage();
         return;
@@ -444,6 +475,16 @@ void Hauptfenster::zeigeDatei(std::size_t index)
             const QString fname = QString::fromStdString(f.vollerName());
             if (!f.rumpf || m_auswahl->findData(fname) >= 0) continue;
             m_auswahl->addItem(fname + QStringLiteral("()"), fname);
+        }
+        // erkannte Zustandsautomaten
+        m_automaten = c2d::diagramm::automatenVon(einheit);
+        m_automatNamen.clear();
+        for (const c2d::diagramm::Zustandsdiagramm& z : m_automaten)
+        {
+            QString name = QString::fromLatin1(kAutomat) + QString::fromStdString(z.variable);
+            if (m_automatNamen.contains(name)) name += QLatin1Char('@') + QString::fromStdString(z.funktion);
+            m_automatNamen << name;
+            m_auswahl->addItem(QStringLiteral("State machine: %1").arg(QString::fromStdString(z.titel)), name);
         }
         if (!einheit.typen.empty())
             m_auswahl->addItem(QStringLiteral("Data types (%1)").arg(einheit.typen.size()),
@@ -525,8 +566,10 @@ void Hauptfenster::zeigeLage()
     QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
                        .arg(name, ausStd(d.sprache->name()),
                             ersatz ? QStringLiteral(" (no reader for this file type)") : QString())
-                       .arg(m_auswahl->count() - (d.ergebnis.einheit.typen.empty() ? 0 : 1))
+                       .arg(m_auswahl->count() - static_cast<int>(m_automaten.size()) -
+                            (d.ergebnis.einheit.typen.empty() ? 0 : 1))
                        .arg(d.ergebnis.einheit.typen.size());
+    if (!m_automaten.empty()) lage += QStringLiteral(", %1 state machine(s)").arg(m_automaten.size());
     if (!d.ergebnis.meldungen.empty())
     {
         const c2d::quelle::Meldung& erste = d.ergebnis.meldungen.front();
@@ -850,7 +893,92 @@ bool Hauptfenster::zurueck()
     if (davor.datei != m_datei) zeigeDatei(davor.datei);
     const bool gefunden = waehle(m_auswahl, davor.diagramm);
     m_ohneVerlauf = false;
+    // zurueck zum Aufruf, von dem man kam: er ist hervorgehoben
+    if (gefunden && m_gezeigt == davor.diagramm) m_vorschau->markiere(davor.knoten);
+    aktualisiereLeiste();
     return gefunden;
+}
+
+QString Hauptfenster::markiert() const
+{
+    const c2d::diagramm::KnotenId k = m_vorschau->markiert();
+    if (k >= m_fluss.knoten().size()) return {};
+    QStringList zeilen;
+    for (const std::string& z : m_fluss.knoten()[k].zeilen) zeilen << QString::fromStdString(z);
+    return zeilen.join(QLatin1Char('\n'));
+}
+
+std::optional<Fundstelle> Hauptfenster::gezeigteFunktion() const
+{
+    if (m_datei >= m_projekt.dateien.size() || m_gezeigt.isEmpty() || m_gezeigt == QLatin1String(kDatentypen))
+        return std::nullopt;
+    const std::string name = m_gezeigt.toStdString();
+    const auto& fs = m_projekt.dateien[m_datei].ergebnis.einheit.funktionen;
+    for (std::size_t f = 0; f < fs.size(); ++f)
+        if (fs[f].rumpf && fs[f].vollerName() == name) return Fundstelle{m_datei, f};
+    return std::nullopt;
+}
+
+QStringList Hauptfenster::aufrufer() const
+{
+    QStringList aus;
+    if (const std::optional<Fundstelle> ich = gezeigteFunktion())
+        for (const Fundstelle& f : c2d::projekt::aufrufer(m_projekt, *ich)) aus << beschreibe(f);
+    return aus;
+}
+
+bool Hauptfenster::springeZuAufrufer(int wahl)
+{
+    const std::optional<Fundstelle> ich = gezeigteFunktion();
+    if (!ich || wahl < 0) return false;
+    const std::vector<Fundstelle> wer = c2d::projekt::aufrufer(m_projekt, *ich);
+    if (static_cast<std::size_t>(wahl) >= wer.size()) return false;
+    const Fundstelle ziel = *ich;  // gehe() wechselt das gezeigte Diagramm
+    gehe(wer[static_cast<std::size_t>(wahl)]);
+    markiereAufrufVon(ziel);
+    return true;
+}
+
+void Hauptfenster::markiereAufrufVon(const Fundstelle& ziel)
+{
+    for (c2d::diagramm::KnotenId i = 0; i < m_fluss.knoten().size(); ++i)
+    {
+        const std::vector<Fundstelle> z = zieleVon(i);
+        if (std::find_if(z.begin(), z.end(), [&](const Fundstelle& f) { return f == ziel; }) != z.end())
+        {
+            m_vorschau->markiere(i);
+            return;
+        }
+    }
+}
+
+void Hauptfenster::fuelleAufruferMenue(QMenu* menue)
+{
+    const std::optional<Fundstelle> ich = gezeigteFunktion();
+    if (!ich)
+    {
+        menue->addAction(QStringLiteral("(no function shown)"))->setEnabled(false);
+        return;
+    }
+    const std::vector<Fundstelle> wer = c2d::projekt::aufrufer(m_projekt, *ich);
+    if (wer.empty())
+    {
+        menue->addAction(QStringLiteral("No caller in the project"))->setEnabled(false);
+        return;
+    }
+    constexpr std::size_t kHoechstens = 40;  // mehr liest niemand in einem Menue
+    for (std::size_t i = 0; i < wer.size() && i < kHoechstens; ++i)
+        menue->addAction(beschreibe(wer[i]), this, [this, i] { springeZuAufrufer(static_cast<int>(i)); });
+    if (wer.size() > kHoechstens)
+        menue->addAction(QStringLiteral("... and %1 more").arg(wer.size() - kHoechstens))->setEnabled(false);
+}
+
+void Hauptfenster::aktualisiereLeiste()
+{
+    m_zurueckAktion->setEnabled(!m_verlauf.isEmpty());
+    m_zurueckAktion->setToolTip(m_verlauf.isEmpty() ? QStringLiteral("Back (Alt+Left)")
+                                                    : QStringLiteral("Back to %1 (Alt+Left)").arg(m_verlauf.last().diagramm));
+    m_aufruferAktion->setEnabled(gezeigteFunktion().has_value());
 }
 
 bool Hauptfenster::waehleFormat(const QString& name)
@@ -911,26 +1039,29 @@ QStringList Hauptfenster::ziele(const QString& aufruf) const
 
 bool Hauptfenster::springe(const QString& aufruf, int wahl)
 {
-    const std::vector<Fundstelle> k = c2d::projekt::kandidaten(m_projekt, m_datei, aufruf.toStdString());
+    const std::string name = aufruf.toStdString();
+    const std::vector<Fundstelle> k = c2d::projekt::kandidaten(m_projekt, m_datei, name);
     if (wahl < 0 && k.size() == 1) wahl = 0;
     if (wahl < 0 || static_cast<std::size_t>(wahl) >= k.size()) return false;
-    gehe(k[static_cast<std::size_t>(wahl)]);
+    // der Knoten, der so ruft: zu ihm fuehrt zurueck()
+    c2d::diagramm::KnotenId von = c2d::diagramm::kKeine;
+    for (c2d::diagramm::KnotenId i = 0; i < m_fluss.knoten().size() && von == c2d::diagramm::kKeine; ++i)
+        for (const std::string& a : m_fluss.knoten()[i].aufrufe)
+            if (a == name) von = i;
+    gehe(k[static_cast<std::size_t>(wahl)], von);
     return true;
 }
 
-void Hauptfenster::gehe(const Fundstelle& stelle)
+void Hauptfenster::gehe(const Fundstelle& stelle, c2d::diagramm::KnotenId von)
 {
     const QString name = QString::fromStdString(c2d::projekt::funktion(m_projekt, stelle).vollerName());
-    if (stelle.datei == m_datei)
-    {
-        waehleDiagramm(name);
-        return;
-    }
-    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt};
+    if (stelle.datei == m_datei && name == m_gezeigt) return;  // schon da (ein Aufruf seiner selbst)
+    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt, von};
     m_ohneVerlauf = true;
-    zeigeDatei(stelle.datei);
+    if (stelle.datei != m_datei) zeigeDatei(stelle.datei);
     waehle(m_auswahl, name);
     m_ohneVerlauf = false;
+    aktualisiereLeiste();
 }
 
 bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const Fundstelle& gerufen)
@@ -1028,6 +1159,7 @@ void Hauptfenster::baueNeu()
         }
     }
     zeichne();
+    aktualisiereLeiste();
 }
 
 void Hauptfenster::zeichne()
@@ -1050,6 +1182,13 @@ void Hauptfenster::zeichne()
         const Strukturdiagramm typen = strukturVon(m_projekt.dateien[m_datei].ergebnis.einheit);
         m_vorschau->zeige(typen, nachRechts);
         m_text->setPlainText(QString::fromStdString(format->schreibe(typen, optionen)));
+        return;
+    }
+    if (const qsizetype automat = m_automatNamen.indexOf(m_gezeigt); automat >= 0)
+    {
+        const Zustandsdiagramm& z = m_automaten[static_cast<std::size_t>(automat)];
+        m_vorschau->zeige(z, nachRechts);
+        m_text->setPlainText(QString::fromStdString(format->schreibe(z, optionen)));
         return;
     }
     // hervorgehoben wird, was weiterfuehrt: ein Knoten, dessen Aufruf eine Funktion des Projekts meint
@@ -1078,7 +1217,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 const Fundstelle f = gemeint.front();
                 const QString voll = QString::fromStdString(c2d::projekt::funktion(m_projekt, f).vollerName());
                 const QString wo = f.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[f.datei].pfad));
-                menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f] { gehe(f); });
+                menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f, knoten] { gehe(f, knoten); });
                 menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
                     ->setEnabled(!traegtSchon);
             }
@@ -1087,7 +1226,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 // mehrdeutig: alle zur Wahl, mit Pfad und Zeile
                 QMenu* wahl = menue.addMenu(QStringLiteral("%1(): %2 functions qualify").arg(ausStd(aufruf)).arg(gemeint.size()));
                 for (const Fundstelle& f : gemeint)
-                    wahl->addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f] { gehe(f); });
+                    wahl->addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f, knoten] { gehe(f, knoten); });
                 wahl->addSeparator();
                 for (const Fundstelle& f : gemeint)
                     wahl->addAction(QStringLiteral("Embed here: %1").arg(beschreibe(f)), this, [this, knoten, f] { betteEin(knoten, f); })
@@ -1112,14 +1251,24 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
     }
     if (!m_fluss.gruppen().empty())
         menue.addAction(QStringLiteral("Remove all embeddings"), this, [this] { loeseEinbettungen(); });
+    if (!m_verlauf.isEmpty() || gezeigteFunktion())
+        if (!menue.isEmpty()) menue.addSeparator();
     if (!m_verlauf.isEmpty())
     {
-        if (!menue.isEmpty()) menue.addSeparator();
         const Stelle& davor = m_verlauf.last();
         const QString wo = davor.datei == m_datei || davor.datei >= m_projekt.dateien.size()
                                ? QString()
                                : QStringLiteral(" (%1)").arg(ausStd(m_projekt.dateien[davor.datei].pfad));
         menue.addAction(QStringLiteral("Back to %1%2").arg(davor.diagramm, wo), this, [this] { zurueck(); });
+    }
+    if (gezeigteFunktion())
+    {
+        // wer ruft die gezeigte Funktion? erst beim Oeffnen gesucht
+        QMenu* von = menue.addMenu(QStringLiteral("Called from"));
+        connect(von, &QMenu::aboutToShow, this, [this, von] {
+            von->clear();
+            fuelleAufruferMenue(von);
+        });
     }
     if (!menue.isEmpty()) menue.exec(ort);
 }

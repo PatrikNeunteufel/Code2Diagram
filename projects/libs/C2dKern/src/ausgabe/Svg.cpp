@@ -13,6 +13,7 @@
 #include "Text.hpp"
 #include "c2d/diagramm/Anordnung.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -270,6 +271,43 @@ public:
                              o.zeilenHoehe, "font-style=\"italic\"");
         }
         for (std::size_t i = 0; i < a.kaesten.size(); ++i) aus += kasten(diagramm.kaesten[i], a.kaesten[i], o);
+        return aus + "</svg>\n";
+    }
+
+    [[nodiscard]] std::string schreibe(const Zustandsdiagramm& diagramm, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const FlussAnordnung a = ordneAn(diagramm, o);
+        std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
+        for (const Linienzug& l : a.kanten)
+        {
+            if (l.size() < 2) continue;
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"/>\n";
+            aus += spitze(l[l.size() - 2], l.back(), true);
+        }
+        for (std::size_t z = 0; z < diagramm.zustaende.size(); ++z)
+        {
+            const Rechteck& r = a.knoten[z];
+            if (diagramm.zustaende[z].aussen)
+            {
+                // der Punkt von aussen: ein gefuellter Kreis
+                const Punkt m = r.mitte();
+                aus += "  <circle class=\"spitze\" cx=\"" + zahl(m.x) + "\" cy=\"" + zahl(m.y) + "\" r=\"" +
+                       zahl(std::min(r.breite, r.hoehe) / 2) + "\"/>\n";
+                continue;
+            }
+            aus += rechteck(r, "flaeche", 10);
+            aus += textMittig({kuerze(diagramm.zustaende[z].name, optionen.maxZeilenLaenge)}, r.mitte(), o.zeilenHoehe);
+        }
+        for (std::size_t e = 0; e < diagramm.uebergaenge.size(); ++e)
+        {
+            const std::string inhalt = kuerze(diagramm.uebergaenge[e].bedingung, optionen.maxZeilenLaenge);
+            if (inhalt.empty()) continue;
+            const Punkt m = a.beschriftungen[e];
+            const double breite = static_cast<double>(zeichen(inhalt)) * o.zeichenBreite + 4;
+            aus += rechteck({m.x - breite / 2, m.y - kSchildHoehe / 2, breite, kSchildHoehe}, "schild");
+            aus += textMittig({inhalt}, m, o.zeilenHoehe);
+        }
         return aus + "</svg>\n";
     }
 };

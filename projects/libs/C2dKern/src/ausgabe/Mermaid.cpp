@@ -1,6 +1,6 @@
 /**
  * @file Mermaid.cpp
- * @brief Mermaid: flowchart und classDiagram
+ * @brief Mermaid: flowchart, classDiagram und stateDiagram-v2
  *
  * Welche Form ein Knoten bekommt, steht als Tabelle hier — im Code, nicht in
  * einer Konfigurationsdatei (Lehre 5, docs/Ernte_Vorgaenger.md).
@@ -61,6 +61,24 @@ std::string maskiere(std::string_view text)
             case '\t': aus += ' '; break;
             default: aus += c; break;
         }
+    }
+    return aus;
+}
+
+/// Text hinter `:` in einem stateDiagram: ein weiterer Doppelpunkt oder ein Strichpunkt
+/// beendet dort die Beschreibung (Mermaid 10.9.1 meldet einen Fehler) — auch sie werden Entity-Code.
+std::string maskiereZustand(std::string_view text)
+{
+    // Zeichen fuer Zeichen: das `;` der Entity-Codes, die maskiere() schreibt, bleibt
+    std::string aus;
+    for (const char c : text)
+    {
+        if (c == ':')
+            aus += "#58;";
+        else if (c == ';')
+            aus += "#59;";
+        else
+            aus += maskiere(std::string_view(&c, 1));
     }
     return aus;
 }
@@ -218,6 +236,33 @@ public:
                 case BeziehungArt::Erbt: aus += "    " + nach + " <|-- " + von; break;
             }
             if (!b.beschriftung.empty()) aus += " : " + eintragText(b.beschriftung);
+            aus += '\n';
+        }
+        return aus;
+    }
+
+    [[nodiscard]] std::string schreibe(const Zustandsdiagramm& diagramm, const Optionen& optionen) const override
+    {
+        std::string aus = kommentar(diagramm.titel);
+        aus += "stateDiagram-v2\n";
+        if (optionen.richtung != "TD")
+        {
+            aus += "    direction ";
+            aus += optionen.richtung;
+            aus += '\n';
+        }
+        // der Punkt von aussen ist [*]; ein Zustand bekommt eine Kennung und seinen Namen als Text
+        const auto id = [&](std::size_t z) {
+            return diagramm.zustaende[z].aussen ? std::string("[*]") : "s" + std::to_string(z);
+        };
+        for (std::size_t z = 0; z < diagramm.zustaende.size(); ++z)
+            if (!diagramm.zustaende[z].aussen)
+                aus += "    state \"" + maskiereZustand(kuerze(diagramm.zustaende[z].name, optionen.maxZeilenLaenge)) +
+                       "\" as " + id(z) + '\n';
+        for (const Uebergang& u : diagramm.uebergaenge)
+        {
+            aus += "    " + id(u.von) + " --> " + id(u.nach);
+            if (!u.bedingung.empty()) aus += " : " + maskiereZustand(kuerze(u.bedingung, optionen.maxZeilenLaenge));
             aus += '\n';
         }
         return aus;

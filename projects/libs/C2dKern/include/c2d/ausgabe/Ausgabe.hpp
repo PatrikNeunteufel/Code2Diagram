@@ -12,6 +12,7 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
 #include <span>
@@ -44,6 +45,8 @@ public:
     [[nodiscard]] virtual std::string schreibe(const diagramm::Flussdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Strukturdiagramm& diagramm,
+                                               const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Zustandsdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
 };
 

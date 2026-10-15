@@ -219,6 +219,30 @@ public:
         }
         return aus + std::string(kFuss);
     }
+
+    [[nodiscard]] std::string schreibe(const Zustandsdiagramm& diagramm, const Optionen& optionen) const override
+    {
+        const FlussAnordnung a = ordneAn(diagramm, anordnung(optionen));
+        std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
+        for (std::size_t z = 0; z < diagramm.zustaende.size(); ++z)
+        {
+            const Zustand& zustand = diagramm.zustaende[z];
+            if (zustand.aussen)  // der Punkt von aussen: ein gefuellter Kreis
+                aus += ecke("s" + std::to_string(z), {}, "ellipse;fillColor=#000000;strokeColor=#000000;html=1;", "1",
+                            a.knoten[z]);
+            else
+                aus += ecke("s" + std::to_string(z), html(kuerze(zustand.name, optionen.maxZeilenLaenge)),
+                            "rounded=1;arcSize=30;whiteSpace=wrap;html=1;" + std::string(kSchrift), "1", a.knoten[z]);
+        }
+        for (std::size_t e = 0; e < diagramm.uebergaenge.size(); ++e)
+        {
+            const Uebergang& u = diagramm.uebergaenge[e];
+            aus += kante("e" + std::to_string(e), html(kuerze(u.bedingung, optionen.maxZeilenLaenge)),
+                         "edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;" + std::string(kSchrift),
+                         "s" + std::to_string(u.von), "s" + std::to_string(u.nach));
+        }
+        return aus + std::string(kFuss);
+    }
 };
 
 }  // namespace

@@ -216,6 +216,17 @@ TEST_SUITE("Projekt")
             REQUIRE(zwei.size() == 2);
             CHECK(zwei[0].datei == mo);
             CHECK(zwei[1].datei == p.finde("slave/s.c"));
+            // die Umkehrung: wer ruft? Auch ein mehrdeutiger Aufruf zaehlt fuer jeden seiner Kandidaten
+            const std::vector<Fundstelle> rufenStarte = aufrufer(p, zwei[0]);
+            REQUIRE(rufenStarte.size() == 1);
+            CHECK(rufenStarte[0].datei == m);
+            CHECK(funktion(p, rufenStarte[0]).name == "main");
+            CHECK(aufrufer(p, zwei[1]) == rufenStarte);
+            const std::vector<Fundstelle> rufenHilf = aufrufer(p, kandidaten(p, mo, "hilf")[0]);
+            REQUIRE(rufenHilf.size() == 1);  // nur starte in motor.c, nicht main: das meint seine eigene
+            CHECK(funktion(p, rufenHilf[0]).name == "starte");
+            CHECK(aufrufer(p, eigene[0]).size() == 1);
+            CHECK(funktion(p, aufrufer(p, eigene[0])[0]).name == "main");
             CHECK(funktionenNamens(p, "hilf").size() == 2);
             CHECK(funktionenNamens(p, "gibt_es_nicht").empty());
         }
@@ -259,6 +270,17 @@ TEST_SUITE("Projekt")
 
 TEST_SUITE("Aufrufe und Namen")
 {
+    TEST_CASE("aufrufeVon: ueber alle Anweisungen einer Funktion, jeder einmal")
+    {
+        const c2d::sprache::Ergebnis e = c2d::sprache::c().lies(
+            "void f(int x) { a(); if (b(x)) { c(); } else d(); for (int i = e(); i < 3; i += g()) h(); "
+            "switch (k()) { case 1: a(); break; } goto ende; ende: return m(\"n(\"); }",
+            "t.c");
+        REQUIRE(e.einheit.funktionen.size() == 1);
+        CHECK(c2d::modell::aufrufeVon(e.einheit.funktionen[0]) ==
+              std::vector<std::string>{"a", "b", "c", "d", "e", "g", "h", "k", "m"});
+    }
+
     TEST_CASE("Funktion::heisst: ohne Bereich jeder Bereich, mit Bereich nur der passende")
     {
         c2d::modell::Funktion f;

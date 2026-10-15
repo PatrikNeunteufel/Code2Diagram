@@ -210,9 +210,24 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.datei() == "antrieb/motor.c");
         CHECK(fenster.diagramm() == "motor_starte");
         CHECK(fenster.ziele("pruefe") == QStringList{"antrieb/motor.c:1"});
+        CHECK(fenster.aufrufer() == QStringList{"main() - main.c:3"});  // wer ruft motor_starte?
+        CHECK(fenster.markiert().isEmpty());
         CHECK(fenster.zurueck());
         CHECK(fenster.datei() == "main.c");
         CHECK(fenster.diagramm() == "main");
+        CHECK(fenster.markiert().contains("motor_starte(2)"));  // zurueck zum Aufruf, hervorgehoben
+        CHECK(fenster.aufrufer().isEmpty());                    // main ruft niemand
+        CHECK_FALSE(fenster.springeZuAufrufer(0));
+        // zum Aufrufer: von motor_starte nach main, der Aufruf dort ist hervorgehoben
+        REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
+        REQUIRE(fenster.waehleDiagramm("motor_starte"));
+        CHECK(fenster.springeZuAufrufer(0));
+        CHECK(fenster.datei() == "main.c");
+        CHECK(fenster.markiert().contains("motor_starte(2)"));
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "motor_starte");
+        REQUIRE(fenster.waehleDatei("main.c"));
+        REQUIRE(fenster.waehleDiagramm("main"));
         // die Wahl unter mehreren
         CHECK(fenster.springe("regle", 1));
         CHECK(fenster.datei() == "sim/regler_sim.c");
@@ -277,6 +292,21 @@ TEST_SUITE("Hauptfenster")
         CHECK(QFileInfo::exists(wurzel.filePath("code2diagram.json")));
         CHECK(fenster.dateien() == QStringList{"a.c"});
         CHECK(fenster.projektdateiText().contains("\"logs\",\n    \"b\""));
+    }
+
+    TEST_CASE("Ein erkannter Zustandsautomat steht zur Wahl und wird gezeichnet")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("void takt(void) { switch (z) { case A: z = B; break; case B: z = C; break; case C: z = A; break; } }\n"
+                      "void reset(void) { z = A; }\n",
+                      "a.c");
+        CHECK(fenster.diagramme() == QStringList{"takt", "reset", "automat:z"});
+        REQUIRE(fenster.waehleDiagramm("automat:z"));
+        CHECK(fenster.vorschauFormen() == 4);  // A, B, C und der Punkt von aussen
+        CHECK(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().startsWith("%% z in takt()\nstateDiagram-v2\n"));
+        CHECK(fenster.diagrammText().contains("[*] --> s0 : in reset()"));
+        CHECK(fenster.aufrufer().isEmpty());  // ein Automat ist keine Funktion
     }
 
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")

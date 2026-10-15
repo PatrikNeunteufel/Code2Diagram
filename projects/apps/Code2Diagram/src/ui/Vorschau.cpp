@@ -128,6 +128,22 @@ public:
         text(zeilen.join(QLatin1Char('\n')), r)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
     }
 
+    /// Ein Zustand: ein Kasten mit runden Ecken; der Punkt von aussen: ein gefuellter Kreis.
+    void zustand(const Zustand& z, const QRectF& r)
+    {
+        if (z.aussen)
+        {
+            const double d = std::min(r.width(), r.height());
+            m_szene.addEllipse(QRectF(r.center().x() - d / 2, r.center().y() - d / 2, d, d), m_strich, m_strich.color())
+                ->setZValue(2);
+            return;
+        }
+        QPainterPath form;
+        form.addRoundedRect(r, 10, 10);
+        m_szene.addPath(form, m_strich, m_flaeche)->setZValue(2);
+        text(gekuerzt(z.name), r);
+    }
+
     /// Ein Linienzug mit Pfeilspitze am Ende; `inhalt` steht an `ort`.
     void kante(const Linienzug& linie, const QString& inhalt, const Punkt& ort)
     {
@@ -253,10 +269,32 @@ QImage Vorschau::alsBild() const
 
 void Vorschau::leere()
 {
-    scene()->clear();
+    scene()->clear();  // nimmt auch die Marke mit
     scene()->setSceneRect(QRectF());
     m_formen = 0;
     m_rahmen = 0;
+    m_orte.clear();
+    m_marke = nullptr;
+    m_markiert = kKeine;
+}
+
+bool Vorschau::markiere(KnotenId knoten)
+{
+    if (m_marke != nullptr)
+    {
+        scene()->removeItem(m_marke);
+        delete m_marke;
+        m_marke = nullptr;
+    }
+    m_markiert = kKeine;
+    if (knoten >= m_orte.size()) return false;
+    // ein Ring um den Knoten, ueber allem: woher man kam, oder wo gerufen wird
+    const QRectF ring = m_orte[knoten].adjusted(-7, -7, 7, 7);
+    m_marke = scene()->addRect(ring, QPen(palette().color(QPalette::Highlight), 3, Qt::SolidLine), Qt::NoBrush);
+    m_marke->setZValue(6);
+    m_markiert = knoten;
+    centerOn(ring.center());
+    return true;
 }
 
 void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<bool>& verweis)
@@ -274,10 +312,28 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
         z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < verweis.size() && verweis[i]);
+    for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.knoten.size());
     m_rahmen = static_cast<int>(a.gruppen.size());
+}
+
+void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.nachRechts = nachRechts;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const FlussAnordnung a = ordneAn(diagramm, optionen);
+
+    Zeichner z(*scene(), palette());
+    for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        z.kante(a.kanten[e], gekuerzt(diagramm.uebergaenge[e].bedingung), a.beschriftungen[e]);
+    for (std::size_t i = 0; i < a.knoten.size(); ++i) z.zustand(diagramm.zustaende[i], alsRect(a.knoten[i]));
+
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.knoten.size());
 }
 
 void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts)

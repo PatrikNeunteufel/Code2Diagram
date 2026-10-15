@@ -17,6 +17,7 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
 #include <vector>
@@ -73,6 +74,12 @@ struct StrukturAnordnung
 
 [[nodiscard]] FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+
+/// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein
+/// Knoten, je Uebergang eine Kante (`knoten` und `kanten` in der Reihenfolge
+/// des Modells). Der Punkt "von aussen" ist klein; Beschriftungen laenger als
+/// `maxZeilenLaenge` zaehlen so lang, wie ein Format sie gekuerzt zeigt.
+[[nodiscard]] FlussAnordnung ordneAn(const Zustandsdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Die Hoehe des Kopfs eines Kastens (Art und Name) bei diesen Optionen.
 [[nodiscard]] double kopfHoehe(const AnordnungOptionen& optionen);

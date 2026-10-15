@@ -25,6 +25,7 @@ constexpr double kUnterLuecke = 11;     // eine Beschriftung steht so weit unter
 constexpr double kRueckAbstand = 26;    // einer Kante zurueck vom aeussersten Knoten
 constexpr double kRueckStaffel = 14;    // zwischen zwei Kanten zurueck
 constexpr double kSpurAbstand = 8;      // eine Kante zurueck, die unten aus- oder oben eintritt: so nah an der Zeile
+constexpr double kPunkt = 18;          // ein Knoten ohne Text
 constexpr double kGruppenRand = 14;
 constexpr double kGruppenTitel = 22;
 
@@ -202,6 +203,15 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
     const auto abstand = [&](std::size_t a, std::size_t b) {
         return a >= n || b >= n ? kAbstandStuetze : kAbstandNachbar;
     };
+    // Biegt eine beschriftete Kante aus der Schicht darueber in einen Knoten, steht ihre
+    // Beschriftung ueber ihm: so breit wie sie ist sein Platz in der Zeile (der Knoten in der Mitte).
+    std::vector<double> breite(alle, 0);
+    for (std::size_t v = 0; v < alle; ++v) breite[v] = masse[v].x;
+    for (std::size_t e = 0; e < kanten.size() && e < stuetzBreite.size(); ++e)
+    {
+        const auto [a, b] = kanten[e];
+        if (!s.zurueck[e] && s.rang[b] == s.rang[a] + 1) breite[b] = std::max(breite[b], stuetzBreite[e]);
+    }
     const auto setze = [&] {
         s.zeileOben.clear();
         double y = 0;
@@ -214,17 +224,18 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
             for (std::size_t i = 0; i < reihe.size(); ++i)
             {
                 const std::size_t v = reihe[i];
-                double wunsch = frei + masse[v].x / 2;
+                const double rand = (breite[v] - masse[v].x) / 2;  // zwischen Platz und Knoten, je Seite
+                double wunsch = frei + breite[v] / 2;
                 if (!oben[v].empty())
                 {
                     double summe = 0;
                     for (const std::size_t w : oben[v]) summe += orte[w].mitte().x;
                     wunsch = summe / static_cast<double>(oben[v].size());
                 }
-                double links = std::max(wunsch - masse[v].x / 2, mindestens[v]);
+                double links = std::max(wunsch - breite[v] / 2, mindestens[v] - rand);  // der linke Rand des Platzes
                 if (i > 0) links = std::max(links, frei + abstand(reihe[i - 1], v));
-                orte[v] = {links, y + (hoehe - masse[v].y) / 2, masse[v].x, masse[v].y};
-                frei = links + masse[v].x;
+                orte[v] = {links + rand, y + (hoehe - masse[v].y) / 2, masse[v].x, masse[v].y};
+                frei = links + breite[v];
             }
             y += hoehe + kAbstandSchicht;
         }
@@ -271,6 +282,9 @@ std::size_t laengsteZeile(const std::vector<std::string>& zeilen, std::size_t ho
 
 Punkt groesseVon(const Knoten& k, const AnordnungOptionen& o)
 {
+    // ohne Text: ein Punkt (der Ausgangspunkt eines Zustandsdiagramms)
+    if (std::all_of(k.zeilen.begin(), k.zeilen.end(), [](const std::string& z) { return z.empty(); }))
+        return {kPunkt, kPunkt};
     const double text = static_cast<double>(std::max<std::size_t>(laengsteZeile(k.zeilen, o.maxZeilenLaenge), 3)) * o.zeichenBreite;
     const double zeilen = static_cast<double>(std::max<std::size_t>(k.zeilen.size(), 1)) * o.zeilenHoehe;
     switch (k.art)
@@ -515,6 +529,23 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     for (const Linienzug& l : a.kanten)
         for (const Punkt& p : l) weite({p.x, p.y, 0, 0});
     return a;
+}
+
+FlussAnordnung ordneAn(const Zustandsdiagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    // dieselbe Anordnung wie ein Ablauf: Zustaende als runde Knoten, der Punkt von aussen ohne Text
+    Flussdiagramm alsFluss(diagramm.titel);
+    for (const Zustand& z : diagramm.zustaende)
+        alsFluss.neuerKnoten(Knoten{KnotenArt::Start, {z.aussen ? std::string() : z.name}, z.zeile, {}, kKeine});
+    for (const Uebergang& u : diagramm.uebergaenge)
+    {
+        // so lang, wie ein Format sie gekuerzt zeigt
+        std::string beschriftung = u.bedingung;
+        if (optionen.maxZeilenLaenge != 0 && beschriftung.size() > optionen.maxZeilenLaenge)
+            beschriftung.resize(optionen.maxZeilenLaenge);
+        alsFluss.verbinde(u.von, u.nach, beschriftung);
+    }
+    return ordneAn(alsFluss, optionen);
 }
 
 StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen)

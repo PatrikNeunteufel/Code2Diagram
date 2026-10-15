@@ -3,7 +3,7 @@
  * @brief Die Quelltexte, an denen mehrere Testdateien pruefen
  *
  * kSummeBis steht wortgleich in beispiele/verzweigung.c, kDatentypen in
- * beispiele/datentypen.c, kMotor in beispiele/motor.cpp.
+ * beispiele/datentypen.c, kMotor in beispiele/motor.cpp, kAutomat in beispiele/automat.c.
  */
 #pragma once
 
@@ -157,5 +157,51 @@ T begrenze(T wert, T unten, T oben)
 
 using Verlauf = std::vector<antrieb::Messwert>;
 )cpp";
+
+inline constexpr std::string_view kAutomat =
+    R"c(/* Beispiel: ein Zustandsautomat - ein switch ueber den Zustand, der sich selbst weiterschaltet. */
+typedef enum { AUS, STARTE, LAEUFT, FEHLER } Zustand;
+
+typedef struct {
+    Zustand zustand;
+    int versuche;
+} Motor;
+
+static Motor motor;
+
+void motor_takt(int bereit, int stoerung)
+{
+    switch (motor.zustand) {
+    case AUS:
+        if (bereit)
+            motor.zustand = STARTE;
+        break;
+    case STARTE:
+        if (stoerung) {
+            motor.versuche++;
+            if (motor.versuche > 3)
+                motor.zustand = FEHLER;
+        } else {
+            motor.zustand = LAEUFT;
+        }
+        break;
+    case LAEUFT:
+        if (stoerung)
+            motor.zustand = FEHLER;
+        else if (!bereit)
+            motor.zustand = AUS;
+        break;
+    case FEHLER:
+        break;
+    }
+}
+
+/* von aussen: das Quittieren setzt den Automaten zurueck */
+void motor_quittiere(void)
+{
+    motor.versuche = 0;
+    motor.zustand = AUS;
+}
+)c";
 
 }  // namespace beispiele

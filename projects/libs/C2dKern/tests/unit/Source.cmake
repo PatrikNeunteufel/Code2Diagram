@@ -16,6 +16,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Ausgabe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Einbettung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Projekt.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Automat.cpp"
 )
 
 set(_local_headers

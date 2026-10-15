@@ -78,6 +78,18 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.diagramm()));
                      });
 
+    anbindung.aktion(QStringLiteral("zum_aufrufer"),
+                     QStringLiteral("Goes to a function that calls the one shown; the call there is highlighted"),
+                     QStringLiteral("wahl=<0, 1, ... as in Called from>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString wahl = st::argument(argumente, QStringLiteral("wahl"));
+                         const QStringList wer = fenster.aufrufer();
+                         if (!fenster.springeZuAufrufer(wahl.isEmpty() ? 0 : wahl.toInt()))
+                             return st::fehler(QStringLiteral("Callers: %1")
+                                                   .arg(wer.isEmpty() ? QStringLiteral("none") : wer.join(QStringLiteral(", "))));
+                         return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.diagramm()));
+                     });
+
     anbindung.aktion(QStringLiteral("beispiel_zeigen"),
                      QStringLiteral("Shows the built-in sample with its diagram"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
@@ -212,8 +224,8 @@ bool Application::init(int argc, char* argv[])
 
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
-    QStringList einbetten, definitionen;
-    bool alleZweige = false;
+    QStringList einbetten, definitionen, springen;
+    bool alleZweige = false, zurueck = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
     {
         const QString& a = argumente[i];
@@ -223,6 +235,8 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--diagramm")) diagramm = wert();
         else if (a == QLatin1String("--datei")) imProjekt = wert();
         else if (a == QLatin1String("--einbetten")) einbetten << wert();
+        else if (a == QLatin1String("--springe")) springen << wert();
+        else if (a == QLatin1String("--zurueck")) zurueck = true;
         else if (a == QLatin1String("--format")) m_impl->format = wert();
         else if (a == QLatin1String("--ansicht")) m_impl->ansicht = wert();
         else if (a == QLatin1String("--alle-zweige")) alleZweige = true;
@@ -247,6 +261,10 @@ bool Application::init(int argc, char* argv[])
         qWarning().noquote() << "No diagram" << diagramm << "- there are:" << fenster.diagramme().join(QStringLiteral(", "));
     for (const QString& name : einbetten)
         if (!fenster.betteEin(name)) qWarning().noquote() << "Cannot embed" << name;
+    // wie die Sichttest-Aktionen springen und zurueck — fuer ein Bild nach einem Sprung
+    for (const QString& name : springen)
+        if (!fenster.springe(name)) qWarning().noquote() << "Cannot go to" << name << "-" << fenster.ziele(name);
+    if (zurueck && !fenster.zurueck()) qWarning().noquote() << "Nothing to go back to";
     if (!m_impl->format.isEmpty()) fenster.waehleFormat(m_impl->format);
     if (!m_impl->ansicht.isEmpty()) fenster.waehleAnsicht(m_impl->ansicht);
 

@@ -1,6 +1,6 @@
 /**
  * @file Dot.cpp
- * @brief Graphviz DOT: digraph, Datentypen als record
+ * @brief Graphviz DOT: digraph, Datentypen als record, Zustaende als runde Kaesten
  */
 #include "c2d/ausgabe/Ausgabe.hpp"
 
@@ -153,6 +153,29 @@ public:
             }
             if (!b.beschriftung.empty()) aus += ", label=\"" + maskiere(b.beschriftung) + "\"";
             aus += "];\n";
+        }
+        return aus + "}\n";
+    }
+
+    [[nodiscard]] std::string schreibe(const Zustandsdiagramm& diagramm, const Optionen& optionen) const override
+    {
+        std::string aus = kopf(diagramm.titel, optionen);
+        for (std::size_t z = 0; z < diagramm.zustaende.size(); ++z)
+        {
+            const Zustand& zustand = diagramm.zustaende[z];
+            aus += "    s" + std::to_string(z);
+            if (zustand.aussen)
+                aus += " [shape=point, width=0.15];\n";  // der Punkt von aussen
+            else
+                aus += " [shape=box, style=rounded, label=\"" + maskiere(kuerze(zustand.name, optionen.maxZeilenLaenge)) +
+                       "\"];\n";
+        }
+        for (const Uebergang& u : diagramm.uebergaenge)
+        {
+            aus += "    s" + std::to_string(u.von) + " -> s" + std::to_string(u.nach);
+            if (!u.bedingung.empty())
+                aus += " [label=\"" + maskiere(kuerze(u.bedingung, optionen.maxZeilenLaenge)) + "\"]";
+            aus += ";\n";
         }
         return aus + "}\n";
     }
