@@ -132,6 +132,8 @@ public:
     /// Wie viele Stufen der Aufrufgraph zeigt; 0 = alle.
     void setzeTiefe(int tiefe);
     [[nodiscard]] int tiefe() const;
+    /// Hoechstens so viele Funktionen im Aufrufgraph (Vorgabe 300); 0 = unbegrenzt.
+    void setzeHoechstens(int hoechstens);
     /// Aufrufe ohne Funktion im Projekt (Bibliothek, Makro) im Aufrufgraph weglassen.
     void setzeOhneFremde(bool ohne);
     /// Im gezeigten Aufrufgraph eine Funktion an der Grenze eine Stufe aufklappen.
@@ -289,6 +291,7 @@ private:
     QAction* m_aufrufgraphAktion = nullptr;
     QComboBox* m_aufrufRichtung = nullptr;
     QSpinBox* m_tiefe = nullptr;
+    QSpinBox* m_hoechstens = nullptr;
     QCheckBox* m_ohneFremde = nullptr;
 
     QString m_ordner;      ///< der Ordner des Projekts; leer = eine einzelne Datei

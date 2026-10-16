@@ -203,8 +203,11 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
   den Graphen ab der gezeigten (oder der gerufenen) Funktion über das ganze Projekt; er bleibt als
   *Call graph from f()* in der Auswahl. Daneben in der Leiste: die Richtung (**Calls** — was sie
-  ruft, **Callers** — wer sie ruft, **Both**), die Tiefe (Vorgabe 2, *all* = alle Stufen) und
-  **Hide external calls**. Jede Funktion ist ein Knoten, je rufendem Paar eine Kante; eine
+  ruft, **Callers** — wer sie ruft, **Both**), die Tiefe (Vorgabe 2, *all* = alle Stufen),
+  **Max** (höchstens so viele Funktionen, Vorgabe 300, *all* = unbegrenzt) und
+  **Hide external calls**. Ist Max erreicht, kommt keine Funktion mehr dazu; wer weiter riefe,
+  trägt ` …`, und die Statuszeile sagt `call graph stopped at 300 functions - lower the depth or
+  expand by hand` — was eine aufgeklappte Funktion ruft, zählt nicht. Jede Funktion ist ein Knoten, je rufendem Paar eine Kante; eine
   Rekursion ist eine Schlaufe oder eine Kante zurück. Was ein Aufruf meint, entscheidet das Projekt
   wie beim Sprung; meint er mehrere, führt zu jeder eine **gestrichelte** Kante `?`, und die
   Statuszeile nennt die Kandidaten. Ein Aufruf ohne Funktion im Projekt (Bibliothek, SDK) ist ein
@@ -260,7 +263,9 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--aufrufgraph main` zeichnet den Aufrufgraph ab `main` (wie `--funktion`: im Projekt
   eindeutig, sonst `--datei`; der Name darf gleich folgen, wenn das Ziel davor steht, sonst
   `--aufrufgraph --funktion main`); ohne Funktion den der Datei (im Projekt mit `--datei`).
-  `--tiefe n` (Vorgabe 2, 0 = alle), `--aufrufer` (wer ruft), `--beide`, `--ohne-fremde`.
+  `--tiefe n` (Vorgabe 2, 0 = alle), `--hoechstens n` (Funktionen, Vorgabe 300, 0 = unbegrenzt;
+  ist die Grenze erreicht, sagt es die Fehlerausgabe), `--aufrufer` (wer ruft), `--beide`,
+  `--ohne-fremde`.
   Mehrdeutige Aufrufe nennt die Fehlerausgabe mit Datei und Zeile
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
@@ -381,8 +386,9 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`p->rueckruf(x)`) wird ein fremder Knoten mit dem Namen des Glieds, nicht die Funktion, auf
   die er zeigt; ein Aufruf im Rumpf eines Makros ist nicht zu sehen (Makros werden nicht
   ersetzt), das Makro selbst schon; `Motor m(3);` gilt als Aufruf von `m`. Überladungen trennt nur
-  ihr Ort. Nach unten wird ein Graph mit vielen Gerufenen sehr breit (LLC, `main` aller Stufen:
-  166 Knoten auf 43 000 px). Rahmen je Datei stehen in Bändern nebeneinander; eine Kante, die über
+  ihr Ort; in C++ meint `a.size()` darum jedes `size` — ohne die Grenze von 300 Funktionen hätte
+  UART ab `main` aller Stufen 3762 Knoten (die Anordnung bräuchte Minuten). Nach unten wird ein
+  Graph mit vielen Gerufenen sehr breit (LLC, `main` aller Stufen: 166 Knoten auf 43 000 px). Rahmen je Datei stehen in Bändern nebeneinander; eine Kante, die über
   mehrere Schichten nach links führt, biegt gleich unter ihrer Quelle ab.
 - **Im Projekt:** die Datentypen zeigt das Fenster je Datei
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu

@@ -425,6 +425,10 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.klappeAuf("motor_starte"));
         CHECK(fenster.aufrufgraphKnoten().contains("takt"));
         CHECK(fenster.aufrufgraphKnoten().contains("motor_starte"));
+        // hoechstens zwei Funktionen: main und motor_starte, main ruft weiter; takt, weil aufgeklappt
+        fenster.setzeHoechstens(2);
+        CHECK(fenster.aufrufgraphKnoten() == QStringList{"main …", "motor_starte", "memcpy", "takt"});
+        fenster.setzeHoechstens(300);
         // ohne Fremde, alle Stufen
         fenster.setzeOhneFremde(true);
         fenster.setzeTiefe(0);

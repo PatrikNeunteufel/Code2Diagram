@@ -11,7 +11,7 @@
  *          datei        wird beim Start geoeffnet
  *          --diagramm   waehlt eine Funktion (mit Bereich), `types`, den Aufrufgraph der
  *                       Datei `calls` oder ab einer Funktion `calls:<funktion>`
- *          --tiefe n, --aufrufer | --beide, --ohne-fremde   stellen den Aufrufgraph ein
+ *          --tiefe n, --hoechstens n, --aufrufer | --beide, --ohne-fremde   stellen den Aufrufgraph ein
  *          --einbetten  bettet den Ablauf dieser Funktion hinter ihren ersten Aufruf ein
  *          -D NAME[=wert]  gilt beim Auswerten von #if/#ifdef als definiert; mehrfach erlaubt
  *          --alle-zweige   bedingte Uebersetzung nicht auswerten: alle Zweige lesen

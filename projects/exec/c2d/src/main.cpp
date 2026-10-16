@@ -2,7 +2,8 @@
 //
 // Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
 //                             [--struktur] [-D NAME[=wert] | -D !NAME | -U NAME]...
-//                             [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]]
+//                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
+//                                            [--ohne-fremde]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh]
 //
@@ -22,6 +23,7 @@
 //                  davor, darf ihr Name gleich folgen); ohne Funktion der Graph der Datei
 //                  (im Projekt: --datei)
 //   --tiefe n      so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
+//   --hoechstens n hoechstens so viele Funktionen (Vorgabe 300), 0 = unbegrenzt
 //   --aufrufer     wer die Funktion ruft, statt was sie ruft; --beide: beides
 //   --ohne-fremde  Aufrufe ohne Funktion im Projekt (Bibliothek, Makro) weglassen
 //   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
@@ -77,7 +79,8 @@ int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
                  "                         [--struktur] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
-                 "                         [--aufrufgraph [<function>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]]\n"
+                 "                         [--aufrufgraph [<function>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]\n"
+                 "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
@@ -159,6 +162,12 @@ int main(int argc, char* argv[])
             const std::string t = wert();
             if (t.empty() || !std::all_of(t.begin(), t.end(), [](char c) { return c >= '0' && c <= '9'; })) return aufruf();
             graph.tiefe = std::stoi(t);
+        }
+        else if (a == "--hoechstens")
+        {
+            const std::string h = wert();
+            if (h.empty() || !std::all_of(h.begin(), h.end(), [](char c) { return c >= '0' && c <= '9'; })) return aufruf();
+            graph.hoechstens = static_cast<std::size_t>(std::stoul(h));
         }
         else if (a == "--aufrufer") graph.richtung = c2d::projekt::AufrufRichtung::Aufrufer;
         else if (a == "--beide") graph.richtung = c2d::projekt::AufrufRichtung::Beide;
@@ -321,6 +330,9 @@ int main(int argc, char* argv[])
         for (const c2d::projekt::Projektmeldung& m : e.meldungen)
             std::cerr << vorn(m.pfad) << ':' << m.meldung.ort.zeile << ": " << m.meldung.text << '\n';
         if (e.ausgelassen != 0) std::cerr << "c2d: " << e.ausgelassen << " external call(s) left out\n";
+        if (e.begrenzt)
+            std::cerr << "c2d: call graph stopped at " << graph.hoechstens
+                      << " functions - lower the depth or raise --hoechstens\n";
         if (e.graph.knoten.empty())
         {
             std::cerr << "c2d: no function with a body in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';

@@ -179,6 +179,11 @@ public:
             }
             for (const Fundstelle& c : wer)
             {
+                if (!hatPlatz(c, f))
+                {
+                    m_e.graph.knoten[kf].weiter = true;
+                    continue;
+                }
                 const std::size_t kc = knotenFuer(c);
                 for (const Ruf& ruf : rufe(c))
                 {
@@ -199,7 +204,7 @@ public:
         const std::vector<modell::Funktion>& fs = m_p.dateien[d].ergebnis.einheit.funktionen;
         std::deque<Fundstelle> offen;
         for (std::size_t f = 0; f < fs.size(); ++f)
-            if (fs[f].rumpf)
+            if (fs[f].rumpf && hatPlatz({d, f}, {}))
             {
                 knotenFuer({d, f});
                 offen.push_back({d, f});
@@ -234,6 +239,7 @@ public:
         }
         m_e.graph.titel = std::move(titel);
         m_e.ausgelassen = m_ausgelassen.size();
+        m_e.begrenzt = m_begrenzt;
         return std::move(m_e);
     }
 
@@ -263,6 +269,16 @@ private:
         return id;
     }
 
+    /// Darf die Funktion `z` in den Graph, gerufen von (oder rufend) `von`? Ist sie schon da, ja;
+    /// was eine aufgeklappte Funktion ruft, auch; sonst nur unter der Grenze `hoechstens`.
+    bool hatPlatz(const Fundstelle& z, const Fundstelle& von)
+    {
+        if (m_knoten.contains({z.datei, z.funktion}) || istAufgeklappt(von)) return true;
+        if (m_o.hoechstens == 0 || m_knoten.size() < m_o.hoechstens) return true;
+        m_begrenzt = true;
+        return false;
+    }
+
     bool istAufgeklappt(const Fundstelle& f) const
     {
         return std::any_of(m_o.aufgeklappt.begin(), m_o.aufgeklappt.end(), [&](const Fundstelle& a) { return a == f; });
@@ -289,6 +305,11 @@ private:
             if (ruf.ziele.size() > 1) meldeMehrdeutig(f, ruf);
             for (const Fundstelle& z : ruf.ziele)
             {
+                if (!hatPlatz(z, f))
+                {
+                    m_e.graph.knoten[kf].weiter = true;
+                    continue;
+                }
                 verbinde(kf, knotenFuer(z), ruf.ziele.size() == 1, ruf.stellen);
                 aus.push_back(z);
             }
@@ -321,6 +342,7 @@ private:
     std::set<std::string> m_ausgelassen;
     std::set<std::string> m_makros;
     bool m_makrosGesammelt = false;
+    bool m_begrenzt = false;
 };
 
 bool istFunktion(const Projekt& projekt, const Fundstelle& f)

@@ -43,6 +43,10 @@ struct AufrufgraphOptionen
     /// die weiter ruft (gerufen wird), traegt AufrufKnoten::weiter.
     int tiefe = 2;
     bool ohneFremde = false;  ///< Fremd und Makro weglassen
+    /// Hoechstens so viele Funktionen (Knoten der Art Funktion); 0 = unbegrenzt. Ist die Grenze
+    /// erreicht, kommt keine weitere dazu: wer sie riefe (gerufen wuerde), traegt `weiter`, und
+    /// AufrufgraphErgebnis::begrenzt sagt es. Was eine aufgeklappte Funktion ruft, zaehlt nicht.
+    std::size_t hoechstens = 300;
     /// Funktionen, die an der Grenze (im Graph einer Datei: ausserhalb von ihr) trotzdem
     /// eine Stufe weiter zeigen, was sie rufen (nach oben: wer sie ruft) — aufgeklappt im Fenster.
     std::vector<Fundstelle> aufgeklappt;
@@ -57,6 +61,8 @@ struct AufrufgraphErgebnis
     std::vector<Projektmeldung> meldungen;
     /// Wie viele verschiedene Namen `ohneFremde` weggelassen hat.
     std::size_t ausgelassen = 0;
+    /// Hat `hoechstens` Funktionen weggelassen?
+    bool begrenzt = false;
 };
 
 /// Der Graph ab der Funktion an `wurzel`, in `optionen.richtung`, bis `optionen.tiefe`.

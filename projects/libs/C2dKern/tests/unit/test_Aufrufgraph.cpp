@@ -259,6 +259,44 @@ TEST_SUITE("Aufrufgraph")
         CHECK_FALSE(datei.knoten[knoten(datei, "motor_starte")].weiter);
     }
 
+    TEST_CASE("Hoechstens: an der Grenze kommt keine Funktion mehr dazu, wer weiter ruft, ist markiert")
+    {
+        TempOrdner t;
+        legeProjekt(t);
+        const Projekt p = liesOrdner(t.weg());
+        const auto funktionen = [](const Aufrufgraph& g) {
+            return std::count_if(g.knoten.begin(), g.knoten.end(),
+                                 [](const AufrufKnoten& k) { return k.art == AufrufKnotenArt::Funktion; });
+        };
+        AufrufgraphOptionen o = optionen(0);
+        CHECK(o.hoechstens == 300);
+        CHECK_FALSE(aufrufgraphAb(p, finde(p, "main.c", "main"), o).begrenzt);
+
+        o.hoechstens = 3;
+        const AufrufgraphErgebnis e = aufrufgraphAb(p, finde(p, "main.c", "main"), o);
+        CHECK(e.begrenzt);
+        CHECK(funktionen(e.graph) == 3);
+        CHECK(e.graph.knoten[0].weiter);  // main ruft mehr, als gezeigt ist
+        CHECK(knoten(e.graph, "memcpy") != kKeine);  // Fremde zaehlen nicht
+
+        // was eine aufgeklappte Funktion ruft, kommt trotzdem dazu
+        o.aufgeklappt = {finde(p, "main.c", "main")};
+        const AufrufgraphErgebnis auf = aufrufgraphAb(p, finde(p, "main.c", "main"), o);
+        CHECK(knoten(auf.graph, "log_schreibe") != kKeine);
+        CHECK_FALSE(auf.graph.knoten[0].weiter);
+
+        // nach oben und im Graph einer Datei ebenso
+        AufrufgraphOptionen eins = optionen(0, AufrufRichtung::Aufrufer);
+        eins.hoechstens = 1;
+        const AufrufgraphErgebnis oben = aufrufgraphAb(p, finde(p, "antrieb/motor.c", "motor_starte"), eins);
+        CHECK(oben.begrenzt);
+        CHECK(funktionen(oben.graph) == 1);
+        CHECK(oben.graph.knoten[0].weiter);
+        const AufrufgraphErgebnis datei = aufrufgraphDerDatei(p, p.finde("antrieb/motor.c"), eins);
+        CHECK(datei.begrenzt);
+        CHECK(funktionen(datei.graph) == 1);
+    }
+
     TEST_CASE("Nach oben und beides")
     {
         TempOrdner t;

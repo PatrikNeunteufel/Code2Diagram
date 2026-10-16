@@ -387,12 +387,22 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_tiefe->setSpecialValueText(QStringLiteral("Depth: all"));
     m_tiefe->setToolTip(QStringLiteral("Call graph: how many levels from the function (0 = all). "
                                        "A function at the edge that calls further shows \u2026"));
+    m_hoechstens = new QSpinBox(navigation);
+    m_hoechstens->setObjectName(QStringLiteral("hoechstens"));
+    m_hoechstens->setRange(0, 100000);
+    m_hoechstens->setSingleStep(50);
+    m_hoechstens->setValue(300);
+    m_hoechstens->setPrefix(QStringLiteral("Max: "));
+    m_hoechstens->setSpecialValueText(QStringLiteral("Max: all"));
+    m_hoechstens->setToolTip(QStringLiteral("Call graph: at most this many functions (0 = all). "
+                                            "Who would call further shows \u2026; expand it by hand"));
     m_ohneFremde = new QCheckBox(QStringLiteral("Hide external calls"), navigation);
     m_ohneFremde->setObjectName(QStringLiteral("ohneFremde"));
     m_ohneFremde->setToolTip(QStringLiteral("Call graph: leave out calls without a body in the project "
                                             "(library, SDK, macro); the status bar counts them"));
     navigation->addWidget(m_aufrufRichtung);
     navigation->addWidget(m_tiefe);
+    navigation->addWidget(m_hoechstens);
     navigation->addWidget(m_ohneFremde);
     const auto neuAbleiten = [this] {
         if (!istAufrufgraph()) return;
@@ -402,6 +412,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     };
     connect(m_aufrufRichtung, &QComboBox::currentIndexChanged, this, neuAbleiten);
     connect(m_tiefe, &QSpinBox::valueChanged, this, neuAbleiten);
+    connect(m_hoechstens, &QSpinBox::valueChanged, this, neuAbleiten);
     connect(m_ohneFremde, &QCheckBox::toggled, this, neuAbleiten);
 
     QMenu* diagramm = menuBar()->addMenu(QStringLiteral("&Diagram"));
@@ -767,6 +778,9 @@ void Hauptfenster::zeigeLage()
                          .arg(m_aufrufgraph.meldungen.front().meldung.ort.zeile)
                          .arg(QString::fromStdString(m_aufrufgraph.meldungen.front().meldung.text));
         if (m_aufrufgraph.ausgelassen != 0) graph += QStringLiteral(", %1 external call(s) hidden").arg(m_aufrufgraph.ausgelassen);
+        if (m_aufrufgraph.begrenzt)
+            graph += QStringLiteral(" - call graph stopped at %1 functions - lower the depth or expand by hand")
+                         .arg(m_hoechstens->value());
         lage += graph;
     }
     if (istProjekt())
@@ -1124,6 +1138,11 @@ int Hauptfenster::tiefe() const
     return m_tiefe->value();
 }
 
+void Hauptfenster::setzeHoechstens(int hoechstens)
+{
+    m_hoechstens->setValue(hoechstens);  // leitet ueber das Signal neu ab
+}
+
 void Hauptfenster::setzeOhneFremde(bool ohne)
 {
     m_ohneFremde->setChecked(ohne);  // leitet ueber das Signal neu ab
@@ -1167,6 +1186,7 @@ void Hauptfenster::leiteAufrufgraphAb()
                  : richtung == QLatin1String("both")  ? c2d::projekt::AufrufRichtung::Beide
                                                       : c2d::projekt::AufrufRichtung::Gerufene;
     o.tiefe = m_tiefe->value();
+    o.hoechstens = static_cast<std::size_t>(m_hoechstens->value());
     o.ohneFremde = m_ohneFremde->isChecked();
     o.aufgeklappt = m_aufgeklappt;
     if (m_gezeigt == QLatin1String(kAufrufgraphDatei))

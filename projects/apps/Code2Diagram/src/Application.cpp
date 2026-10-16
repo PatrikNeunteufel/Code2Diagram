@@ -213,11 +213,20 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
 
     anbindung.aktion(QStringLiteral("aufrufgraph_einstellen"),
                      QStringLiteral("Call graph: direction, depth and whether external calls are shown"),
-                     QStringLiteral("richtung=<calls | callers | both> tiefe=<0 = all, 1, 2, ...> fremde=<ja | nein>"),
+                     QStringLiteral("richtung=<calls | callers | both> tiefe=<0 = all, 1, 2, ...> "
+                                    "hoechstens=<0 = all, 300, ...> fremde=<ja | nein>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
                          const QString richtung = st::argument(argumente, QStringLiteral("richtung"));
                          const QString tiefe = st::argument(argumente, QStringLiteral("tiefe"));
                          const QString fremde = st::argument(argumente, QStringLiteral("fremde"));
+                         const QString hoechstens = st::argument(argumente, QStringLiteral("hoechstens"));
+                         if (!hoechstens.isEmpty())
+                         {
+                             bool zahl = false;
+                             const int h = hoechstens.toInt(&zahl);
+                             if (!zahl || h < 0) return st::ungueltig(QStringLiteral("hoechstens is 0, 1, 2, ..."));
+                             fenster.setzeHoechstens(h);
+                         }
                          if (!richtung.isEmpty() && !fenster.setzeAufrufRichtung(richtung))
                              return st::ungueltig(QStringLiteral("richtung is calls, callers or both"));
                          if (!tiefe.isEmpty())
@@ -313,7 +322,7 @@ bool Application::init(int argc, char* argv[])
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
-    QString tiefe, aufrufRichtung;
+    QString tiefe, hoechstens, aufrufRichtung;
     bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
     {
@@ -332,6 +341,7 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--varianten")) varianten = true;
         else if (a == QLatin1String("--rahmen")) rahmen = true;
         else if (a == QLatin1String("--tiefe")) tiefe = wert();
+        else if (a == QLatin1String("--hoechstens")) hoechstens = wert();
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
         else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
         else if (a == QLatin1String("--ohne-fremde")) ohneFremde = true;
@@ -347,6 +357,7 @@ bool Application::init(int argc, char* argv[])
     fenster.setzeBereiche(rahmen);
     // fuer den Aufrufgraph (--diagramm calls oder calls:<Funktion>)
     if (!tiefe.isEmpty()) fenster.setzeTiefe(tiefe.toInt());
+    if (!hoechstens.isEmpty()) fenster.setzeHoechstens(hoechstens.toInt());
     if (!aufrufRichtung.isEmpty()) fenster.setzeAufrufRichtung(aufrufRichtung);
     fenster.setzeOhneFremde(ohneFremde);
     if (!datei.isEmpty())

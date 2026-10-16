@@ -339,9 +339,9 @@ unter `#ifdef MIT_DIAGNOSE`, das `inc/config.h` definiert — `protokolliere()` 
 unter `#ifdef MIT_LOG` die fremde `schreibe()` ruft.
 
 - [ ] **L0 Vorbereiten:** Das Projekt öffnen, `main.c` wählen, Vorschau, Richtung Top-down.
-      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: zweige_waehlen name=auswerten` `aktion: aufrufgraph_einstellen richtung=calls tiefe=2 fremde=ja` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: zweige_waehlen name=auswerten` `aktion: aufrufgraph_einstellen richtung=calls tiefe=2 hoechstens=300 fremde=ja` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
 - [ ] **L1 Die Leiste:** Oben neben **Back** und **Called from** stehen **Call graph from here**,
-      die Richtung **Calls**, **Depth: 2** und **Hide external calls** (frei). In Diagram steht als
+      die Richtung **Calls**, **Depth: 2**, **Max: 300** und **Hide external calls** (frei). In Diagram steht als
       letzter Eintrag `Call graph of this file`.
 - [ ] **L2 Ab main:** Diagram `main()`, dann **Call graph from here**. In Diagram steht jetzt
       `Call graph from main()`. *Zu prüfen:* Stimmt der Graph mit dem Code links überein?
@@ -370,6 +370,12 @@ unter `#ifdef MIT_LOG` die fremde `schreibe()` ruft.
 - [ ] **L6 Fremde ausblenden:** Depth wieder 2, **Hide external calls** anhaken: `schreibe`
       verschwindet, die Statuszeile nennt `1 external call(s) hidden`. Wieder abhaken.
       `aktion: aufrufgraph_einstellen tiefe=2 fremde=nein` `aktion: aufrufgraph_einstellen fremde=ja`
+- [ ] **L6a Höchstens:** **Max** auf 3: nur `main`, `pruefe` und `motor_starte` bleiben — `regle`,
+      `protokolliere` und `schreibe` fehlen —, `main …` und `motor_starte …` tragen drei Punkte, die
+      Statuszeile endet mit `call graph stopped at 3 functions - lower the depth or expand by hand`.
+      Rechtsklick auf `main …` > *Expand one level*: alle Gerufenen von `main` sind wieder da. Max
+      zurück auf 300.
+      `aktion: aufrufgraph_einstellen hoechstens=3` `aktion: aufklappen name=main` `aktion: aufrufgraph_einstellen hoechstens=300`
 - [ ] **L7 Doppelklick und zurück:** Doppelklick auf `motor_starte`: sein Ablauf, in
       `antrieb/motor.c`. **Back**: wieder der Graph ab `main`, um `motor_starte` ein Ring.
 - [ ] **L8 Wer ruft:** Richtung **Callers**: der Titel (Ansicht Text, Format mermaid) heißt
