@@ -488,6 +488,33 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
     return diagramm;
 }
 
+Strukturdiagramm strukturVon(const modell::Einheit& einheit, std::string_view typ)
+{
+    const Strukturdiagramm alle = strukturVon(einheit);
+    Strukturdiagramm aus;
+    std::size_t mitte = alle.kaesten.size();
+    for (std::size_t k = 0; k < alle.kaesten.size() && mitte == alle.kaesten.size(); ++k)
+        if (alle.kaesten[k].name == typ) mitte = k;
+    if (mitte == alle.kaesten.size()) return aus;
+
+    // der Typ zuerst, dann die Nachbarn in der Reihenfolge der Einheit
+    std::vector<std::size_t> neu(alle.kaesten.size(), kKeine);
+    const auto nimm = [&](std::size_t k) {
+        if (neu[k] != kKeine) return;
+        neu[k] = aus.kaesten.size();
+        aus.kaesten.push_back(alle.kaesten[k]);
+    };
+    nimm(mitte);
+    for (std::size_t k = 0; k < alle.kaesten.size(); ++k)
+        for (const Beziehung& b : alle.beziehungen)
+            if ((b.von == mitte && b.nach == k) || (b.nach == mitte && b.von == k)) nimm(k);
+    for (const Beziehung& b : alle.beziehungen)
+        if (neu[b.von] != kKeine && neu[b.nach] != kKeine)
+            aus.beziehungen.push_back({neu[b.von], neu[b.nach], b.art, b.beschriftung});
+    aus.titel = std::string(typ);
+    return aus;
+}
+
 // ---------------------------------------------------------------------------
 // Zustandsautomaten
 // ---------------------------------------------------------------------------

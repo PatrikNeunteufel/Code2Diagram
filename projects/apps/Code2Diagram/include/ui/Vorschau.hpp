@@ -29,10 +29,14 @@ class Vorschau : public QGraphicsView
 public:
     explicit Vorschau(QWidget* parent = nullptr);
 
-    /// `verweis[i]`: der Knoten i fuehrt irgendwohin (er ruft eine Funktion, die
-    /// sich zeigen laesst) — er wird hervorgehoben. Darf kuerzer sein als die Knoten.
-    void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts, const std::vector<bool>& verweis = {});
-    void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts);
+    /// `links[i]`: die Namen im Text des Knotens i, die irgendwohin fuehren (eine Funktion, ein
+    /// Typ) — sie und der Knoten werden hervorgehoben. Darf kuerzer sein als die Knoten.
+    void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts,
+               const std::vector<std::vector<std::string>>& links = {});
+    /// `links[k][e]`: die Namen im Glied e des Kastens k, die zu einem Typ fuehren — sie
+    /// werden hervorgehoben. Darf kuerzer sein als die Kaesten.
+    void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts,
+               const std::vector<std::vector<std::vector<std::string>>>& links = {});
     void zeige(const c2d::diagramm::Zustandsdiagramm& diagramm, bool nachRechts);
     /// Ein Knoten des Aufrufgraphen ist fuer Doppelklick, Kontextmenue und markiere()
     /// wie ein Knoten des Flussdiagramms: seine Stelle in Aufrufgraph::knoten.
@@ -56,6 +60,10 @@ public:
     std::function<void(c2d::diagramm::KnotenId knoten)> beiDoppelklick;
     /// Rechtsklick: der Knoten und die innerste Gruppe unter dem Zeiger (je kKeine = keine), der Ort am Bildschirm.
     std::function<void(c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort)> beiKontext;
+    /// Im Strukturdiagramm: Doppelklick auf einen Kasten; `eintrag` = das Glied darin, kKeine = der Kopf.
+    std::function<void(std::size_t kasten, std::size_t eintrag)> beiDoppelklickKasten;
+    /// Im Strukturdiagramm: Rechtsklick (Kasten und Glied wie oben; kasten kKeine = daneben).
+    std::function<void(std::size_t kasten, std::size_t eintrag, const QPoint& ort)> beiKontextKasten;
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent* ereignis) override;
@@ -65,6 +73,10 @@ protected:
 private:
     /// Knoten und innerste Gruppe an einem Ort der Ansicht.
     void trefferBei(const QPoint& ort, c2d::diagramm::KnotenId& knoten, std::size_t& gruppe) const;
+    /// Kasten und Glied an einem Ort der Ansicht (je kKeine = keiner).
+    void kastenBei(const QPoint& ort, std::size_t& kasten, std::size_t& eintrag) const;
+
+    bool m_struktur = false;  ///< zeigt ein Strukturdiagramm
 
     int m_formen = 0;
     int m_rahmen = 0;

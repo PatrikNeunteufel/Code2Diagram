@@ -9,7 +9,7 @@
  *                       [--format <name>] [--ansicht preview|text] [--bild <datei.png>]
  *          --testing    laedt die Sichttest-Steuerung (sichttest/Anbindung.hpp)
  *          datei        wird beim Start geoeffnet
- *          --diagramm   waehlt eine Funktion (mit Bereich), `types`, den Aufrufgraph der
+ *          --diagramm   waehlt eine Funktion (mit Bereich), `types` (alle) oder `types:<Typ>`, den Aufrufgraph der
  *                       Datei `calls` oder ab einer Funktion `calls:<funktion>`
  *          --tiefe n, --hoechstens n, --aufrufer | --beide, --ohne-fremde   stellen den Aufrufgraph ein
  *          --einbetten  bettet den Ablauf dieser Funktion hinter ihren ersten Aufruf ein

@@ -46,6 +46,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projekt.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projektdatei.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Typen.cpp"
 )
 
 set(_local_headers
@@ -63,6 +64,7 @@ set(_local_headers
     "${_c2d_inc}/projekt/Aufrufgraph.hpp"
     "${_c2d_inc}/projekt/Projekt.hpp"
     "${_c2d_inc}/projekt/Projektdatei.hpp"
+    "${_c2d_inc}/projekt/Typen.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/Leser.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/Bedingt.hpp"

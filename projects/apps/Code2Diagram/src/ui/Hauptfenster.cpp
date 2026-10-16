@@ -221,6 +221,10 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     auto* rechts = new QWidget(teiler);
     m_auswahl = new QComboBox(rechts);
     m_auswahl->setObjectName(QStringLiteral("auswahl"));
+    m_typAuswahl = new QComboBox(rechts);
+    m_typAuswahl->setObjectName(QStringLiteral("typAuswahl"));
+    m_typAuswahl->setToolTip(QStringLiteral("The type shown, with the types next to it in this file"));
+    m_typAuswahl->hide();
     m_format = new QComboBox(rechts);
     m_format->setObjectName(QStringLiteral("format"));
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate())
@@ -243,6 +247,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     auto* leiste = new QHBoxLayout;
     leiste->addWidget(new QLabel(QStringLiteral("Diagram:"), rechts));
     leiste->addWidget(m_auswahl, 1);
+    leiste->addWidget(m_typAuswahl, 1);
     leiste->addWidget(new QLabel(QStringLiteral("Format:"), rechts));
     leiste->addWidget(m_format);
     leiste->addWidget(m_richtung);
@@ -260,11 +265,23 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     connect(m_auswahl, &QComboBox::currentIndexChanged, this, [this] {
         // das bisherige Diagramm merken — ausser der Wechsel ist selbst ein Schritt zurueck oder ein Sprung
         if (!m_ohneVerlauf && !m_gezeigt.isEmpty() && m_gezeigt != m_auswahl->currentData().toString())
-            m_verlauf << Stelle{m_datei, m_gezeigt};
+            m_verlauf << hier();
         baueNeu();
     });
     for (QComboBox* liste : {m_format, m_richtung})
         connect(liste, &QComboBox::currentIndexChanged, this, [this] { zeichne(); });
+    connect(m_typAuswahl, &QComboBox::currentIndexChanged, this, [this] {
+        const QString neu = m_typAuswahl->currentData().toString();
+        if (neu.isEmpty() || neu == m_typ) return;
+        if (!m_ohneVerlauf && m_gezeigt == QLatin1String(kDatentypen)) m_verlauf << hier();
+        m_typ = neu;
+        zeichne();
+        aktualisiereLeiste();
+    });
+    m_vorschau->beiDoppelklickKasten = [this](std::size_t kasten, std::size_t eintrag) { kastenDoppelklick(kasten, eintrag); };
+    m_vorschau->beiKontextKasten = [this](std::size_t kasten, std::size_t eintrag, const QPoint& ort) {
+        kastenMenue(kasten, eintrag, ort);
+    };
 
     m_vorschau->beiDoppelklick = [this](c2d::diagramm::KnotenId knoten) {
         if (istAufrufgraph())
@@ -281,22 +298,26 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         }
         if (knoten >= m_fluss.knoten().size()) return;
         const std::vector<Fundstelle> ziele = zieleVon(knoten);
-        if (ziele.size() == 1)
+        const std::vector<c2d::projekt::TypVerweis> typen = typVerweiseVon(knoten);
+        std::size_t typZiele = 0;
+        for (const c2d::projekt::TypVerweis& t : typen) typZiele += t.ziele.size();
+        if (ziele.size() + typZiele == 1)
         {
-            gehe(ziele.front(), knoten);
+            if (ziele.empty())
+                geheZuTyp(typen.front().ziele.front(), knoten);
+            else
+                gehe(ziele.front(), knoten);
             return;
         }
-        if (ziele.empty())
+        if (ziele.empty() && typZiele == 0)
         {
             zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
             return;
         }
-        // mehr als eine Funktion kommt in Frage: nicht still eine waehlen
-        statusBar()->showMessage(QStringLiteral("The call is ambiguous: %1 functions qualify").arg(ziele.size()), 5000);
+        // mehr als ein Ziel: nicht still eines waehlen — erst die Funktionen, dann die Typen
+        statusBar()->showMessage(QStringLiteral("%1 functions and types qualify").arg(ziele.size() + typZiele), 5000);
         QMenu wahl(this);
-        wahl.addSection(QStringLiteral("Which function?"));
-        for (const Fundstelle& z : ziele)
-            wahl.addAction(beschreibe(z), this, [this, z, knoten] { gehe(z, knoten); });
+        zielMenue(ziele, typen, knoten, wahl);
         wahl.exec(QCursor::pos());
     };
     m_vorschau->beiKontext = [this](c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort) {
@@ -539,6 +560,8 @@ void Hauptfenster::liesEin()
         m_projekt = c2d::projekt::liesText(m_einzelText.toStdString(), m_einzelName.toStdString(), optionen);
     else
         m_projekt = c2d::projekt::liesOrdner(alsWeg(m_ordner), optionen);
+    m_typen = c2d::projekt::Typverzeichnis(m_projekt);
+    m_struktur = {};
 
     // was vorher galt, verweist nicht mehr sicher in dieses Projekt
     m_datei = kKeine;
@@ -605,18 +628,20 @@ void Hauptfenster::liesNeu()
     if (m_projekt.dateien.empty() && m_ordner.isEmpty()) return;
     const QString datei = this->datei();
     const QString gezeigt = m_gezeigt;
+    const QString typ = m_typ;
     liesEin();
     const std::size_t index = m_projekt.finde(datei.toStdString());
     zeigeDatei(index == kKeine ? 0 : index);
     // das Diagramm von vorher wieder zeigen, wenn es das noch gibt — ohne Eintrag im Verlauf
     m_ohneVerlauf = true;
     waehleEintrag(gezeigt);
+    setzeTypStill(typ);
     m_ohneVerlauf = false;
 }
 
 void Hauptfenster::zeigeDatei(std::size_t index)
 {
-    if (!m_ohneVerlauf && !m_gezeigt.isEmpty() && index != m_datei) m_verlauf << Stelle{m_datei, m_gezeigt};
+    if (!m_ohneVerlauf && !m_gezeigt.isEmpty() && index != m_datei) m_verlauf << hier();
     if (index >= m_projekt.dateien.size())
     {
         // ein Ordner ohne Quelldateien
@@ -666,6 +691,20 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (std::any_of(einheit.funktionen.begin(), einheit.funktionen.end(),
                         [](const c2d::modell::Funktion& f) { return f.rumpf != nullptr; }))
             m_auswahl->addItem(QStringLiteral("Call graph of this file"), QString::fromLatin1(kAufrufgraphDatei));
+    }
+    {
+        // die Typen der Datei, vorn alle; gewaehlt ist der erste
+        const QSignalBlocker ruhe(m_typAuswahl);
+        m_typAuswahl->clear();
+        const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
+        m_typAuswahl->addItem(QStringLiteral("All types (%1)").arg(einheit.typen.size()), QStringLiteral("*"));
+        for (const c2d::modell::Typ& t : einheit.typen)
+        {
+            const QString name = QString::fromStdString(t.vollerName());
+            if (m_typAuswahl->findData(name) < 0) m_typAuswahl->addItem(name, name);
+        }
+        m_typAuswahl->setCurrentIndex(m_typAuswahl->count() > 1 ? 1 : 0);
+        m_typ = m_typAuswahl->currentData().toString();
     }
     {
         // im Baum die Datei markieren, ohne dass er sie noch einmal waehlt
@@ -1088,7 +1127,153 @@ QStringList Hauptfenster::diagramme() const
 
 bool Hauptfenster::waehleDiagramm(const QString& name)
 {
+    const QString typen = QString::fromLatin1(kDatentypen) + QLatin1Char(':');
+    if (name.startsWith(typen))
+        return m_typAuswahl->findData(name.mid(typen.size())) >= 0 && waehleEintrag(QString::fromLatin1(kDatentypen)) &&
+               waehleTyp(name.mid(typen.size()));
     return waehleEintrag(name);
+}
+
+Hauptfenster::Stelle Hauptfenster::hier(c2d::diagramm::KnotenId von) const
+{
+    return Stelle{m_datei, m_gezeigt, von, m_typ};
+}
+
+QStringList Hauptfenster::typen() const
+{
+    QStringList aus;
+    for (int i = 0; i < m_typAuswahl->count(); ++i) aus << m_typAuswahl->itemData(i).toString();
+    return aus;
+}
+
+bool Hauptfenster::waehleTyp(const QString& typ)
+{
+    if (m_typ == typ) return m_typAuswahl->findData(typ) >= 0;
+    return waehle(m_typAuswahl, typ);  // zeichnet ueber das Signal, mit Eintrag im Verlauf
+}
+
+QString Hauptfenster::typ() const
+{
+    return m_gezeigt == QLatin1String(kDatentypen) ? m_typ : QString();
+}
+
+bool Hauptfenster::setzeTypStill(const QString& typ)
+{
+    if (typ.isEmpty() || m_typAuswahl->findData(typ) < 0) return false;
+    const bool vorher = m_ohneVerlauf;
+    m_ohneVerlauf = true;
+    const bool gefunden = waehle(m_typAuswahl, typ);
+    m_ohneVerlauf = vorher;
+    return gefunden;
+}
+
+QStringList Hauptfenster::typZiele(const QString& name) const
+{
+    QStringList aus;
+    for (const c2d::projekt::TypStelle& s : m_typen.kandidaten(m_datei, name.toStdString()))
+        aus << QStringLiteral("%1:%2").arg(ausStd(m_projekt.dateien[s.datei].pfad)).arg(c2d::projekt::typ(m_projekt, s).zeile);
+    return aus;
+}
+
+bool Hauptfenster::zeigeTyp(const QString& name, int wahl)
+{
+    const std::vector<c2d::projekt::TypStelle> k = m_typen.kandidaten(m_datei, name.toStdString());
+    if (wahl < 0 && k.size() == 1) wahl = 0;
+    if (wahl < 0 || static_cast<std::size_t>(wahl) >= k.size()) return false;
+    geheZuTyp(k[static_cast<std::size_t>(wahl)]);
+    return true;
+}
+
+QString Hauptfenster::beschreibe(const c2d::projekt::TypStelle& stelle) const
+{
+    const c2d::modell::Typ& t = c2d::projekt::typ(m_projekt, stelle);
+    return QStringLiteral("%1 - %2:%3")
+        .arg(QString::fromStdString(t.vollerName()), ausStd(m_projekt.dateien[stelle.datei].pfad))
+        .arg(t.zeile);
+}
+
+std::vector<c2d::projekt::TypVerweis> Hauptfenster::typVerweiseVon(c2d::diagramm::KnotenId knoten) const
+{
+    if (knoten >= m_fluss.knoten().size()) return {};
+    std::string text;
+    for (const std::string& z : m_fluss.knoten()[knoten].zeilen) text += z + '\n';
+    return m_typen.verweiseIn(dateiVon(knoten), text);
+}
+
+std::vector<c2d::projekt::TypVerweis> Hauptfenster::typVerweiseVon(std::size_t kasten, std::size_t eintrag) const
+{
+    if (kasten >= m_struktur.kaesten.size() || eintrag >= m_struktur.kaesten[kasten].eintraege.size()) return {};
+    // die Kaesten stehen alle in der gewaehlten Datei; ein Glied nennt seinen Typ, nicht sich selbst
+    return m_typen.verweiseIn(m_datei, m_struktur.kaesten[kasten].eintraege[eintrag].typ);
+}
+
+void Hauptfenster::geheZuTyp(const c2d::projekt::TypStelle& stelle, c2d::diagramm::KnotenId von)
+{
+    const QString name = QString::fromStdString(c2d::projekt::typ(m_projekt, stelle).vollerName());
+    if (stelle.datei == m_datei && m_gezeigt == QLatin1String(kDatentypen) && m_typ == name) return;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (stelle.datei != m_datei) zeigeDatei(stelle.datei);
+    waehle(m_auswahl, QString::fromLatin1(kDatentypen));
+    setzeTypStill(name);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+}
+
+void Hauptfenster::zielMenue(const std::vector<Fundstelle>& funktionen, const std::vector<c2d::projekt::TypVerweis>& typen,
+                             c2d::diagramm::KnotenId von, QMenu& menue)
+{
+    if (!funktionen.empty()) menue.addSection(QStringLiteral("Functions"));
+    for (const Fundstelle& f : funktionen)
+        menue.addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f, von] { gehe(f, von); });
+    if (!typen.empty()) menue.addSection(QStringLiteral("Types"));
+    for (const c2d::projekt::TypVerweis& t : typen)
+        for (const c2d::projekt::TypStelle& s : t.ziele)
+            menue.addAction(QStringLiteral("Go to type %1").arg(beschreibe(s)), this, [this, s, von] { geheZuTyp(s, von); });
+}
+
+void Hauptfenster::kastenDoppelklick(std::size_t kasten, std::size_t eintrag)
+{
+    if (kasten >= m_struktur.kaesten.size()) return;
+    if (eintrag == kKeine)
+    {
+        // der Kopf: diesen Typ zeigen, mit seinen Nachbarn
+        waehleTyp(QString::fromStdString(m_struktur.kaesten[kasten].name));
+        return;
+    }
+    const std::vector<c2d::projekt::TypVerweis> typen = typVerweiseVon(kasten, eintrag);
+    std::size_t ziele = 0;
+    for (const c2d::projekt::TypVerweis& t : typen) ziele += t.ziele.size();
+    if (ziele == 0) return;
+    if (ziele == 1)
+    {
+        geheZuTyp(typen.front().ziele.front());
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("%1 types qualify").arg(ziele), 5000);
+    QMenu wahl(this);
+    zielMenue({}, typen, kKeine, wahl);
+    wahl.exec(QCursor::pos());
+}
+
+void Hauptfenster::kastenMenue(std::size_t kasten, std::size_t eintrag, const QPoint& ort)
+{
+    QMenu menue(this);
+    if (kasten < m_struktur.kaesten.size())
+    {
+        const QString name = QString::fromStdString(m_struktur.kaesten[kasten].name);
+        if (name != m_typ)
+            menue.addAction(QStringLiteral("Show %1 and its neighbours").arg(name), this, [this, name] { waehleTyp(name); });
+        if (eintrag != kKeine) zielMenue({}, typVerweiseVon(kasten, eintrag), kKeine, menue);
+    }
+    if (m_typ != QLatin1String("*"))
+        menue.addAction(QStringLiteral("Show all types of the file"), this, [this] { waehleTyp(QStringLiteral("*")); });
+    if (!m_verlauf.isEmpty())
+    {
+        menue.addSeparator();
+        menue.addAction(QStringLiteral("Back to %1").arg(m_verlauf.last().diagramm), this, [this] { zurueck(); });
+    }
+    if (!menue.isEmpty()) menue.exec(ort);
 }
 
 bool Hauptfenster::waehleEintrag(const QString& name)
@@ -1209,7 +1394,7 @@ void Hauptfenster::geheZuAufrufgraph(const Fundstelle& stelle, c2d::diagramm::Kn
     const QString name =
         QString::fromLatin1(kAufrufgraph) + QString::fromStdString(c2d::projekt::funktion(m_projekt, stelle).vollerName());
     if (stelle.datei == m_datei && name == m_gezeigt) return;
-    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt, von};
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
     m_ohneVerlauf = true;
     if (stelle.datei != m_datei) zeigeDatei(stelle.datei);
     waehleEintrag(name);
@@ -1272,6 +1457,7 @@ bool Hauptfenster::zurueck()
     m_ohneVerlauf = true;
     if (davor.datei != m_datei) zeigeDatei(davor.datei);
     const bool gefunden = waehleEintrag(davor.diagramm);
+    if (gefunden && davor.diagramm == QLatin1String(kDatentypen)) setzeTypStill(davor.typ);
     m_ohneVerlauf = false;
     // zurueck zum Aufruf, von dem man kam: er ist hervorgehoben
     if (gefunden && m_gezeigt == davor.diagramm) m_vorschau->markiere(davor.knoten);
@@ -1437,7 +1623,7 @@ void Hauptfenster::gehe(const Fundstelle& stelle, c2d::diagramm::KnotenId von)
 {
     const QString name = QString::fromStdString(c2d::projekt::funktion(m_projekt, stelle).vollerName());
     if (stelle.datei == m_datei && name == m_gezeigt) return;  // schon da (ein Aufruf seiner selbst)
-    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt, von};
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
     m_ohneVerlauf = true;
     if (stelle.datei != m_datei) zeigeDatei(stelle.datei);
     waehle(m_auswahl, name);
@@ -1532,6 +1718,7 @@ void Hauptfenster::baueNeu()
     m_fluss = Flussdiagramm();
     // ein anderer Aufrufgraph beginnt zugeklappt
     if (m_gezeigt != bisher) m_aufgeklappt.clear();
+    m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
     leiteAufrufgraphAb();
     if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
     {
@@ -1566,9 +1753,19 @@ void Hauptfenster::zeichne()
 
     if (m_gezeigt == QLatin1String(kDatentypen))
     {
-        const Strukturdiagramm typen = strukturVon(m_projekt.dateien[m_datei].ergebnis.einheit);
-        m_vorschau->zeige(typen, nachRechts);
-        m_text->setPlainText(QString::fromStdString(format->schreibe(typen, optionen)));
+        const c2d::modell::Einheit& einheit = m_projekt.dateien[m_datei].ergebnis.einheit;
+        m_struktur = m_typ == QLatin1String("*") || m_typ.isEmpty() ? strukturVon(einheit)
+                                                                     : strukturVon(einheit, m_typ.toStdString());
+        // je Glied die Namen, die zu einem Typ fuehren
+        std::vector<std::vector<std::vector<std::string>>> links(m_struktur.kaesten.size());
+        for (std::size_t k = 0; k < m_struktur.kaesten.size(); ++k)
+            for (std::size_t e = 0; e < m_struktur.kaesten[k].eintraege.size(); ++e)
+            {
+                links[k].emplace_back();
+                for (const c2d::projekt::TypVerweis& v : typVerweiseVon(k, e)) links[k].back().push_back(v.name);
+            }
+        m_vorschau->zeige(m_struktur, nachRechts, links);
+        m_text->setPlainText(QString::fromStdString(format->schreibe(m_struktur, optionen)));
         return;
     }
     if (istAufrufgraph())
@@ -1584,10 +1781,16 @@ void Hauptfenster::zeichne()
         m_text->setPlainText(QString::fromStdString(format->schreibe(z, optionen)));
         return;
     }
-    // hervorgehoben wird, was weiterfuehrt: ein Knoten, dessen Aufruf eine Funktion des Projekts meint
-    std::vector<bool> verweis(m_fluss.knoten().size(), false);
-    for (KnotenId i = 0; i < verweis.size(); ++i) verweis[i] = !zieleVon(i).empty();
-    m_vorschau->zeige(m_fluss, nachRechts, verweis);
+    // hervorgehoben wird, was weiterfuehrt: ein Aufruf, der eine Funktion des Projekts meint, ein Typ
+    std::vector<std::vector<std::string>> links(m_fluss.knoten().size());
+    for (KnotenId i = 0; i < links.size(); ++i)
+    {
+        const std::size_t von = dateiVon(i);
+        for (const std::string& aufruf : m_fluss.knoten()[i].aufrufe)
+            if (!c2d::projekt::kandidaten(m_projekt, von, aufruf).empty()) links[i].push_back(aufruf);
+        for (const c2d::projekt::TypVerweis& t : typVerweiseVon(i)) links[i].push_back(t.name);
+    }
+    m_vorschau->zeige(m_fluss, nachRechts, links);
     m_text->setPlainText(QString::fromStdString(format->schreibe(m_fluss, optionen)));
 }
 
@@ -1627,6 +1830,19 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                     wahl->addAction(QStringLiteral("Embed here: %1").arg(beschreibe(f)), this, [this, knoten, f] { betteEin(knoten, f); })
                         ->setEnabled(!traegtSchon);
             }
+        }
+        // die Typen, die der Knoten nennt
+        for (const c2d::projekt::TypVerweis& t : typVerweiseVon(knoten))
+        {
+            if (t.ziele.size() == 1)
+            {
+                const c2d::projekt::TypStelle s = t.ziele.front();
+                menue.addAction(QStringLiteral("Go to type %1").arg(beschreibe(s)), this, [this, s, knoten] { geheZuTyp(s, knoten); });
+                continue;
+            }
+            QMenu* wahl = menue.addMenu(QStringLiteral("%1: %2 types qualify").arg(ausStd(t.name)).arg(t.ziele.size()));
+            for (const c2d::projekt::TypStelle& s : t.ziele)
+                wahl->addAction(QStringLiteral("Go to type %1").arg(beschreibe(s)), this, [this, s, knoten] { geheZuTyp(s, knoten); });
         }
         if (k.quellZeile > 0 && von < m_projekt.dateien.size())
         {

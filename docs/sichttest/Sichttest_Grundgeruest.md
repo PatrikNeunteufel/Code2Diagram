@@ -49,7 +49,7 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
 ## C. Datentypen
 
 - [ ] **C0 Vorbereiten:** Die Datei mit den Datentypen öffnen und sie wählen.
-      `aktion: datei_oeffnen pfad=beispiele/datentypen.c` `aktion: diagramm_waehlen name=types` `aktion: format_waehlen name=mermaid`
+      `aktion: datei_oeffnen pfad=beispiele/datentypen.c` `aktion: diagramm_waehlen name=types` `aktion: typ_waehlen name=*` `aktion: format_waehlen name=mermaid`
 - [ ] **C1 Fünf Kästen:** In mermaid.live: `Farbe` (enumeration, drei Werte, `GRUEN = 4`),
       `Punkt`, `Knoten`, `anonymous_wert` (union) und `Liste`, je mit ihren Gliedern.
       `Knoten` zeigt unter anderem `u8 daten[16]`, `unsigned bereit : 1` und den
@@ -401,3 +401,36 @@ unter `#ifdef MIT_LOG` die fremde `schreibe()` ruft.
       Titel ganz zu lesen, `schreibe` ganz unten. Format mermaid, Ansicht Text: `flowchart LR`, je
       Datei ein `subgraph`, `-.->|"?"|` zu `regle`; in mermaid.live dasselbe Bild.
       `aktion: zweige_waehlen name=auswerten` `aktion: format_waehlen name=mermaid` `aktion: ansicht_waehlen name=text`
+
+## M. Links auf Datentypen
+
+Am Beispiel `beispiele/typen`: `inc/typen.h` definiert `t_PID`, `t_MODUS`, `Regler`, `Fern`;
+`inc/motor.h` bindet es ein und definiert `Motor`; `main.c` bindet `inc/motor.h` ein, hat
+`typedef struct Motor Motor_t;`; `sim/sim.c` hat ein eigenes `t_PID` und bindet nichts ein.
+
+- [ ] **M0 Vorbereiten:** Das Projekt öffnen, `inc/typen.h`, Data types, Vorschau.
+      `aktion: ordner_oeffnen pfad=beispiele/typen` `aktion: datei_waehlen pfad=inc/typen.h` `aktion: diagramm_waehlen name=types` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **M1 Das zweite Feld:** Neben *Data types* ein zweites Feld mit `All types (4)`, `t_PID`,
+      `t_MODUS`, `Regler`, `Fern`; gewählt ist `t_PID`. Bei einer Funktion in Diagram ist es weg.
+- [ ] **M2 Ein Typ mit Nachbarn:** `Regler` wählen: drei Kästen — `Regler`, darunter `t_PID`
+      (Raute, `pid`) und `t_MODUS` (Pfeil, `modus`); `Fern` fehlt. Im Kasten `Regler` sind
+      `t_PID`, `t_MODUS` und `Motor` blau unterstrichen; Tooltip auf der Zeile *Double-click or
+      right-click: go to the type*.
+      `aktion: typ_waehlen name=Regler`
+- [ ] **M3 In eine andere Datei:** Doppelklick auf `Motor` in `struct Motor *motor`: Datei
+      `inc/motor.h`, Data types, zweites Feld `Motor`. **Back**: wieder `Regler` in `inc/typen.h`.
+      `aktion: typ_zeigen name=Motor` `aktion: zurueck`
+- [ ] **M4 Kopf und Kontextmenü:** Doppelklick auf den Kopf von `t_PID`: zweites Feld `t_PID`.
+      Rechtsklick auf eine Zeile mit Link: *Go to type …*, *Show all types of the file*,
+      *Back to …*.
+- [ ] **M5 Aus dem Ablauf:** `main.c`, Diagram `main()`: im Knoten sind `Motor_t`, `Regler`,
+      `regle` und `t_PID` blau unterstrichen, der Knoten blau umrandet. Doppelklick: ein Menü mit
+      *Functions* (`regle() - main.c:6`) und *Types* (`Motor - inc/motor.h:7`, `Regler -
+      inc/typen.h:12`, `t_PID - inc/typen.h:5`). `t_PID` wählen: `inc/typen.h`, Typ `t_PID` —
+      nicht der aus `sim/sim.c`. Back.
+      `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main` `aktion: typ_zeigen name=t_PID`
+- [ ] **M6 Der Startknoten:** Diagram `regle()`: im Startknoten ist `Regler` unterstrichen;
+      Doppelklick führt direkt zu `Regler` (ein einziges Ziel).
+- [ ] **M7 Ohne Einbindung:** `sim/sim.c`, Diagram `simuliere()`: `t_PID` im Startknoten führt zum
+      eigenen `t_PID` in `sim/sim.c` (die eigene Datei zuerst).
+      `aktion: datei_waehlen pfad=sim/sim.c` `aktion: typ_zeigen name=t_PID`

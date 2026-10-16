@@ -23,13 +23,20 @@
  * sind, stellt die Leiste ein. Ein Doppelklick auf eine Funktion zeigt ihren
  * Ablauf, Back fuehrt zurueck; das Kontextmenue klappt eine Funktion an der
  * Grenze eine Stufe auf.
+ *
+ * Bei den Datentypen waehlt ein zweites Feld den Typ, der gezeigt wird (mit
+ * seinen Nachbarn, projekt/Typen.hpp), oder alle. Ein Typ, den ein Glied oder
+ * ein Knoten des Ablaufs nennt, ist ein hervorgehobener Link: Doppelklick oder
+ * Kontextmenue fuehrt zu ihm, auch in eine andere Datei.
  */
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
+#include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
+#include "c2d/projekt/Typen.hpp"
 
 #include <QImage>
 #include <QList>
@@ -121,8 +128,21 @@ public:
     /// es Funktionen gibt, und jeder Aufrufgraph `calls:...`, der schon gezeigt wurde.
     [[nodiscard]] QStringList diagramme() const;
     /// Das Diagramm wechseln; das bisherige kommt in den Verlauf fuer zurueck(). Auch
-    /// `calls:<Funktion>` fuer jede Funktion der Datei. false = so heisst keines.
+    /// `calls:<Funktion>` fuer jede Funktion der Datei und `types:<Typ>` fuer einen Typ.
+    /// false = so heisst keines.
     bool waehleDiagramm(const QString& name);
+
+    /// Was das zweite Feld bei den Datentypen bietet: `*` (alle), dann die Typen der Datei.
+    [[nodiscard]] QStringList typen() const;
+    /// Den Typ waehlen, der bei den Datentypen gezeigt wird (`*` = alle). false = so heisst keiner.
+    bool waehleTyp(const QString& typ);
+    /// Der gewaehlte Typ; `*` = alle, leer = es werden keine Datentypen gezeigt.
+    [[nodiscard]] QString typ() const;
+    /// Wohin ein Typname aus der gewaehlten Datei fuehren kann: je Kandidat `pfad:zeile` (projekt::Typverzeichnis).
+    [[nodiscard]] QStringList typZiele(const QString& name) const;
+    /// Wie ein Link: zum Typ, den der Name aus der gewaehlten Datei meint; `wahl` unter mehreren (ab 0).
+    /// false = keiner, oder mehrere und keine Wahl.
+    bool zeigeTyp(const QString& name, int wahl = -1);
 
     /// Den Aufrufgraph zeigen: ab der Funktion `funktion` der gewaehlten Datei (Name, auch
     /// mit Bereich), leer = den der Datei. false = keine solche Funktion.
@@ -216,7 +236,25 @@ private:
         QString diagramm;
         /// der Knoten, von dem aus man weiterging (ein Aufruf); kKeine = keiner
         c2d::diagramm::KnotenId knoten = c2d::diagramm::kKeine;
+        QString typ;  ///< bei den Datentypen: der gewaehlte Typ
     };
+
+    /// Die Stelle, die gerade gezeigt wird — fuer den Verlauf.
+    [[nodiscard]] Stelle hier(c2d::diagramm::KnotenId von = c2d::diagramm::kKeine) const;
+    /// Die Typen, die ein Knoten des Ablaufs nennt.
+    [[nodiscard]] std::vector<c2d::projekt::TypVerweis> typVerweiseVon(c2d::diagramm::KnotenId knoten) const;
+    /// Die Typen, die ein Glied des gezeigten Strukturdiagramms nennt.
+    [[nodiscard]] std::vector<c2d::projekt::TypVerweis> typVerweiseVon(std::size_t kasten, std::size_t eintrag) const;
+    [[nodiscard]] QString beschreibe(const c2d::projekt::TypStelle& stelle) const;
+    /// Zu einem Typ: seine Datei, Data types, er im zweiten Feld; `von` wie bei gehe().
+    void geheZuTyp(const c2d::projekt::TypStelle& stelle, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    /// Den Typ im zweiten Feld waehlen, ohne dass der Wechsel in den Verlauf kommt.
+    bool setzeTypStill(const QString& typ);
+    /// Ein Menue mit Funktionen und Typen, je einem Eintrag zum Hingehen.
+    void zielMenue(const std::vector<c2d::projekt::Fundstelle>& funktionen,
+                   const std::vector<c2d::projekt::TypVerweis>& typen, c2d::diagramm::KnotenId von, QMenu& menue);
+    void kastenDoppelklick(std::size_t kasten, std::size_t eintrag);
+    void kastenMenue(std::size_t kasten, std::size_t eintrag, const QPoint& ort);
 
     /// Mit den jetzigen Lese-Optionen (neu) einlesen: die Datei oder den Ordner.
     void liesEin();
@@ -278,6 +316,7 @@ private:
     Konfiguration* m_konfiguration = nullptr;
     QTabWidget* m_ansichten = nullptr;
     QComboBox* m_auswahl = nullptr;
+    QComboBox* m_typAuswahl = nullptr;  ///< bei den Datentypen: welcher Typ
     QComboBox* m_format = nullptr;
     QComboBox* m_richtung = nullptr;
     QLineEdit* m_definitionen = nullptr;
@@ -299,6 +338,9 @@ private:
     QString m_einzelName;
     QString m_gelesenMit;  ///< der Text des Felds Defines beim letzten Lesen
     c2d::projekt::Projekt m_projekt;
+    c2d::projekt::Typverzeichnis m_typen;      ///< zu m_projekt
+    c2d::diagramm::Strukturdiagramm m_struktur;  ///< das gezeigte Strukturdiagramm
+    QString m_typ;                             ///< der Typ im zweiten Feld; `*` = alle
     std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
     std::size_t m_quelleZeigt = c2d::projekt::kKeine;  ///< die Datei im Quelltext
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen

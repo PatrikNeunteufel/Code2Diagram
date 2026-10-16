@@ -5,9 +5,7 @@
   "includePfade": [
     "inc"
   ],
-  "uebergehen": [
-    "alt"
-  ],
+  "uebergehen": [],
   "abschnitte": [
     {
       "ordner": "antrieb",

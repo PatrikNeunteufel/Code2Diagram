@@ -48,6 +48,10 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("Ampel --> Phase : phase"));
 
         CHECK(fenster.waehleFormat("dot"));
+        // gewaehlt ist der erste Typ, mit seinen Nachbarn; `*` zeigt alle
+        CHECK(fenster.typ() == "Phase");
+        CHECK(fenster.diagrammText().startsWith("digraph \"Phase\" {"));
+        CHECK(fenster.waehleTyp("*"));
         CHECK(fenster.diagrammText().startsWith("digraph \"ampel.c\" {"));
 
         CHECK_FALSE(fenster.waehleDiagramm("gibt_es_nicht"));
@@ -455,6 +459,60 @@ TEST_SUITE("Hauptfenster")
         REQUIRE(fenster.zeigeAufrufgraph());
         CHECK(fenster.diagramm() == "calls");
         CHECK(fenster.aufrufgraphKnoten() == QStringList{"takt", "motor_starte", "regle"});
+    }
+
+    TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            const QString pfad = wurzel.filePath(relativ);
+            REQUIRE(QDir().mkpath(QFileInfo(pfad).absolutePath()));
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("inc/typen.h", "typedef struct { float kp; } t_PID;\n"
+                            "struct Regler { t_PID pid; int n; };\n"
+                            "struct Fern { int x; };\n");
+        lege("main.c", "#include \"inc/typen.h\"\nint main(void) { struct Regler r; t_PID p; return 0; }\n");
+        lege("sim.c", "typedef struct { int y; } t_PID;\nvoid f(void) { }\n");
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDatei("inc/typen.h"));
+        REQUIRE(fenster.waehleDiagramm("types"));
+        CHECK(fenster.typen() == QStringList{"*", "t_PID", "Regler", "Fern"});
+        CHECK(fenster.typ() == "t_PID");  // der erste
+        REQUIRE(fenster.waehleTyp("Regler"));
+        CHECK(fenster.vorschauFormen() == 2);  // Regler und t_PID, nicht Fern
+        CHECK_FALSE(fenster.waehleTyp("gibt_es_nicht"));
+
+        // aus dem Ablauf: main nennt Regler und t_PID — zum Typ in der eingebundenen Datei
+        REQUIRE(fenster.waehleDatei("main.c"));
+        REQUIRE(fenster.waehleDiagramm("main"));
+        CHECK(fenster.typZiele("t_PID") == QStringList{"inc/typen.h:1"});  // nicht der in sim.c
+        REQUIRE(fenster.zeigeTyp("Regler"));
+        CHECK(fenster.datei() == "inc/typen.h");
+        CHECK(fenster.diagramm() == "types");
+        CHECK(fenster.typ() == "Regler");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.datei() == "main.c");
+        CHECK(fenster.diagramm() == "main");
+
+        // ohne Einbindung: zwei Kandidaten, keine stille Wahl
+        REQUIRE(fenster.waehleDatei("sim.c"));
+        CHECK(fenster.typZiele("Regler") == QStringList{"inc/typen.h:2"});
+        CHECK(fenster.typZiele("t_PID") == QStringList{"sim.c:1"});  // die eigene Datei zuerst
+
+        // ein Typ wechselt im zweiten Feld; zurueck kehrt zum vorigen Typ
+        REQUIRE(fenster.waehleDatei("inc/typen.h"));
+        REQUIRE(fenster.waehleDiagramm("types:Fern"));
+        CHECK(fenster.typ() == "Fern");
+        REQUIRE(fenster.waehleTyp("Regler"));
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.typ() == "Fern");
     }
 
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")

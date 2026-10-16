@@ -256,6 +256,33 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
                      });
 
+    anbindung.aktion(QStringLiteral("typ_waehlen"),
+                     QStringLiteral("Data types: chooses the type shown (with its neighbours), or all"),
+                     QStringLiteral("name=<type | *>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         if (!fenster.waehleDiagramm(QStringLiteral("types:") + name))
+                             return st::fehler(QStringLiteral("No type '%1' - there are: %2")
+                                                   .arg(name, fenster.typen().join(QStringLiteral(", "))));
+                         return st::ok(fenster.typ());
+                     });
+
+    anbindung.aktion(QStringLiteral("typ_zeigen"),
+                     QStringLiteral("Follows a type name like a link: to the type it means, also in another file"),
+                     QStringLiteral("name=<type name> wahl=<0, 1, ... if more than one qualify>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         const QString wahl = st::argument(argumente, QStringLiteral("wahl"));
+                         const QStringList ziele = fenster.typZiele(name);
+                         if (!fenster.zeigeTyp(name, wahl.isEmpty() ? -1 : wahl.toInt()))
+                             return st::fehler(QStringLiteral("'%1' leads to: %2")
+                                                   .arg(name, ziele.isEmpty() ? QStringLiteral("nothing")
+                                                                              : ziele.join(QStringLiteral(", "))));
+                         return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.typ()));
+                     });
+
     anbindung.aktion(QStringLiteral("format_waehlen"), QStringLiteral("Selects the output format"),
                      QStringLiteral("name=<svg | mermaid | dot | drawio>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {

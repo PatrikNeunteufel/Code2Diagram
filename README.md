@@ -190,6 +190,17 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
     fest, gilt dort weiter der Abschnitt — das sagt ein Hinweis nach dem Speichern.
 - Rechts oben: **Diagram** (eine Funktion, mit Bereich wie `Klasse::methode`, ein erkannter
   Zustandsautomat — *State machine: …* — oder die Datentypen), **Format**, Richtung.
+- **Datentypen:** Ist *Data types* gewählt, steht daneben ein zweites Feld: *All types (n)* oder
+  ein Typ der Datei (gewählt ist zuerst der erste). Ein Typ wird mit seinen Nachbarn derselben
+  Datei gezeigt — was er enthält, worauf er verweist, wovon er erbt, und wer das mit ihm tut.
+  **Links auf Typen:** Ein Typname in einem Glied ist hervorgehoben (unterstrichen), ebenso im
+  Ablauf ein Typ, den ein Knoten nennt (Deklaration, Cast, `sizeof`, Parameter im Startknoten)
+  und eine gerufene Funktion. Doppelklick oder Kontextmenü (*Go to type …*) führt hin, auch in eine
+  andere Datei: Data types, der Typ im zweiten Feld; Back zurück. Ein Typname meint erst die
+  eigene Datei, dann die eingebundenen Köpfe (auch mittelbar), dann jede Datei des Projekts; ein
+  `typedef` führt zu seinem Typ. Hat ein Knoten mehrere Ziele (Funktionen und Typen) oder meint ein
+  Name mehrere, wählt man im Menü. Doppelklick auf den Kopf eines Kastens zeigt diesen Typ.
+  Beispiel: `beispiele/typen/`.
 - **Zustandsautomaten** werden erkannt, nicht geraten: ein `switch (V)`, in dessen Fällen
   mindestens zweimal `V = K` steht, wobei `K` eine Fall-Marke desselben `switch` ist. Zustände
   sind die Fall-Marken (dazu zugewiesene Werte ohne eigenen Fall), Übergänge die Zuweisungen,
@@ -249,7 +260,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -260,6 +271,7 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   zeichnet die Datentypen aller Dateien
 - `--automat Bus_State` zeichnet den Zustandsautomaten über diese Variable (ganz oder ihr
   letztes Glied); `--liste` nennt die erkannten als `automaton …`
+- `--typ Regler` (mit `--datei` im Projekt) zeichnet nur diesen Typ und seine Nachbarn
 - `--aufrufgraph main` zeichnet den Aufrufgraph ab `main` (wie `--funktion`: im Projekt
   eindeutig, sonst `--datei`; der Name darf gleich folgen, wenn das Ziel davor steht, sonst
   `--aufrufgraph --funktion main`); ohne Funktion den der Datei (im Projekt mit `--datei`).
@@ -390,6 +402,9 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   UART ab `main` aller Stufen 3762 Knoten (die Anordnung bräuchte Minuten). Nach unten wird ein
   Graph mit vielen Gerufenen sehr breit (LLC, `main` aller Stufen: 166 Knoten auf 43 000 px). Rahmen je Datei stehen in Bändern nebeneinander; eine Kante, die über
   mehrere Schichten nach links führt, biegt gleich unter ihrer Quelle ab.
+- **Links auf Typen** erkennen den Namen, nicht den Typ eines Ausdrucks: `ampel->phase` führt
+  nicht zu `Ampel` (über den Parameter im Startknoten schon). Eine Variable, die heißt wie ein
+  Typ des Projekts, wird ein Link. Typen von Methoden (Rückgabe, Parameter) sind keine Links.
 - **Im Projekt:** die Datentypen zeigt das Fenster je Datei
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen

@@ -128,6 +128,11 @@ struct Funktion
 /// aussehen (`if (`, `sizeof(`), zaehlen nicht; in Literalen wird nichts gerufen.
 [[nodiscard]] std::vector<std::string> aufrufeIn(std::string_view text);
 
+/// Die Namen in einem Text, mit Bereich (`a::B`), ausserhalb von Literalen, jeder einmal, in der
+/// Reihenfolge des Texts — Kandidaten fuer Typen (projekt/Typen.hpp); was davon einer ist,
+/// entscheidet, wer die Typen kennt.
+[[nodiscard]] std::vector<std::string> bezeichnerIn(std::string_view text);
+
 /// Was der Rumpf einer Funktion ruft, ueber alle Anweisungen, jeder einmal.
 [[nodiscard]] std::vector<std::string> aufrufeVon(const Funktion& funktion);
 

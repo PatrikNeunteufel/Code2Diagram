@@ -8,6 +8,7 @@
 #include "c2d/diagramm/Anordnung.hpp"
 
 #include <QContextMenuEvent>
+#include <QFontMetricsF>
 #include <QFontDatabase>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
@@ -15,6 +16,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegularExpression>
+#include <QTextDocument>
 #include <QWheelEvent>
 
 #include <cmath>
@@ -30,6 +33,8 @@ using namespace c2d::diagramm;
 // Woran ein gezeichnetes Stueck haengt: Kennung + 1, damit 0 "nichts" heisst.
 constexpr int kKnoten = 0;
 constexpr int kGruppe = 1;
+constexpr int kKasten = 2;
+constexpr int kEintrag = 3;
 
 constexpr qsizetype kMaxZeichen = 60;  // wie AnordnungOptionen::maxZeilenLaenge
 
@@ -97,8 +102,9 @@ public:
         return stueck;
     }
 
-    void knoten(KnotenId id, const Knoten& k, const QRectF& r, bool verweis)
+    void knoten(KnotenId id, const Knoten& k, const QRectF& r, const std::vector<std::string>& links)
     {
+        const bool verweis = !links.empty();
         QPainterPath form;
         switch (k.art)
         {
@@ -138,12 +144,25 @@ public:
         QGraphicsPathItem* stueck = m_szene.addPath(form, verweis ? m_verweis : m_strich, rand ? m_getoent : m_flaeche);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
         stueck->setZValue(2);
-        if (verweis) stueck->setToolTip(QStringLiteral("Double-click: go to the called function. Right-click: embed it."));
+        if (verweis) stueck->setToolTip(QStringLiteral("Double-click: go to the function or type it names. Right-click: more."));
 
         QStringList zeilen;
         for (const std::string& z : k.zeilen) zeilen << gekuerzt(z);
         // der Text gehoert zum Knoten: ein Klick auf ihn trifft den Knoten
-        text(zeilen.join(QLatin1Char('\n')), r)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        if (!verweis)
+        {
+            text(zeilen.join(QLatin1Char('\n')), r)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+            return;
+        }
+        // je Zeile mittig, die Namen, die fuehren, hervorgehoben
+        const double hoehe = QFontMetricsF(m_schrift).lineSpacing();
+        const double oben = r.center().y() - hoehe * static_cast<double>(zeilen.size()) / 2;
+        for (qsizetype i = 0; i < zeilen.size(); ++i)
+        {
+            QGraphicsTextItem* stueck = linkZeile(zeilen[i], links, {});
+            stueck->setPos(r.center().x() - stueck->boundingRect().width() / 2, oben + hoehe * static_cast<double>(i));
+            stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        }
     }
 
     /// Ein Knoten des Aufrufgraphen: eine Funktion wie ein Aufruf im Ablauf (der Ausgangspunkt
@@ -278,10 +297,20 @@ public:
         return farbe;
     }
 
-    void kasten(const Kasten& k, const QRectF& r, double kopf, double zeilenHoehe)
+    /// Ein Kasten; `links[e]`: die Namen in Glied e, die zu einem Typ fuehren (hervorgehoben).
+    void kasten(std::size_t id, const Kasten& k, const QRectF& r, double kopf, double zeilenHoehe,
+                const std::vector<std::vector<std::string>>& links)
     {
-        m_szene.addRect(r, m_strich, m_flaeche)->setZValue(2);
-        m_szene.addRect(QRectF(r.left(), r.top(), r.width(), kopf), m_strich, m_getoent)->setZValue(2);
+        const auto merke = [&](QGraphicsItem* stueck, std::size_t eintrag) {
+            stueck->setData(kKasten, static_cast<qulonglong>(id) + 1);
+            stueck->setData(kEintrag, eintrag == kKeine ? 0ULL : static_cast<qulonglong>(eintrag) + 1);
+        };
+        QGraphicsRectItem* rumpf = m_szene.addRect(r, m_strich, m_flaeche);
+        rumpf->setZValue(2);
+        merke(rumpf, kKeine);
+        QGraphicsRectItem* kopfFeld = m_szene.addRect(QRectF(r.left(), r.top(), r.width(), kopf), m_strich, m_getoent);
+        kopfFeld->setZValue(2);
+        merke(kopfFeld, kKeine);
         QString art;
         switch (k.art)
         {
@@ -306,12 +335,58 @@ public:
             textLinks(vorn + gekuerzt(inhalt), QPointF(r.left() + 8, y), kursiv);
             y += zeilenHoehe;
         };
-        for (const Eintrag& e : k.eintraege) zeile(e.sicht, e.text(), false);
+        for (std::size_t e = 0; e < k.eintraege.size(); ++e)
+        {
+            const Eintrag& eintrag = k.eintraege[e];
+            const QString vorn = eintrag.sicht == '\0' ? QString() : QString(QLatin1Char(eintrag.sicht)) + QLatin1Char(' ');
+            const QString inhalt = vorn + gekuerzt(eintrag.text());
+            // ein unsichtbares Feld ueber die ganze Zeile: ein Klick trifft das Glied, auch neben dem Text
+            QGraphicsRectItem* feld = m_szene.addRect(QRectF(r.left() + 1, y, r.width() - 2, zeilenHoehe), Qt::NoPen, Qt::NoBrush);
+            feld->setZValue(2.5);
+            merke(feld, e);
+            if (e < links.size() && !links[e].empty())
+            {
+                QGraphicsTextItem* stueck = linkZeile(inhalt, links[e], QPointF(r.left() + 8, y));
+                merke(stueck, e);
+                feld->setToolTip(QStringLiteral("Double-click or right-click: go to the type"));
+            }
+            else
+                merke(textLinks(inhalt, QPointF(r.left() + 8, y)), e);
+            y += zeilenHoehe;
+        }
         if (k.methoden.empty()) return;
         y += 3;
         m_szene.addLine(r.left(), y, r.right(), y, m_strich)->setZValue(2);
         y += 5;
         for (const Methode& m : k.methoden) zeile(m.sicht, m.text(), m.abstrakt);  // abstrakt: kursiv, wie in UML
+    }
+
+    /// Eine Zeile, in der die Namen `links` (ganze Woerter) als Link hervorgehoben sind.
+    QGraphicsTextItem* linkZeile(const QString& inhalt, const std::vector<std::string>& links, QPointF ort)
+    {
+        QStringList muster;
+        for (const std::string& name : links) muster << QRegularExpression::escape(QString::fromStdString(name));
+        const QRegularExpression wort(QStringLiteral("(?<![A-Za-z0-9_:])(%1)(?![A-Za-z0-9_:])").arg(muster.join(QLatin1Char('|'))));
+        QString html;
+        qsizetype bis = 0;
+        for (QRegularExpressionMatchIterator it = wort.globalMatch(inhalt); it.hasNext();)
+        {
+            const QRegularExpressionMatch treffer = it.next();
+            html += inhalt.mid(bis, treffer.capturedStart() - bis).toHtmlEscaped();
+            html += QStringLiteral("<span style=\"color:%1; text-decoration:underline;\">%2</span>")
+                        .arg(m_verweis.color().name(), treffer.captured().toHtmlEscaped());
+            bis = treffer.capturedEnd();
+        }
+        html += inhalt.mid(bis).toHtmlEscaped();
+        auto* stueck = new QGraphicsTextItem;
+        stueck->document()->setDocumentMargin(0);
+        stueck->setFont(m_schrift);
+        stueck->setDefaultTextColor(m_strich.color());
+        stueck->setHtml(QStringLiteral("<span style=\"white-space:pre\">%1</span>").arg(html));
+        stueck->setPos(ort);
+        stueck->setZValue(3);
+        m_szene.addItem(stueck);
+        return stueck;
     }
 
     const QPen& strich() const { return m_strich; }
@@ -359,6 +434,7 @@ void Vorschau::leere()
     m_orte.clear();
     m_marke = nullptr;
     m_markiert = kKeine;
+    m_struktur = false;
 }
 
 bool Vorschau::markiere(KnotenId knoten)
@@ -380,7 +456,7 @@ bool Vorschau::markiere(KnotenId knoten)
     return true;
 }
 
-void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<bool>& verweis)
+void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<std::vector<std::string>>& links)
 {
     leere();
     AnordnungOptionen optionen;
@@ -406,7 +482,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
-        z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < verweis.size() && verweis[i]);
+        z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < links.size() ? links[i] : std::vector<std::string>{});
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
@@ -469,9 +545,11 @@ void Vorschau::zeige(const Aufrufgraph& graph, bool nachRechts)
     m_rahmen = static_cast<int>(a.gruppen.size());
 }
 
-void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts)
+void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts,
+                     const std::vector<std::vector<std::vector<std::string>>>& links)
 {
     leere();
+    m_struktur = true;
     AnordnungOptionen optionen;
     optionen.nachRechts = nachRechts;
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
@@ -500,7 +578,10 @@ void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts)
         }
     }
     for (std::size_t i = 0; i < a.kaesten.size(); ++i)
-        z.kasten(diagramm.kaesten[i], alsRect(a.kaesten[i]), kopfHoehe(optionen), optionen.zeilenHoehe);
+        z.kasten(i, diagramm.kaesten[i], alsRect(a.kaesten[i]), kopfHoehe(optionen), optionen.zeilenHoehe,
+                 i < links.size() ? links[i] : std::vector<std::vector<std::string>>{});
+    // markiere() umringt einen Kasten wie einen Knoten
+    for (const Rechteck& r : a.kaesten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.kaesten.size());
@@ -520,8 +601,38 @@ void Vorschau::trefferBei(const QPoint& ort, KnotenId& knoten, std::size_t& grup
     }
 }
 
+void Vorschau::kastenBei(const QPoint& ort, std::size_t& kasten, std::size_t& eintrag) const
+{
+    kasten = kKeine;
+    eintrag = kKeine;
+    for (const QGraphicsItem* stueck : items(ort))
+    {
+        if (stueck->data(kKasten).toULongLong() == 0) continue;
+        kasten = static_cast<std::size_t>(stueck->data(kKasten).toULongLong() - 1);
+        if (stueck->data(kEintrag).toULongLong() != 0)
+        {
+            eintrag = static_cast<std::size_t>(stueck->data(kEintrag).toULongLong() - 1);
+            return;  // das Glied liegt ueber seinem Kasten
+        }
+    }
+}
+
 void Vorschau::mouseDoubleClickEvent(QMouseEvent* ereignis)
 {
+    if (m_struktur)
+    {
+        std::size_t kasten = kKeine;
+        std::size_t eintrag = kKeine;
+        kastenBei(ereignis->pos(), kasten, eintrag);
+        if (kasten != kKeine && beiDoppelklickKasten)
+        {
+            beiDoppelklickKasten(kasten, eintrag);
+            ereignis->accept();
+            return;
+        }
+        QGraphicsView::mouseDoubleClickEvent(ereignis);
+        return;
+    }
     KnotenId knoten = kKeine;
     std::size_t gruppe = kKeine;
     trefferBei(ereignis->pos(), knoten, gruppe);
@@ -536,6 +647,15 @@ void Vorschau::mouseDoubleClickEvent(QMouseEvent* ereignis)
 
 void Vorschau::contextMenuEvent(QContextMenuEvent* ereignis)
 {
+    if (m_struktur)
+    {
+        std::size_t kasten = kKeine;
+        std::size_t eintrag = kKeine;
+        kastenBei(ereignis->pos(), kasten, eintrag);
+        if (beiKontextKasten) beiKontextKasten(kasten, eintrag, ereignis->globalPos());
+        ereignis->accept();
+        return;
+    }
     KnotenId knoten = kKeine;
     std::size_t gruppe = kKeine;
     trefferBei(ereignis->pos(), knoten, gruppe);

@@ -17,6 +17,7 @@
 //   --einbetten    den Ablauf dieser gerufenen Funktion hinter ihren ersten Aufruf setzen,
 //                  umrahmt — im Projekt auch aus einer anderen Datei
 //   --struktur     das Diagramm der Datentypen (im Projekt: aller Dateien, mit --datei: einer)
+//   --typ          die Datentypen, nur dieser Typ und seine Nachbarn in seiner Datei (im Projekt: --datei)
 //   --automat      das Zustandsdiagramm des Automaten mit dieser Variable (auch nur ihr
 //                  letztes Glied: Bus_State); --liste nennt die erkannten
 //   --aufrufgraph  der Aufrufgraph ab dieser Funktion (wie --funktion; steht das Ziel
@@ -78,7 +79,7 @@ std::string alsText(const fs::path& weg)
 int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
-                 "                         [--struktur] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
+                 "                         [--struktur [--typ <name>]] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
                  "                         [--aufrufgraph [<function>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]\n"
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
@@ -132,7 +133,7 @@ bool istAutomat(const c2d::diagramm::Zustandsdiagramm& z, const std::string& nam
 
 int main(int argc, char* argv[])
 {
-    std::string ziel, datei, funktion, automat;
+    std::string ziel, datei, funktion, automat, typ;
     std::vector<std::string> einbetten;
     c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
@@ -150,6 +151,11 @@ int main(int argc, char* argv[])
         else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
         else if (a == "--automat") automat = wert();
+        else if (a == "--typ")
+        {
+            typ = wert();
+            struktur = true;
+        }
         else if (a == "--einbetten") einbetten.push_back(wert());
         else if (a == "--aufrufgraph")
         {
@@ -376,6 +382,24 @@ int main(int argc, char* argv[])
                 std::cerr << "c2d: cannot embed '" << name << "': the call is ambiguous (" << orte(p, mehrdeutig) << ")\n";
             else
                 std::cerr << "c2d: cannot embed '" << name << "'\n";
+        }
+        std::cout << format->schreibe(d, optionen);
+        return 0;
+    }
+
+    // ein Typ und seine Nachbarn, in seiner Datei
+    if (!typ.empty())
+    {
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: --typ needs --datei in a folder\n";
+            return 1;
+        }
+        const c2d::diagramm::Strukturdiagramm d = c2d::diagramm::strukturVon(p.dateien[gewaehlteDatei].ergebnis.einheit, typ);
+        if (d.kaesten.empty())
+        {
+            std::cerr << "c2d: no type '" << typ << "' in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
+            return 1;
         }
         std::cout << format->schreibe(d, optionen);
         return 0;

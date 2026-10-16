@@ -189,7 +189,7 @@ public:
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
         std::vector<std::vector<sprache::Definition>> ausKoepfen(m_p.dateien.size());
-        for (std::size_t i = 0; i < m_p.dateien.size(); ++i) ausKoepfen[i] = sammleKoepfe(i);
+        for (std::size_t i = 0; i < m_p.dateien.size(); ++i) ausKoepfen[i] = sammleKoepfe(i, m_p.dateien[i].koepfe);
         for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
         {
             if (ausKoepfen[i].empty()) continue;
@@ -272,8 +272,9 @@ private:
     }
 
     /// Die #define aller Koepfe, die Datei `i` einbindet, auch mittelbar: zuerst
-    /// die eines Kopfs, den ein Kopf einbindet, dann dessen eigene.
-    std::vector<sprache::Definition> sammleKoepfe(std::size_t i)
+    /// die eines Kopfs, den ein Kopf einbindet, dann dessen eigene. `koepfe`: die Koepfe
+    /// im Projekt, in der Reihenfolge, in der sie gefunden werden.
+    std::vector<sprache::Definition> sammleKoepfe(std::size_t i, std::vector<std::size_t>& koepfe)
     {
         const Datei& d = m_p.dateien[i];
         const std::vector<std::string> includePfade = includePfadeFuer(m_p.einstellungen, d.pfad);
@@ -296,6 +297,7 @@ private:
                 if (!besucht.insert(k.schluessel()).second) continue;
                 if (k.datei != kKeine)
                 {
+                    koepfe.push_back(k.datei);
                     const Datei& kopf = m_p.dateien[k.datei];
                     selbst(selbst, kopf.ergebnis.einheit.einbindungen, m_p.wurzel / alsWeg(ordnerVon(kopf.pfad)), kopf.pfad);
                     for (const modell::Makro& m : kopf.ergebnis.einheit.makros) fuegeHinzu(aus, {alsDefinition(m)});

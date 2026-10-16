@@ -149,6 +149,43 @@ std::vector<std::string> aufrufeIn(std::string_view text)
     return aus;
 }
 
+std::vector<std::string> bezeichnerIn(std::string_view text)
+{
+    std::vector<std::string> aus;
+    std::size_t i = 0;
+    while (i < text.size())
+    {
+        if (text[i] == '"' || text[i] == '\'')  // ein Literal nennt keinen Typ
+        {
+            const char ende = text[i++];
+            while (i < text.size() && text[i] != ende) i += text[i] == '\\' ? 2 : 1;
+            ++i;
+            continue;
+        }
+        if (!istNamenZeichen(text[i]) || (text[i] >= '0' && text[i] <= '9'))
+        {
+            if (text[i] >= '0' && text[i] <= '9')  // eine Zahl samt Anhang (0x1Fu) ist kein Name
+                while (i < text.size() && istNamenZeichen(text[i])) ++i;
+            else
+                ++i;
+            continue;
+        }
+        // ein Name, mit allem, was ueber `::` an ihm haengt
+        const std::size_t anfang = i;
+        while (true)
+        {
+            while (i < text.size() && istNamenZeichen(text[i])) ++i;
+            if (i + 2 < text.size() && text.substr(i, 2) == "::" && istNamenZeichen(text[i + 2]))
+                i += 2;
+            else
+                break;
+        }
+        std::string name(text.substr(anfang, i - anfang));
+        if (std::find(aus.begin(), aus.end(), name) == aus.end()) aus.push_back(std::move(name));
+    }
+    return aus;
+}
+
 std::vector<std::string> aufrufeVon(const Funktion& funktion)
 {
     std::vector<std::string> aus;

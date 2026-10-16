@@ -37,6 +37,12 @@ namespace c2d::diagramm
 /// Aufzaehlung `Verweist`.
 [[nodiscard]] Strukturdiagramm strukturVon(const modell::Einheit& einheit);
 
+/// Ein Typ der Einheit (sein voller Name) und seine Nachbarn: die Typen derselben Einheit,
+/// die er direkt enthaelt, auf die er verweist, von denen er erbt — und die das mit ihm tun;
+/// mit den Beziehungen zwischen ihnen. Der Typ ist der erste Kasten, der Titel sein Name.
+/// Gibt es ihn nicht: ein leeres Diagramm.
+[[nodiscard]] Strukturdiagramm strukturVon(const modell::Einheit& einheit, std::string_view typ);
+
 /// Die Zustandsautomaten einer Einheit, in der Reihenfolge der Funktionen.
 ///
 /// Ein Automat ist ein `switch (V)`, in dessen Faellen mindestens zweimal

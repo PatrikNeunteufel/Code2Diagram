@@ -61,6 +61,9 @@ struct Datei
     sprache::Ergebnis ergebnis;
     /// Mit diesen Definitionen zuletzt gelesen, ohne die von aussen.
     std::vector<sprache::Definition> definitionen;
+    /// Die Dateien des Projekts, die sie einbindet, auch mittelbar (Stellen in Projekt::dateien),
+    /// jede einmal, in der Reihenfolge des Suchens.
+    std::vector<std::size_t> koepfe;
 };
 
 /// Eine Meldung ueber das Projekt, einen Ordner oder eine Datei als Ganzes
