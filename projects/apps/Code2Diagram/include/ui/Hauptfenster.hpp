@@ -96,6 +96,17 @@ public:
     /// Das eingebaute Beispiel zeigen (beispiele/ampel.c).
     void zeigeBeispiel();
 
+    /// Wie viele Dateien und Ordner File > Open recent hoechstens nennt.
+    static constexpr int kZuletztHoechstens = 10;
+    /// Was zuletzt geoeffnet wurde, Dateien und Ordner (absolute Pfade), das Neueste zuerst.
+    /// Bleibt ueber Neustarts (QSettings, Schluessel `zuletzt`).
+    [[nodiscard]] QStringList zuletztGeoeffnet() const;
+    /// Den Eintrag Nummer `wahl` (ab 0) wieder oeffnen. Gibt es ihn nicht mehr, kommt er aus der
+    /// Liste, und `fehler` sagt es. false = keiner, oder nicht zu oeffnen.
+    bool oeffneZuletzt(int wahl, QString* fehler = nullptr);
+    /// Die Liste leeren.
+    void leereZuletzt();
+
     /// Ist ein Ordner offen?
     [[nodiscard]] bool istProjekt() const;
     /// Die Dateien des Projekts, relativ zum Ordner, mit `/`; bei einer Datei nur sie.
@@ -273,6 +284,10 @@ private:
     /// Das Diagramm, wie es jetzt ist, zeichnen und als Text schreiben.
     void zeichne();
     void speichereUnter();
+    /// Einen Pfad vorn in die Liste Open recent nehmen (und speichern).
+    void merkeZuletzt(const QString& pfad);
+    void schreibeZuletzt() const;
+    void fuelleZuletztMenue(QMenu* menue);
     void bearbeiteProjektdatei();
     void zeigeProjektMeldungen();
     /// Eine Zeile einer Datei im Quelltext zeigen (die Datei wird dafuer geladen).
@@ -333,6 +348,7 @@ private:
     QSpinBox* m_hoechstens = nullptr;
     QCheckBox* m_ohneFremde = nullptr;
 
+    QStringList m_zuletzt;  ///< File > Open recent, das Neueste zuerst
     QString m_ordner;      ///< der Ordner des Projekts; leer = eine einzelne Datei
     QString m_einzelText;  ///< bei einer einzelnen Datei: ihr Text, zum neu Lesen
     QString m_einzelName;

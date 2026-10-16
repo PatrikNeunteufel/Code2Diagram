@@ -21,6 +21,13 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
 - [ ] **A3 Der Teiler:** Die Grenze zwischen beiden Seiten lässt sich ziehen; beide folgen.
 - [ ] **A4 Die Auswahl Diagram:** Sie bietet `dauer_ms()`, `ampel_takt()`,
       `Data types (2)` und `Call graph of this file`; gewählt ist `dauer_ms()`.
+- [ ] **A5 Open recent:** `beispiele/ampel.c` öffnen, dann den Ordner `beispiele/projekt`.
+      **File > Open recent**: oben `…\beispiele\projekt/` mit Ordnersymbol, darunter
+      `…\beispiele\ampel.c` mit Dateisymbol, vorn die Ziffern 1, 2. Der zweite Eintrag öffnet
+      wieder die Datei, der Baum verschwindet; im Menü steht sie jetzt oben. Das Beispiel (A0)
+      kommt nicht in die Liste. Die Anwendung schließen und neu starten: die Liste ist noch da.
+      *Clear list* leert sie: `(nothing opened yet)`.
+      `aktion: datei_oeffnen pfad=beispiele/ampel.c` `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: zuletzt_oeffnen wahl=1`
 
 ## B. Ablauf einer Funktion
 

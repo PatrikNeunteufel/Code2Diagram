@@ -143,7 +143,10 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   Quelltext der **Baum der Dateien**; zur Wahl stehen die Diagramme der gewählten Datei.
   Übergangene Ordner stehen grau dabei. Rechtsklick auf einen Ordner: *Skip this folder*
   trägt ihn in die Projektdatei ein; auf einen übergangenen: *Read this folder again*.
-  `--datei` wählt beim Start die Datei im Projekt.
+  `--datei` wählt beim Start die Datei im Projekt. **File > Open recent** nennt die zuletzt
+  geöffneten Dateien und Ordner (höchstens 10, das Neueste oben, ein Ordner mit `/` am Ende);
+  was es nicht mehr gibt, fällt beim Wählen heraus, *Clear list* leert sie. Die Liste bleibt über
+  Neustarts (`QSettings`, unter Windows `HKCU\Software\Code2Diagram`).
 - **Die Projektdatei** `code2diagram.json` im Ordner trägt die Projektparameter (Beispiel und
   Regeln: `projects/libs/C2dKern/include/c2d/projekt/Projektdatei.hpp`, ein ganzes Projekt:
   `beispiele/projekt/`):

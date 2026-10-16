@@ -283,6 +283,20 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.typ()));
                      });
 
+    anbindung.aktion(QStringLiteral("zuletzt_oeffnen"),
+                     QStringLiteral("File > Open recent: opens entry number wahl (0 = the newest)"),
+                     QStringLiteral("wahl=<0, 1, ...>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString wahl = st::argument(argumente, QStringLiteral("wahl"));
+                         const QStringList liste = fenster.zuletztGeoeffnet();
+                         QString fehler;
+                         if (!fenster.oeffneZuletzt(wahl.isEmpty() ? 0 : wahl.toInt(), &fehler))
+                             return st::fehler(QStringLiteral("%1 - the list: %2")
+                                                   .arg(fehler, liste.isEmpty() ? QStringLiteral("empty")
+                                                                                : liste.join(QStringLiteral(", "))));
+                         return st::ok(fenster.zuletztGeoeffnet().value(0));
+                     });
+
     anbindung.aktion(QStringLiteral("format_waehlen"), QStringLiteral("Selects the output format"),
                      QStringLiteral("name=<svg | mermaid | dot | drawio>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
@@ -324,6 +338,7 @@ bool Application::init(int argc, char* argv[])
     s_argc = argc;
     m_impl->qt = std::make_unique<QApplication>(s_argc, argv);
     QCoreApplication::setApplicationName(ausStd(c2d::appName()));
+    QCoreApplication::setOrganizationName(ausStd(c2d::appName()));  // fuer QSettings (Open recent)
     QCoreApplication::setApplicationVersion(ausStd(c2d::appVersion()));
 
     m_impl->fenster = std::make_unique<c2d::ui::Hauptfenster>();

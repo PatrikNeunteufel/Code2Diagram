@@ -515,6 +515,63 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.typ() == "Fern");
     }
 
+    TEST_CASE("Open recent: Dateien und Ordner, das Neueste zuerst, ohne Doppelte, ueber Neustarts")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ) {
+            QFile datei(wurzel.filePath(relativ));
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write("void f(void) { }\n");
+            return QDir::cleanPath(QFileInfo(datei).absoluteFilePath());
+        };
+        const QString a = lege("a.c");
+        const QString b = lege("b.c");
+        const QString ordnerPfad = QDir::cleanPath(QFileInfo(ordner.path()).absoluteFilePath());
+
+        {
+            Hauptfenster fenster;
+            fenster.leereZuletzt();
+            CHECK(fenster.zuletztGeoeffnet().isEmpty());
+            fenster.zeigeBeispiel();  // das Beispiel ist keine Datei
+            CHECK(fenster.zuletztGeoeffnet().isEmpty());
+            REQUIRE(fenster.oeffne(a));
+            REQUIRE(fenster.oeffneOrdner(ordner.path()));
+            REQUIRE(fenster.oeffne(b));
+            REQUIRE(fenster.oeffne(a));  // noch einmal: nach vorn, nicht doppelt
+            CHECK(fenster.zuletztGeoeffnet() == QStringList{a, b, ordnerPfad});
+            CHECK_FALSE(fenster.oeffne(wurzel.filePath("gibt_es_nicht.c")));
+            CHECK(fenster.zuletztGeoeffnet().size() == 3);  // was nicht aufgeht, kommt nicht hinein
+        }
+        {
+            // ein neues Fenster liest die Liste wieder; ein Eintrag oeffnet Datei oder Ordner
+            Hauptfenster fenster;
+            CHECK(fenster.zuletztGeoeffnet() == QStringList{a, b, ordnerPfad});
+            QString fehler;
+            REQUIRE(fenster.oeffneZuletzt(2, &fehler));
+            CHECK(fenster.istProjekt());
+            CHECK(fenster.zuletztGeoeffnet().front() == ordnerPfad);
+            REQUIRE(fenster.oeffneZuletzt(2, &fehler));  // jetzt b
+            CHECK_FALSE(fenster.istProjekt());
+            CHECK(fenster.datei() == "b.c");
+            CHECK_FALSE(fenster.oeffneZuletzt(7, &fehler));
+
+            // was es nicht mehr gibt, kommt beim Waehlen heraus — mit Meldung
+            REQUIRE(QFile::remove(a));
+            CHECK(fenster.zuletztGeoeffnet().indexOf(a) == 2);
+            CHECK_FALSE(fenster.oeffneZuletzt(2, &fehler));
+            CHECK(fehler.contains("no longer exists"));
+            CHECK_FALSE(fenster.zuletztGeoeffnet().contains(a));
+
+            // hoechstens zehn
+            for (int i = 0; i < Hauptfenster::kZuletztHoechstens + 2; ++i) REQUIRE(fenster.oeffne(lege(QStringLiteral("n%1.c").arg(i))));
+            CHECK(fenster.zuletztGeoeffnet().size() == Hauptfenster::kZuletztHoechstens);
+            fenster.leereZuletzt();
+        }
+        CHECK(Hauptfenster().zuletztGeoeffnet().isEmpty());
+    }
+
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
         CHECK(Hauptfenster::dateiFilter() ==

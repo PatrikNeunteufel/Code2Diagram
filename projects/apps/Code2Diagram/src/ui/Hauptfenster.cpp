@@ -33,6 +33,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -341,6 +342,13 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         QString fehler;
         if (!oeffneOrdner(pfad, &fehler)) QMessageBox::warning(this, windowTitle(), fehler);
     });
+    auto* zuletzt = datei->addMenu(QStringLiteral("Open &recent"));
+    zuletzt->setObjectName(QStringLiteral("zuletzt"));
+    connect(zuletzt, &QMenu::aboutToShow, this, [this, zuletzt] {
+        zuletzt->clear();
+        fuelleZuletztMenue(zuletzt);
+    });
+    datei->addSeparator();
     datei->addAction(QStringLiteral("&Save diagram as..."), QKeySequence::Save, this,
                      [this] { speichereUnter(); });
     datei->addSeparator();
@@ -486,6 +494,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
                                .arg(ausStd(appName()), ausStd(appVersion())));
     });
 
+    m_zuletzt = QSettings().value(QStringLiteral("zuletzt")).toStringList();
     statusBar()->showMessage(QStringLiteral("Ready"));
 }
 
@@ -504,6 +513,7 @@ bool Hauptfenster::oeffne(const QString& pfad, QString* fehler)
         return false;
     }
     zeige(QString::fromUtf8(datei.readAll()), QFileInfo(pfad).fileName());
+    merkeZuletzt(QFileInfo(pfad).absoluteFilePath());
     return true;
 }
 
@@ -518,6 +528,7 @@ bool Hauptfenster::oeffneOrdner(const QString& pfad, QString* fehler)
     m_ordner = info.absoluteFilePath();
     m_einzelText.clear();
     m_einzelName.clear();
+    merkeZuletzt(m_ordner);
     liesEin();
     // zuerst eine Datei, die etwas zu zeichnen hat
     std::size_t erste = 0;
@@ -546,6 +557,79 @@ void Hauptfenster::zeige(const QString& quelltext, const QString& name)
 void Hauptfenster::zeigeBeispiel()
 {
     zeige(ausStd(kBeispiel), QStringLiteral("ampel.c"));
+}
+
+QStringList Hauptfenster::zuletztGeoeffnet() const
+{
+    return m_zuletzt;
+}
+
+void Hauptfenster::merkeZuletzt(const QString& pfad)
+{
+    // gleich geschrieben ist gleich — unter Windows ohne Ruecksicht auf Gross und Klein
+    const QString normal = QDir::cleanPath(pfad);
+    m_zuletzt.removeIf([&](const QString& p) { return p.compare(normal, Qt::CaseInsensitive) == 0; });
+    m_zuletzt.prepend(normal);
+    while (m_zuletzt.size() > kZuletztHoechstens) m_zuletzt.removeLast();
+    schreibeZuletzt();
+}
+
+void Hauptfenster::schreibeZuletzt() const
+{
+    QSettings().setValue(QStringLiteral("zuletzt"), m_zuletzt);
+}
+
+void Hauptfenster::leereZuletzt()
+{
+    m_zuletzt.clear();
+    schreibeZuletzt();
+}
+
+bool Hauptfenster::oeffneZuletzt(int wahl, QString* fehler)
+{
+    if (wahl < 0 || wahl >= m_zuletzt.size())
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("No such entry in Open recent");
+        return false;
+    }
+    const QString pfad = m_zuletzt[wahl];
+    if (!QFileInfo::exists(pfad))
+    {
+        // was es nicht mehr gibt, kommt aus der Liste — nicht still: der Fehler sagt es
+        m_zuletzt.removeAt(wahl);
+        schreibeZuletzt();
+        if (fehler != nullptr) *fehler = QStringLiteral("%1 no longer exists - removed from Open recent").arg(pfad);
+        return false;
+    }
+    return QFileInfo(pfad).isDir() ? oeffneOrdner(pfad, fehler) : oeffne(pfad, fehler);
+}
+
+void Hauptfenster::fuelleZuletztMenue(QMenu* menue)
+{
+    if (m_zuletzt.isEmpty())
+    {
+        menue->addAction(QStringLiteral("(nothing opened yet)"))->setEnabled(false);
+        return;
+    }
+    for (int i = 0; i < m_zuletzt.size(); ++i)
+    {
+        // ein Ordner mit Ordnersymbol und `/` am Ende; vorn eine Ziffer zum Waehlen mit der Tastatur
+        const QFileInfo info(m_zuletzt[i]);
+        const bool ordner = info.isDir();
+        const QString text = QStringLiteral("&%1  %2%3")
+                                 .arg(i < 9 ? QString::number(i + 1) : QStringLiteral("1&0"))
+                                 .arg(QDir::toNativeSeparators(m_zuletzt[i]).replace(QLatin1Char('&'), QStringLiteral("&&")),
+                                      ordner ? QStringLiteral("/") : QString());
+        QAction* eintrag = menue->addAction(style()->standardIcon(ordner ? QStyle::SP_DirIcon : QStyle::SP_FileIcon), text,
+                                            this, [this, i] {
+                                                QString fehler;
+                                                if (!oeffneZuletzt(i, &fehler)) QMessageBox::warning(this, windowTitle(), fehler);
+                                            });
+        if (!info.exists()) eintrag->setToolTip(QStringLiteral("No longer exists - choosing it removes it from the list"));
+    }
+    menue->setToolTipsVisible(true);
+    menue->addSeparator();
+    menue->addAction(QStringLiteral("&Clear list"), this, [this] { leereZuletzt(); });
 }
 
 void Hauptfenster::liesEin()
