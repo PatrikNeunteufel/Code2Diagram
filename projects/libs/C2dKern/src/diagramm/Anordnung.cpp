@@ -893,11 +893,70 @@ StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptio
         a.beziehungen.push_back({p, q});
     }
 
+    // Die Beschriftungen: neben ihrer Linie, zuerst nahe der Mitte, abwechselnd auf beiden
+    // Seiten — die erste Stelle, die weder ein anderes Schild noch einen Kasten trifft. Zwei
+    // Beziehungen zwischen denselben Kaesten liegen nur 22 auseinander: ihre Schilder nicht.
+    std::vector<Rechteck> belegt = a.kaesten;
+    const auto trifft = [&](const Rechteck& r) {
+        if (r.x < 0 || r.y < 0) return true;  // nicht ueber den Rand hinaus
+        return std::any_of(belegt.begin(), belegt.end(), [&](const Rechteck& b) {
+            return r.x < b.x + b.breite && b.x < r.x + r.breite && r.y < b.y + b.hoehe && b.y < r.y + r.hoehe;
+        });
+    };
+    for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
+    {
+        const Linienzug& l = a.beziehungen[e];
+        const std::string& text = diagramm.beziehungen[e].beschriftung;
+        const Punkt mitte{(l.front().x + l.back().x) / 2, (l.front().y + l.back().y) / 2};
+        if (text.empty() || l.size() < 2)
+        {
+            a.beschriftungen.push_back(mitte);
+            continue;
+        }
+        const double breite = static_cast<double>(laengsteZeile({text}, optionen.maxZeilenLaenge)) * optionen.zeichenBreite + 6;
+        const double hoehe = optionen.zeilenHoehe;
+        const auto schild = [&](Punkt m) { return Rechteck{m.x - breite / 2, m.y - hoehe / 2, breite, hoehe}; };
+        std::vector<Punkt> stellen;
+        if (diagramm.beziehungen[e].von == diagramm.beziehungen[e].nach)
+        {
+            // eine Schlaufe: rechts neben ihr, auf halber Hoehe, notfalls darunter
+            const double y = (l[1].y + l[2].y) / 2;
+            stellen = {{l[1].x + 4 + breite / 2, y}, {l[1].x + 4 + breite / 2, l[2].y + hoehe}};
+        }
+        else
+        {
+            const Punkt p = l.front(), q = l.back();
+            const double laenge = std::max(1.0, std::hypot(q.x - p.x, q.y - p.y));
+            const Punkt quer{-(q.y - p.y) / laenge, (q.x - p.x) / laenge};
+            // so weit neben der Linie, dass das Schild sie nicht beruehrt
+            // — und, ist dort kein Platz, um ein, zwei, drei Schilder weiter draussen
+            const double weg = std::abs(quer.x) * breite / 2 + std::abs(quer.y) * hoehe / 2 + 4;
+            const double schritt = std::abs(quer.x) * breite + std::abs(quer.y) * hoehe + 4;
+            for (int weiter = 0; weiter < 4; ++weiter)
+                for (const double t : {0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85})
+                    for (const double seite : {1.0, -1.0})
+                    {
+                        const double ab = (weg + schritt * weiter) * seite;
+                        stellen.push_back({p.x + (q.x - p.x) * t + quer.x * ab, p.y + (q.y - p.y) * t + quer.y * ab});
+                    }
+        }
+        Punkt ort = stellen.front();
+        for (const Punkt& s : stellen)
+            if (!trifft(schild(s)))
+            {
+                ort = s;
+                break;
+            }
+        belegt.push_back(schild(ort));
+        a.beschriftungen.push_back(ort);
+    }
+
     const auto weite = [&](double x, double y) {
         a.breite = std::max(a.breite, x + kRand);
         a.hoehe = std::max(a.hoehe, y + kRand);
     };
     for (const Rechteck& r : a.kaesten) weite(r.x + r.breite, r.y + r.hoehe);
+    for (std::size_t r = a.kaesten.size(); r < belegt.size(); ++r) weite(belegt[r].x + belegt[r].breite, belegt[r].y + belegt[r].hoehe);
     for (const Linienzug& l : a.beziehungen)
         for (const Punkt& p : l) weite(p.x, p.y);
     return a;

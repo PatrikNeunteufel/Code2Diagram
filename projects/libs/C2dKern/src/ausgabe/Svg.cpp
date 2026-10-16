@@ -325,11 +325,9 @@ public:
                 case BeziehungArt::Erbt: aus += spitze(l[l.size() - 2], l.back(), false, kSpitzeErbt); break;
             }
             if (b.beschriftung.empty()) continue;
-            // wie in der Vorschau: neben der Mitte der Linie
-            const Punkt p = l[l.size() / 2 - 1];
-            const Punkt q = l[l.size() / 2];
-            aus += textLinks(kuerze(b.beschriftung, optionen.maxZeilenLaenge), (p.x + q.x) / 2 + 5, (p.y + q.y) / 2 - 15,
-                             o.zeilenHoehe, "font-style=\"italic\"");
+            // wo die Anordnung sie hinstellt: neben der Linie, frei von anderen Schildern und Kaesten
+            aus += textMittig({kuerze(b.beschriftung, optionen.maxZeilenLaenge)}, a.beschriftungen[e], o.zeilenHoehe,
+                              "font-style=\"italic\"");
         }
         for (std::size_t i = 0; i < a.kaesten.size(); ++i) aus += kasten(diagramm.kaesten[i], a.kaesten[i], o);
         return aus + "</svg>\n";

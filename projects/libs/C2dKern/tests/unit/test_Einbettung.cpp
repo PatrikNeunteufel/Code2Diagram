@@ -413,6 +413,40 @@ void waehle(int art)
         CHECK(a.breite > 0);
         CHECK(a.beziehungen.back().size() == 4);  // Kind -> Kind: eine Schlaufe
     }
+
+    TEST_CASE("Strukturdiagramm: Beschriftungen zweier Beziehungen zwischen denselben Kaesten liegen getrennt")
+    {
+        // gefunden an TMS320F28, t_GPA: `dat` und `toggle`, beide vom Typ t_A_REG, lagen uebereinander
+        const c2d::sprache::Ergebnis e = c2d::sprache::c().lies(
+            "typedef union { unsigned long l; } t_A_REG;\n"
+            "typedef struct { t_A_REG dat; t_A_REG toggle; t_A_REG *set; t_A_REG naechste; } t_GPA;\n",
+            "t.c");
+        const Strukturdiagramm d = strukturVon(e.einheit);
+        for (const bool nachRechts : {false, true})
+        {
+            CAPTURE(nachRechts);
+            AnordnungOptionen o;
+            o.nachRechts = nachRechts;
+            const StrukturAnordnung a = ordneAn(d, o);
+            REQUIRE(a.beschriftungen.size() == d.beziehungen.size());
+            // jedes Schild, geschaetzt wie die Anordnung: Zeichen mal Breite, eine Zeile hoch
+            std::vector<Rechteck> schilder;
+            for (std::size_t b = 0; b < d.beziehungen.size(); ++b)
+            {
+                const double breite = static_cast<double>(d.beziehungen[b].beschriftung.size()) * o.zeichenBreite + 6;
+                const Punkt m = a.beschriftungen[b];
+                schilder.push_back({m.x - breite / 2, m.y - o.zeilenHoehe / 2, breite, o.zeilenHoehe});
+            }
+            for (std::size_t i = 0; i < schilder.size(); ++i)
+            {
+                for (std::size_t k = i + 1; k < schilder.size(); ++k) CHECK_FALSE(ueberlappen(schilder[i], schilder[k]));
+                for (const Rechteck& kasten : a.kaesten) CHECK_FALSE(ueberlappen(schilder[i], kasten));
+                CHECK(schilder[i].x >= 0);
+                CHECK(schilder[i].x + schilder[i].breite <= a.breite);
+                CHECK(schilder[i].y + schilder[i].hoehe <= a.hoehe);
+            }
+        }
+    }
 }
 
 TEST_SUITE("draw.io")

@@ -573,8 +573,10 @@ void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts,
         }
         if (!b.beschriftung.empty())
         {
-            const QPointF mitte = (alsPunkt(linie[linie.size() / 2 - 1]) + alsPunkt(linie[linie.size() / 2])) / 2;
-            z.textLinks(gekuerzt(b.beschriftung), mitte + QPointF(5, -15), true);
+            // mittig dort, wo die Anordnung sie hinstellt
+            QGraphicsSimpleTextItem* text = z.textLinks(gekuerzt(b.beschriftung), {}, true);
+            const QRectF masse = text->boundingRect();
+            text->setPos(a.beschriftungen[e].x - masse.width() / 2, a.beschriftungen[e].y - masse.height() / 2);
         }
     }
     for (std::size_t i = 0; i < a.kaesten.size(); ++i)

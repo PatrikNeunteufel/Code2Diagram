@@ -86,6 +86,9 @@ struct StrukturAnordnung
 {
     std::vector<Rechteck> kaesten;
     std::vector<Linienzug> beziehungen;  ///< vom Rand des einen Kastens zum Rand des anderen
+    /// je Beziehung: die Mitte ihrer Beschriftung — neben ihrer Linie, wo sie weder eine andere
+    /// Beschriftung noch einen Kasten trifft (geschaetzt wie ein Knotentext, kursiv gezeichnet)
+    std::vector<Punkt> beschriftungen;
     double breite = 0;
     double hoehe = 0;
 };

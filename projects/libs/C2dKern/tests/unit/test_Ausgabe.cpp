@@ -257,7 +257,7 @@ TEST_SUITE("SVG")
         CHECK(zaehle(s, "<rect class=\"flaeche\"") == d.kaesten.size());
         CHECK(zaehle(s, "<rect class=\"getoent\"") == d.kaesten.size());
         CHECK(s.find("\xC2\xAB" "union" "\xC2\xBB") != std::string::npos);
-        CHECK(s.find(">naechster</text>") != std::string::npos);
+        CHECK(s.find(">naechster</tspan>") != std::string::npos);  // die Beschriftung, mittig an ihrem Ort
         std::size_t enthaelt = 0;
         for (const Beziehung& b : d.beziehungen)
             if (b.art == BeziehungArt::Enthaelt) ++enthaelt;
