@@ -384,7 +384,9 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   gleich welcher Klasse — gibt es mehrere, wählt man. Überladungen trennt nur ihr Ort, nicht die
   Typen der Argumente. Über Dateien hinweg gilt: nicht `static`; welche Datei der Linker nähme,
   weiß Code2Diagram nicht.
-- **Die Anordnung ist einfach:** Schichten, Schwerpunkt, Kanten zurück außen herum; eine Kante
+- **Die Anordnung ist einfach:** Schichten, Schwerpunkt, die Lage in der Zeile nach Brandes–Köpf
+  (vier Ausrichtungen gemittelt), Kanten zurück außen herum — im Ablauf, im Aufrufgraph und bei
+  den Datentypen dieselbe rechtwinklige Wegeführung; eine Kante
   über mehrere Schichten bekommt eine eigene Spalte; steht rechts neben der Quelle einer Kante
   zurück noch ein Knoten, tritt sie unten aus; eine Schlaufe an sich selbst bekommt rechts
   neben ihrem Knoten Platz, über einer Zeile, in der ein Rahmen beginnt, sein Titel. Kreuzungen vermeidet sie nicht immer; ein

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 using namespace c2d::diagramm;
 
@@ -398,6 +399,67 @@ void waehle(int art)
         }
     }
 
+    TEST_CASE("Flussdiagramm: eine Schleife mit break tief in if — die Kette rueckt nicht Runde um Runde nach rechts")
+    {
+        // gefunden an EtherCAT und FirmWare, sbl_main.c, main: 13 900 px breit, weil ein oberer Knoten
+        // mitrueckte, seinen Nachbarn schob, der den unteren wieder draengte — in jeder Runde weiter
+        constexpr std::string_view quelle = R"c(
+int main(void)
+{
+   if (w != 0U)
+   {
+      res = 1;
+      for (r = 0U; r < 2U; r++)
+      {
+         if (t == 1)
+         {
+            res = apply1();
+            if (res == 0) { v1 = validate1(); if (v1 != 0U) { break; } }
+         }
+         else
+         {
+            res = apply2();
+            if (res == 0) { if (claim() == 0) { v2 = validate2(); } if (v2 != 0U) { break; } }
+         }
+      }
+      result = res;
+   }
+   if (v1 != 0U) { jump(); }
+   return 0;
+}
+)c";
+        const Flussdiagramm d = fluss("main", quelle);
+        const FlussAnordnung a = ordneAn(d);
+        double summe = 0;
+        for (const Rechteck& r : a.knoten) summe += r.breite;
+        CHECK(a.breite < summe);  // vorher 4850 bei 20 Knoten
+        for (std::size_t i = 0; i < a.knoten.size(); ++i)
+            for (std::size_t k = i + 1; k < a.knoten.size(); ++k) CHECK_FALSE(ueberlappen(a.knoten[i], a.knoten[k]));
+    }
+
+    TEST_CASE("Flussdiagramm: viele if/else hintereinander wandern nicht nach rechts (Brandes-Koepf)")
+    {
+        // von links gelegt wich jeder Konflikt nach rechts aus: je Block ein Stueck weiter
+        std::string quelle = "void f(void)\n{\n    a();\n";
+        for (int i = 0; i < 8; ++i)
+            quelle += "    if (x" + std::to_string(i) + ") b" + std::to_string(i) + "(); else c" + std::to_string(i) +
+                      "(); d" + std::to_string(i) + "();\n";
+        quelle += "    e();\n}\n";
+        const Flussdiagramm d = fluss("f", quelle);
+        const FlussAnordnung a = ordneAn(d);
+        // der Anfang und das Ende stehen (fast) uebereinander, die Breite bleibt die eines Blocks
+        const Rechteck& anfang = a.knoten.front();
+        std::size_t ende = 0;
+        for (std::size_t i = 0; i < d.knoten().size(); ++i)
+            if (d.knoten()[i].art == KnotenArt::Ende) ende = i;
+        CHECK(std::abs(anfang.mitte().x - a.knoten[ende].mitte().x) < 40);
+        double breitester = 0;
+        for (const Rechteck& r : a.knoten) breitester = std::max(breitester, r.breite);
+        CHECK(a.breite < 4 * breitester);
+        for (std::size_t i = 0; i < a.knoten.size(); ++i)
+            for (std::size_t k = i + 1; k < a.knoten.size(); ++k) CHECK_FALSE(ueberlappen(a.knoten[i], a.knoten[k]));
+    }
+
     TEST_CASE("Strukturdiagramm: die Basis steht ueber dem, was von ihr erbt")
     {
         const c2d::sprache::Ergebnis e = c2d::sprache::cpp().lies(
@@ -412,6 +474,63 @@ void waehle(int art)
             for (std::size_t k = i + 1; k < 3; ++k) CHECK_FALSE(ueberlappen(a.kaesten[i], a.kaesten[k]));
         CHECK(a.breite > 0);
         CHECK(a.beziehungen.back().size() == 4);  // Kind -> Kind: eine Schlaufe
+    }
+
+    TEST_CASE("Strukturdiagramm: unten raus, oben rein, rechtwinklig; mehrere nebeneinander; Vererbung zur Basis hin")
+    {
+        // gefunden an TMS320F28, Serial_Commands.h: schraege Linien trafen hohe Kaesten seitlich
+        const c2d::sprache::Ergebnis e = c2d::sprache::cpp().lies(
+            "enum A { X }; enum B { Y }; struct Basis { int a; };\n"
+            "struct Def : Basis { A eins; A zwei; B drei; };\n",
+            "t.cpp");
+        const Strukturdiagramm d = strukturVon(e.einheit);
+        const StrukturAnordnung a = ordneAn(d);
+        REQUIRE(a.beziehungen.size() == d.beziehungen.size());
+        std::map<std::size_t, std::vector<double>> hinein;  // je Kasten: wo Pfeile oben eintreffen
+        for (std::size_t b = 0; b < d.beziehungen.size(); ++b)
+        {
+            const Linienzug& l = a.beziehungen[b];
+            CAPTURE(d.beziehungen[b].beschriftung);
+            REQUIRE(l.size() >= 2);
+            for (std::size_t i = 0; i + 1 < l.size(); ++i)  // rechtwinklig
+                CHECK((std::abs(l[i].x - l[i + 1].x) < 0.01 || std::abs(l[i].y - l[i + 1].y) < 0.01));
+            const Rechteck& von = a.kaesten[d.beziehungen[b].von];
+            const Rechteck& nach = a.kaesten[d.beziehungen[b].nach];
+            if (d.beziehungen[b].art == BeziehungArt::Erbt)
+            {
+                // vom Abgeleiteten (oben aus ihm) zur Basis darueber (unten in sie)
+                CHECK(l.front().y == doctest::Approx(von.y));
+                CHECK(l.back().y == doctest::Approx(nach.y + nach.hoehe));
+                continue;
+            }
+            CHECK(l.front().y == doctest::Approx(von.y + von.hoehe));  // unten raus
+            CHECK(l.back().y == doctest::Approx(nach.y));              // oben rein
+            CHECK(l.back().x > nach.x);
+            CHECK(l.back().x < nach.x + nach.breite);
+            hinein[d.beziehungen[b].nach].push_back(l.back().x);
+        }
+        // zwei Glieder vom Typ A: zwei Pfeile, nebeneinander, nicht in einem Punkt
+        for (const auto& [kasten, xs] : hinein)
+            for (std::size_t i = 0; i < xs.size(); ++i)
+                for (std::size_t k = i + 1; k < xs.size(); ++k) CHECK(std::abs(xs[i] - xs[k]) > 5);
+        // die waagrechten Stuecke der Kanten aus Def liegen nicht uebereinander
+        struct Stueck { double y, von, bis; };
+        std::vector<Stueck> waagrecht;
+        for (std::size_t b = 0; b < d.beziehungen.size(); ++b)
+        {
+            if (d.beziehungen[b].art == BeziehungArt::Erbt) continue;
+            const Linienzug& l = a.beziehungen[b];
+            for (std::size_t i = 0; i + 1 < l.size(); ++i)
+                if (std::abs(l[i].y - l[i + 1].y) < 0.01 && std::abs(l[i].x - l[i + 1].x) > 0.01)
+                    waagrecht.push_back({l[i].y, std::min(l[i].x, l[i + 1].x), std::max(l[i].x, l[i + 1].x)});
+        }
+        for (std::size_t i = 0; i < waagrecht.size(); ++i)
+            for (std::size_t k = i + 1; k < waagrecht.size(); ++k)
+            {
+                const bool gleicheHoehe = std::abs(waagrecht[i].y - waagrecht[k].y) < 0.5;
+                const bool decken = waagrecht[i].von < waagrecht[k].bis && waagrecht[k].von < waagrecht[i].bis;
+                CHECK_FALSE((gleicheHoehe && decken));
+            }
     }
 
     TEST_CASE("Strukturdiagramm: Beschriftungen zweier Beziehungen zwischen denselben Kaesten liegen getrennt")

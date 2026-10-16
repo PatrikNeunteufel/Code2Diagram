@@ -10,8 +10,9 @@
  * Das Verfahren ist einfach gehalten: Schichten nach dem laengsten Weg; eine
  * Kante ueber mehrere Schichten bekommt in jeder Schicht dazwischen einen
  * Stuetzpunkt und damit eine eigene Spalte; Reihenfolge je Schicht nach dem
- * Schwerpunkt der Nachbarn; Kanten zurueck aussen herum. Es vermeidet nicht
- * jede Kreuzung.
+ * Schwerpunkt der Nachbarn; die Lage in der Zeile nach Brandes und Koepf (vier
+ * Ausrichtungen, gemittelt — nichts weicht nur nach einer Seite aus); Kanten
+ * zurueck aussen herum. Es vermeidet nicht jede Kreuzung.
  */
 #pragma once
 
