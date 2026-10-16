@@ -43,6 +43,13 @@ struct Rechteck
 
 using Linienzug = std::vector<Punkt>;
 
+/// Ein Knoten KnotenArt::Variante ist ein Sechseck: so weit ragen seine Spitzen
+/// links und rechts ueber die gerade Ober- und Unterkante hinaus.
+inline constexpr double kSechseckSpitze = 14;
+
+/// Die Ecken des Sechsecks in `r`, im Uhrzeigersinn von links oben.
+[[nodiscard]] std::vector<Punkt> sechseck(const Rechteck& r);
+
 struct AnordnungOptionen
 {
     bool nachRechts = false;  ///< das Diagramm waechst nach rechts statt nach unten
@@ -60,6 +67,15 @@ struct FlussAnordnung
     /// nah an der Stelle, wo sie sich von den anderen Kanten ihrer Quelle trennt
     std::vector<Punkt> beschriftungen;
     std::vector<Rechteck> gruppen;   ///< je Gruppe der Rahmen um alles, was in ihr liegt; oben Platz fuer den Titel
+    /// Je Bedingung, die einen Rahmen hat, eine Zeile rechts oben neben dem
+    /// Diagramm: ein Farbfeld und dahinter die Bedingung.
+    struct Legende
+    {
+        Rechteck feld;         ///< das Farbfeld
+        Punkt text;            ///< wo der Text beginnt: links, auf halber Hoehe
+        std::size_t gruppe;    ///< ein Rahmen dieser Bedingung (Titel und Farbe)
+    };
+    std::vector<Legende> legende;
     double breite = 0;
     double hoehe = 0;
 };
@@ -80,6 +96,10 @@ struct StrukturAnordnung
 /// des Modells). Der Punkt "von aussen" ist klein; Beschriftungen laenger als
 /// `maxZeilenLaenge` zaehlen so lang, wie ein Format sie gekuerzt zeigt.
 [[nodiscard]] FlussAnordnung ordneAn(const Zustandsdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+
+/// Wie viele Zeichen des Titels in den Rahmen `rahmen` passen (mindestens ein
+/// paar): wer zeichnet, kuerzt ihn darauf — ganz steht er in der Legende.
+[[nodiscard]] std::size_t titelZeichen(const Rechteck& rahmen, const AnordnungOptionen& optionen);
 
 /// Die Hoehe des Kopfs eines Kastens (Art und Name) bei diesen Optionen.
 [[nodiscard]] double kopfHoehe(const AnordnungOptionen& optionen);

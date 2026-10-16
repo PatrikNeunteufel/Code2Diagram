@@ -23,6 +23,33 @@ Definition definitionAus(std::string_view text)
     return d;
 }
 
+std::optional<std::vector<Definition>> mitForderungen(std::vector<Definition> aussen,
+                                                      const std::vector<Forderung>& forderungen,
+                                                      const std::vector<Schalter>& schalter)
+{
+    for (const Forderung& f : forderungen)
+    {
+        const auto d = std::find_if(aussen.begin(), aussen.end(), [&](const Definition& x) { return x.name == f.name; });
+        const auto s = std::find_if(schalter.begin(), schalter.end(), [&](const Schalter& x) { return x.name == f.name; });
+        const bool bekannt = s != schalter.end();
+        if (bekannt && (s->inDatei > 0 || s->vorgegeben)) return std::nullopt;  // von aussen nicht zu aendern
+        if (f.definiert)
+        {
+            if (d != aussen.end())
+            {
+                if (!f.wert.empty()) d->wert = f.wert;
+            }
+            else if (!f.wert.empty() || !bekannt || !s->definiert)
+                aussen.push_back({f.name, f.wert.empty() ? std::string("1") : f.wert});
+        }
+        else if (d != aussen.end())
+            aussen.erase(d);
+        else if (bekannt && s->definiert)
+            return std::nullopt;  // anderswo definiert, etwa in der Projektdatei: von hier nicht zu entfernen
+    }
+    return aussen;
+}
+
 std::span<const Sprache* const> sprachen()
 {
     // Eine neue Sprache hier eintragen.

@@ -26,6 +26,8 @@ constexpr std::string_view formVon(KnotenArt art)
             return "shape=diamond";
         case KnotenArt::Aufruf:
             return "shape=box, peripheries=2";
+        case KnotenArt::Variante:
+            return "shape=hexagon";
         case KnotenArt::Anweisung:
             break;
     }
@@ -99,6 +101,8 @@ public:
             aus += "\"];\n";
         };
         // Erst die Knoten ohne Gruppe, dann je Gruppe ein cluster — mit dem, was in ihr liegt.
+        // Ein Rahmen einer Bedingung traegt ihre Farbe; die Flaeche nur als Hauch (#rrggbb + Alpha).
+        const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
         const auto schreibeEbene = [&](const auto& selbst, std::size_t gruppe, const std::string& einzug) -> void {
             for (std::size_t id = 0; id < knoten.size(); ++id)
                 if (knoten[id].gruppe == gruppe) schreibeKnoten(id, einzug);
@@ -106,8 +110,14 @@ public:
             {
                 if (diagramm.gruppen()[g].eltern != gruppe) continue;
                 aus += einzug + "subgraph cluster_" + std::to_string(g) + " {\n";
-                aus += einzug + "    style=dashed; label=\"" +
-                       maskiere(kuerze(diagramm.gruppen()[g].titel, optionen.maxZeilenLaenge)) + "\";\n";
+                if (farben[g] == kKeine)
+                    aus += einzug + "    style=dashed;";
+                else
+                {
+                    const std::string f(rahmenFarbe(farben[g]));
+                    aus += einzug + "    style=filled; color=\"" + f + "\"; fillcolor=\"" + f + "14\"; fontcolor=\"" + f + "\";";
+                }
+                aus += " label=\"" + maskiere(kuerze(diagramm.gruppen()[g].titel, optionen.maxZeilenLaenge)) + "\";\n";
                 selbst(selbst, g, einzug + "    ");
                 aus += einzug + "}\n";
             }

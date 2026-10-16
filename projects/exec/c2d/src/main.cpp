@@ -1,7 +1,7 @@
 // c2d — Code2Diagram fuer die Kommandozeile.
 //
 // Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
-//                             [--struktur] [-D NAME[=wert]]... [--alle-zweige]
+//                             [--struktur] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
@@ -19,6 +19,11 @@
 //   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
 //                  erlaubt; geht der Projektdatei vor
 //   --alle-zweige  bedingte Uebersetzung nicht auswerten: alle Zweige lesen
+//   --varianten    ein #if im Rumpf, das ganze Anweisungen schaltet, als Varianten zeigen
+//                  (ein Sechseck, je Zweig eine Kante, je Zweig ein farbiger Rahmen); das
+//                  uebrige wird ausgewertet
+//   --rahmen       auswerten, aber umrahmen, was ein solches #if zuschaltet (je Bedingung
+//                  eine Farbe)
 //   --format       mermaid (Vorgabe), svg, dot oder drawio
 //   --roh          je Anweisung ein Knoten, nichts gebuendelt
 //
@@ -60,7 +65,8 @@ std::string alsText(const fs::path& weg)
 int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
-                 "                         [--struktur] [--automat <variable>] [-D NAME[=value]]... [--alle-zweige]\n"
+                 "                         [--struktur] [--automat <variable>] [-D NAME[=value]]...\n"
+                 "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
@@ -130,6 +136,8 @@ int main(int argc, char* argv[])
         else if (a == "--automat") automat = wert();
         else if (a == "--einbetten") einbetten.push_back(wert());
         else if (a == "--alle-zweige") lesen.alleZweige = true;
+        else if (a == "--varianten") lesen.varianten = true;
+        else if (a == "--rahmen") lesen.bereiche = true;
         else if (a == "-D") lesen.definitionen.push_back(c2d::sprache::definitionAus(wert()));
         else if (a.starts_with("-D")) lesen.definitionen.push_back(c2d::sprache::definitionAus(a.substr(2)));
         else if (a == "--format") formatName = wert();
@@ -292,7 +300,7 @@ int main(int argc, char* argv[])
                     if (gemeint.size() != 1) continue;
                     const c2d::modell::Funktion& gerufen = c2d::projekt::funktion(p, gemeint.front());
                     Flussdiagramm neu = betteEin(d, i, ablauf(gerufen), gerufen.signatur());
-                    gelungen = neu.gruppen().size() > d.gruppen().size();
+                    gelungen = neu.einbettungen() > d.einbettungen();
                     if (gelungen) d = std::move(neu);
                     break;
                 }

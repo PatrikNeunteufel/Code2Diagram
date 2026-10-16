@@ -142,20 +142,78 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
       wählen. `aktion: zweige_waehlen name=auswerten` `aktion: definitionen_setzen wert=""` `aktion: datei_oeffnen pfad=beispiele/varianten.c` `aktion: diagramm_waehlen name=melde` `aktion: ansicht_waehlen name=preview`
 - [ ] **H1 Gezeigt wird, was gilt:** Der Ablauf von `melde` hat nur die Schleife mit
       `sende(daten[i])` — kein `protokolliere`, kein `pruefe`. Unter dem Quelltext stehen das
-      Feld **Defines** (leer) und der Haken **All #if branches** (aus). Die Statuszeile endet
-      mit `not defined in #if: BOARD_A, BOARD_B, LOG_STUFE, MIT_PRUEFSUMME`.
+      Feld **Defines** (leer) und die Haken **All #if branches**, **Show #if variants** und
+      **Frame #if regions** (alle aus). Die Statuszeile endet mit
+      `not defined in #if: BOARD_A, BOARD_B, LOG_STUFE, MIT_PRUEFSUMME, FILTER_STUFE, MIT_KUEHLUNG`.
 - [ ] **H2 Definitionen wählen die Variante:** In Defines `LOG_STUFE=2 MIT_PRUEFSUMME`
       eintragen, Enter. Das Diagramm bleibt bei `melde` und zeigt jetzt zuerst
       `protokolliere("melde", laenge)` und in der Schleife die Raute `!pruefe(daten[i])`, deren
-      `yes` die Schleife verlässt. Die Statuszeile nennt nur noch `BOARD_A, BOARD_B`.
+      `yes` die Schleife verlässt. Die Statuszeile nennt nur noch
+      `BOARD_A, BOARD_B, FILTER_STUFE, MIT_KUEHLUNG`.
       `aktion: definitionen_setzen wert="LOG_STUFE=2 MIT_PRUEFSUMME"`
 - [ ] **H3 Eine andere Funktion je Board:** `sende()` wählen: ihr Ablauf enthält nur
       `(void)byte`. Mit `BOARD_B` in Defines (zusätzlich) steht dort `spi_schreibe(byte)`.
 - [ ] **H4 Alle Zweige:** Den Haken **All #if branches** setzen: das Feld Defines wird grau,
       die Auswahl Diagram nennt `sende()` nur einmal (die erste von dreien), und `melde` zeigt
-      `protokolliere` und `pruefe` unabhängig von den Definitionen. Haken wieder weg: die
-      Variante von vorher.
+      `protokolliere` und `pruefe` unabhängig von den Definitionen. Der Haken **Show #if
+      variants** ist grau. Haken wieder weg: die Variante von vorher.
       `aktion: zweige_waehlen name=alle`
+- [ ] **H5 Varianten im Ablauf:** Defines leeren, den Haken **Show #if variants** setzen,
+      `melde` wählen. Unter dem Start steht ein **Sechseck** `#if` mit zwei Kanten:
+      `LOG_STUFE >= 2` zu `protokolliere("melde", laenge)` und `else (active)`, die gleich
+      weiter zu `index_t i = 0` führt. In der Schleife ein zweites Sechseck mit
+      `defined(MIT_PRUEFSUMME)` zur Raute `!pruefe(daten[i])` und `else (active)` zu
+      `sende(daten[i])`. `protokolliere` steht in einem **blauen Rahmen** `LOG_STUFE >= 2`, die
+      Raute `!pruefe` in einem **orangen** `defined(MIT_PRUEFSUMME)`; rechts oben die Legende
+      mit beiden. Die Beschriftungen der Kanten stehen über den Rahmen, nicht auf ihrem Titel.
+      Keine Linie läuft durch einen Kasten oder eine Beschriftung.
+      `aktion: definitionen_setzen wert=""` `aktion: zweige_waehlen name=varianten` `aktion: diagramm_waehlen name=melde`
+- [ ] **H6 Welcher Zweig gilt, folgt den Definitionen:** In Defines `LOG_STUFE=2` eintragen,
+      Enter: jetzt trägt `LOG_STUFE >= 2 (active)` den Zusatz, `else` nicht mehr. Die Form
+      bleibt dieselbe — es ändert sich nur, welcher Zweig gilt.
+      `aktion: definitionen_setzen wert="LOG_STUFE=2"`
+- [ ] **H7 Was nicht passt, wird ausgewertet und gemeldet:** `regle` wählen. Das erste `#if`
+      wird ein Sechseck mit drei Kanten (`FILTER_STUFE >= 2`, `FILTER_STUFE == 1`,
+      `else (active)`). Das zweite (`#ifdef MIT_KUEHLUNG` mit `else if`) steht nicht im
+      Ablauf: die Raute `ist < soll` führt mit `no` zu `halte()`. Die Meldungen nennen Zeile 45:
+      `#if not shown in the flow: a branch does not hold whole statements`. Der zweite Rahmen
+      heisst gekürzt `!(FILTER_STUFE >= 2)...`; ganz steht er in der Legende und im Tooltip.
+      `aktion: diagramm_waehlen name=regle`
+- [ ] **H8 Im Text und als Datei:** Format Mermaid, Ansicht Text: der Knoten steht als
+      `n1{{"#35;if"}}`. In mermaid.live eingefügt: ein Sechseck. Format DOT: `shape=hexagon`;
+      draw.io: `shape=hexagon`. Danach den Haken **Show #if variants** wieder weg.
+      `aktion: format_waehlen name=mermaid` `aktion: ansicht_waehlen name=text`
+- [ ] **H9 Rahmen beim Auswerten:** Format zurück auf SVG, Vorschau. Defines
+      `LOG_STUFE=2 MIT_PRUEFSUMME`, den Haken **Frame #if regions** setzen, `melde` wählen. Kein
+      Sechseck; `protokolliere` im blauen Rahmen `LOG_STUFE >= 2`, die Raute `!pruefe` im
+      orangen `defined(MIT_PRUEFSUMME)`, die Legende rechts oben. Ohne Defines: keine Rahmen,
+      keine Legende — es gilt nichts, was ein `#if` zuschaltet.
+      `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview` `aktion: definitionen_setzen wert="LOG_STUFE=2 MIT_PRUEFSUMME"` `aktion: zweige_waehlen name=rahmen` `aktion: diagramm_waehlen name=melde`
+- [ ] **H10 Die Haken schliessen sich aus:** Mit **Show #if variants** wird **Frame #if
+      regions** grau (Varianten rahmen selbst); mit **All #if branches** beide.
+- [ ] **H11 Rahmen und Einbettung:** Im Ablauf von `melde` Rechtsklick in den blauen Rahmen:
+      das Menü bietet kein *Remove embedding* an (ein Rahmen ist keine Einbettung). Danach den
+      Haken **Frame #if regions** wieder weg, Defines leeren.
+      `aktion: zweige_waehlen name=auswerten` `aktion: definitionen_setzen wert=""`
+- [ ] **H12 Das Feld Configuration:** `melde` gewählt. Rechts das Feld **Configuration**
+      (sonst Project > Configuration). Unter *Names asked by #if*: `PUFFER (file, line 4)`
+      grau und angehakt, mit Wert 64; `BOARD_A`, `BOARD_B`, `LOG_STUFE` (mit Wertfeld),
+      `MIT_PRUEFSUMME`, `FILTER_STUFE` (mit Wertfeld), `MIT_KUEHLUNG` frei und leer. Unter
+      *#if chains of the function*: `line 22` mit `LOG_STUFE >= 2` und `(no #else)` (gesetzt),
+      `line 26` mit `defined(MIT_PRUEFSUMME)` und `(no #else)` (gesetzt).
+- [ ] **H13 Ein Zweig setzt die Namen:** bei `line 22` auf `LOG_STUFE >= 2` klicken. Defines
+      zeigt `LOG_STUFE=2`, das Diagramm hat jetzt `protokolliere`, der Knopf ist gesetzt.
+      Tooltip auf `(no #else)`: *Sets no LOG_STUFE*. Darauf klicken: Defines ist wieder leer.
+      `aktion: zweig_waehlen zeile=22 zweig=0`
+- [ ] **H14 Haken und Wert:** `MIT_PRUEFSUMME` anhaken: Defines `MIT_PRUEFSUMME`, im
+      Diagramm die Raute `!pruefe`. Bei `LOG_STUFE` 3 eintragen, Enter: Defines bekommt
+      `LOG_STUFE=3`. *Whole file* anhaken: jetzt stehen auch die Ketten in Zeile 6, 12, 38 und
+      45 da. Danach Defines leeren.
+      `aktion: schalter_setzen name=MIT_PRUEFSUMME an=ja` `aktion: definitionen_setzen wert=""`
+- [ ] **H15 In die Projektdatei (im Projekt):** `beispiele/projekt` als Ordner öffnen, einen
+      Namen anhaken, **Save to project file**: Project > Edit project file zeigt ihn unter
+      `definitionen`. Defines leeren: der Haken steht jetzt grau mit `(project)`. Danach den
+      Eintrag in der Projektdatei wieder entfernen.
 
 ## I. Das eigene Format SVG; ein switch in Spalten
 

@@ -43,6 +43,17 @@ enum class AnweisungArt
     Versuch,       ///< kinder[0] = der Block; kinder[1..] = je ein Fang (try)
     Fang,          ///< text = was gefangen wird; kinder[0] = der Block (catch)
     Wurf,          ///< text = was geworfen wird (throw); darf leer sein
+    /// Bedingte Uebersetzung im Rumpf, als Varianten gelesen (LeseOptionen::varianten):
+    /// text = `#if`; kinder = je Zweig ein Zweig, in der Reihenfolge des Texts. Fehlt
+    /// das `#else`, steht dafuer ein leerer Zweig `else` am Ende.
+    Varianten,
+    /// Ein Zweig von Varianten: text = seine Bedingung (`A`, `defined(A)`, `else`);
+    /// kinder = seine Anweisungen; gilt = er gilt mit den Definitionen.
+    Zweig,
+    /// Anweisungen, die nur unter einer Bedingung der Uebersetzung stehen — der
+    /// geltende Zweig eines #if (LeseOptionen::bereiche): text = die volle
+    /// Bedingung (volleBedingung); kinder = die Anweisungen.
+    Bedingt,
 };
 
 struct Anweisung
@@ -54,9 +65,16 @@ struct Anweisung
     std::vector<std::unique_ptr<Anweisung>> kinder;
     std::unique_ptr<Anweisung> sonst;  ///< nur Wenn
     int zeile = 0;
+    bool gilt = false;  ///< nur Zweig
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;
+
+/// Wann der Zweig `zweig` einer Kette `#if` / `#elif` / `#else` gilt: keiner
+/// davor und er selbst — `!defined(A) && B`. `bedingungen` sind die Bedingungen
+/// der Zweige wie bei AnweisungArt::Zweig (`A`, `defined(A)`, `else`); `zweig`
+/// darf gleich ihrer Zahl sein: das fehlende `#else`.
+[[nodiscard]] std::string volleBedingung(const std::vector<std::string>& bedingungen, std::size_t zweig);
 
 // ---------------------------------------------------------------------------
 // Deklarationen
@@ -90,6 +108,7 @@ struct Funktion
     std::vector<Parameter> parameter;
     AnweisungPtr rumpf;  ///< leer = nur deklariert
     int zeile = 0;
+    int bisZeile = 0;  ///< die Zeile, in der der Rumpf endet (`}`); 0 = ohne Rumpf
     /// Nur in ihrer Datei sichtbar (`static` vor einer freien Funktion) — ein
     /// Aufruf aus einer anderen Datei meint sie nie.
     bool intern = false;

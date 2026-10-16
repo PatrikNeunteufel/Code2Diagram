@@ -139,6 +139,13 @@ std::string rechteck(const Rechteck& r, std::string_view klasse, double rund = 0
     return aus + "/>\n";
 }
 
+/// Ein Rechteck mit eigenem Stil hinter der Klasse, etwa der Farbe eines Rahmens.
+std::string rechteckMit(const Rechteck& r, std::string_view klasse, const std::string& stil)
+{
+    std::string aus = rechteck(r, klasse);
+    return aus.insert(aus.size() - 3, " " + stil);  // vor "/>\n"
+}
+
 std::string knoten(const Knoten& k, const Rechteck& r, const AnordnungOptionen& o)
 {
     std::string aus;
@@ -158,6 +165,9 @@ std::string knoten(const Knoten& k, const Rechteck& r, const AnordnungOptionen& 
             aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + 8, r.y}, {r.x + 8, r.y + r.hoehe}}) + "\"/>\n";
             aus += "  <polyline class=\"linie\" points=\"" +
                    punkte({{r.x + r.breite - 8, r.y}, {r.x + r.breite - 8, r.y + r.hoehe}}) + "\"/>\n";
+            break;
+        case KnotenArt::Variante:
+            aus = "  <polygon class=\"flaeche\" points=\"" + punkte(sechseck(r)) + "\"/>\n";
             break;
         case KnotenArt::Anweisung: aus = rechteck(r, "flaeche"); break;
     }
@@ -218,13 +228,37 @@ public:
         const FlussAnordnung a = ordneAn(diagramm, o);
         std::string aus = kopf(diagramm.titel(), a.breite, a.hoehe);
 
-        // hinten die Rahmen, dann die Kanten, darauf die Knoten, vorn die Beschriftungen
+        // hinten die Rahmen, dann die Kanten, darauf die Knoten, vorn die Beschriftungen. Ein
+        // Rahmen einer Bedingung traegt ihre Farbe (Rand, Titel, ein Hauch in der Flaeche).
+        const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
+        const auto flaechenStil = [&](std::size_t g) {
+            const std::string f(rahmenFarbe(farben[g]));
+            return "style=\"fill:" + f + ";fill-opacity:0.08;stroke:" + f + "\"";
+        };
+        const auto textStil = [&](std::size_t g) { return "style=\"fill:" + std::string(rahmenFarbe(farben[g])) + "\""; };
+        for (std::size_t g = 0; g < a.gruppen.size(); ++g)
+        {
+            const bool bedingung = farben[g] != kKeine;
+            aus += bedingung ? rechteckMit(a.gruppen[g], "rahmen", flaechenStil(g)) : rechteck(a.gruppen[g], "rahmen");
+        }
+        // die Titel nach den Kanten, auf einem Schild: eine Kante, die in den Rahmen laeuft, geht hinter ihm durch
+        std::string titel;
         for (std::size_t g = 0; g < a.gruppen.size(); ++g)
         {
             const Rechteck& r = a.gruppen[g];
-            aus += rechteck(r, "rahmen");
-            aus += textLinks(kuerze(diagramm.gruppen()[g].titel, optionen.maxZeilenLaenge), r.x + 8, r.y + 4,
-                             o.zeilenHoehe, "font-style=\"italic\"");
+            // der Titel einer Bedingung passt in seinen Rahmen — ganz steht er in der Legende
+            const std::string text =
+                kuerze(diagramm.gruppen()[g].titel, farben[g] != kKeine ? titelZeichen(r, o) : optionen.maxZeilenLaenge);
+            titel += rechteck({r.x + 5, r.y + 4, static_cast<double>(zeichen(text)) * o.zeichenBreite + 6, o.zeilenHoehe},
+                              "schild");
+            titel += textLinks(text, r.x + 8, r.y + 4, o.zeilenHoehe,
+                               farben[g] != kKeine ? "font-style=\"italic\" " + textStil(g) : "font-style=\"italic\"");
+        }
+        for (const FlussAnordnung::Legende& l : a.legende)
+        {
+            aus += rechteckMit(l.feld, "rahmen", flaechenStil(l.gruppe));
+            aus += textLinks(kuerze(diagramm.gruppen()[l.gruppe].titel, optionen.maxZeilenLaenge), l.text.x,
+                             l.text.y - o.zeilenHoehe / 2, o.zeilenHoehe);
         }
         for (const Linienzug& l : a.kanten)
         {
@@ -232,6 +266,7 @@ public:
             aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"/>\n";
             aus += spitze(l[l.size() - 2], l.back(), true);
         }
+        aus += titel;
         for (std::size_t i = 0; i < a.knoten.size(); ++i) aus += knoten(diagramm.knoten()[i], a.knoten[i], o);
         for (std::size_t e = 0; e < diagramm.kanten().size(); ++e)
         {

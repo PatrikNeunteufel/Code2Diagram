@@ -112,6 +112,16 @@ public:
                 form.moveTo(r.right() - 8, r.top());
                 form.lineTo(r.right() - 8, r.bottom());
                 break;
+            case KnotenArt::Variante:
+            {
+                const std::vector<c2d::diagramm::Punkt> ecken =
+                    c2d::diagramm::sechseck({r.x(), r.y(), r.width(), r.height()});
+                QPolygonF vieleck;
+                for (const c2d::diagramm::Punkt& p : ecken) vieleck << QPointF(p.x, p.y);
+                form.addPolygon(vieleck);
+                form.closeSubpath();
+                break;
+            }
             case KnotenArt::Anweisung:
                 form.addRect(r);
                 break;
@@ -187,12 +197,39 @@ public:
         m_szene.addPolygon(form, m_strich, m_strich.color())->setZValue(2);
     }
 
-    void rahmen(std::size_t gruppe, const QString& titel, const QRectF& r)
+    /// Ein Rahmen; `farbe` gueltig: der Rahmen einer Bedingung — Rand und Titel in ihrer Farbe, die Flaeche ein Hauch davon.
+    void rahmen(std::size_t gruppe, const QString& titel, const QRectF& r, const QColor& farbe, const QString& ganz)
     {
-        QGraphicsRectItem* stueck = m_szene.addRect(r, m_rahmen, Qt::NoBrush);
+        QPen stift = m_rahmen;
+        QBrush pinsel(Qt::NoBrush);
+        if (farbe.isValid())
+        {
+            stift = QPen(farbe, 1.4);
+            pinsel = QBrush(hauch(farbe));
+        }
+        QGraphicsRectItem* stueck = m_szene.addRect(r, stift, pinsel);
         stueck->setData(kGruppe, static_cast<qulonglong>(gruppe) + 1);
         stueck->setZValue(0);
-        textLinks(titel, r.topLeft() + QPointF(8, 4), true)->setData(kGruppe, static_cast<qulonglong>(gruppe) + 1);
+        QGraphicsSimpleTextItem* kopf = textLinks(titel, r.topLeft() + QPointF(8, 4), true);
+        kopf->setData(kGruppe, static_cast<qulonglong>(gruppe) + 1);
+        kopf->setToolTip(ganz);
+        if (farbe.isValid()) kopf->setBrush(farbe);
+        // auf einem Schild: eine Kante, die in den Rahmen laeuft, geht hinter dem Titel durch
+        m_szene.addRect(kopf->sceneBoundingRect().adjusted(-3, 0, 3, 0), Qt::NoPen, m_flaeche)->setZValue(1.5);
+    }
+
+    /// Eine Zeile der Legende: ein Farbfeld, dahinter die Bedingung.
+    void legende(const QRectF& feld, const QColor& farbe, const QString& text, QPointF ort)
+    {
+        m_szene.addRect(feld, QPen(farbe, 1.4), QBrush(hauch(farbe)))->setZValue(1);
+        QGraphicsSimpleTextItem* stueck = textLinks(text, ort);
+        stueck->setPos(ort.x(), ort.y() - stueck->boundingRect().height() / 2);
+    }
+
+    [[nodiscard]] static QColor hauch(QColor farbe)
+    {
+        farbe.setAlphaF(0.10);
+        return farbe;
     }
 
     void kasten(const Kasten& k, const QRectF& r, double kopf, double zeilenHoehe)
@@ -306,8 +343,24 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     const FlussAnordnung a = ordneAn(diagramm, optionen);
 
     Zeichner z(*scene(), palette());
+    const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
+    const auto farbe = [&](std::size_t g) {
+        if (farben[g] == kKeine) return QColor();
+        const std::string_view f = rahmenFarbe(farben[g]);
+        return QColor(QString::fromLatin1(f.data(), static_cast<qsizetype>(f.size())));
+    };
     for (std::size_t g = 0; g < a.gruppen.size(); ++g)
-        z.rahmen(g, gekuerzt(diagramm.gruppen()[g].titel), alsRect(a.gruppen[g]));
+    {
+        // der Titel einer Bedingung passt in seinen Rahmen — ganz steht er in der Legende und im Tooltip
+        const QString titel = QString::fromStdString(diagramm.gruppen()[g].titel);
+        const auto passt = static_cast<qsizetype>(titelZeichen(a.gruppen[g], optionen));
+        const QString kurz = farben[g] == kKeine ? gekuerzt(diagramm.gruppen()[g].titel)
+                             : titel.size() <= passt ? titel
+                                                     : titel.left(passt - 3) + QStringLiteral("...");
+        z.rahmen(g, kurz, alsRect(a.gruppen[g]), farbe(g), titel);
+    }
+    for (const FlussAnordnung::Legende& l : a.legende)
+        z.legende(alsRect(l.feld), farbe(l.gruppe), gekuerzt(diagramm.gruppen()[l.gruppe].titel), alsPunkt(l.text));
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)

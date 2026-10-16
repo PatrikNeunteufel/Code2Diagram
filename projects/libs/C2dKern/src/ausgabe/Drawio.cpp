@@ -98,6 +98,8 @@ constexpr std::string_view formVon(KnotenArt art)
             return "rhombus;";
         case KnotenArt::Aufruf:
             return "shape=process;";
+        case KnotenArt::Variante:
+            return "shape=hexagon;perimeter=hexagonPerimeter2;fixedSize=1;size=14;";
         case KnotenArt::Anweisung:
             break;
     }
@@ -141,14 +143,37 @@ public:
             return gruppe < a.gruppen.size() ? "g" + std::to_string(gruppe) : std::string("1");
         };
 
-        // die Behaelter zuerst: sie liegen hinter ihrem Inhalt, die aeusseren vor den inneren
+        // die Behaelter zuerst: sie liegen hinter ihrem Inhalt, die aeusseren vor den inneren.
+        // Ein Rahmen einer Bedingung traegt ihre Farbe.
+        const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
         for (std::size_t g = 0; g < diagramm.gruppen().size(); ++g)
         {
             const Gruppe& gruppe = diagramm.gruppen()[g];
+            std::string stil = "swimlane;startSize=22;fontStyle=0;collapsible=0;container=1;";
+            if (farben[g] == kKeine)
+                stil += "dashed=1;fillColor=none;";
+            else
+            {
+                const std::string f(rahmenFarbe(farben[g]));
+                stil += "dashed=0;swimlaneFillColor=" + f + ";fillColor=none;fillOpacity=8;strokeColor=" + f +
+                        ";fontColor=" + f + ";";
+            }
             aus += ecke("g" + std::to_string(g), html(kuerze(gruppe.titel, optionen.maxZeilenLaenge)),
-                        "swimlane;startSize=22;dashed=1;fillColor=none;fontStyle=0;collapsible=0;container=1;"
-                        "whiteSpace=wrap;html=1;" + std::string(kSchrift),
-                        eltern(gruppe.eltern), in(gruppe.eltern, a.gruppen[g]));
+                        stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern(gruppe.eltern),
+                        in(gruppe.eltern, a.gruppen[g]));
+        }
+        // die Legende: je Bedingung ein Farbfeld und ihr Text
+        for (std::size_t i = 0; i < a.legende.size(); ++i)
+        {
+            const FlussAnordnung::Legende& l = a.legende[i];
+            const std::string f(rahmenFarbe(farben[l.gruppe]));
+            aus += ecke("l" + std::to_string(i), "", "rounded=0;fillColor=" + f + ";strokeColor=" + f + ";", "1", l.feld);
+            const std::string& titel = diagramm.gruppen()[l.gruppe].titel;
+            const double breite =
+                static_cast<double>(kuerze(titel, optionen.maxZeilenLaenge).size()) * anordnung(optionen).zeichenBreite + 8;
+            aus += ecke("lt" + std::to_string(i), html(kuerze(titel, optionen.maxZeilenLaenge)),
+                        "text;align=left;verticalAlign=middle;html=1;" + std::string(kSchrift), "1",
+                        {l.text.x, l.text.y - 9, breite, 18});
         }
         for (std::size_t id = 0; id < diagramm.knoten().size(); ++id)
         {

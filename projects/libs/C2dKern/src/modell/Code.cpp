@@ -40,6 +40,44 @@ std::string vollerName(const std::string& bereich, const std::string& name)
 namespace
 {
 
+/// `defined(A)` -> `!defined(A)`, `!defined(A)` -> `defined(A)`, `A` -> `!A`, sonst `!(...)`.
+std::string verneint(const std::string& bedingung)
+{
+    const auto einfach = [](std::string_view s) {
+        return !s.empty() && std::all_of(s.begin(), s.end(), [](char c) {
+            return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        });
+    };
+    const auto definiert = [&](std::string_view s) {
+        return s.starts_with("defined(") && s.ends_with(")") && einfach(s.substr(8, s.size() - 9));
+    };
+    if (definiert(bedingung)) return "!" + bedingung;
+    if (bedingung.starts_with('!') && definiert(std::string_view(bedingung).substr(1))) return bedingung.substr(1);
+    if (einfach(bedingung)) return "!" + bedingung;
+    return "!(" + bedingung + ")";
+}
+
+}  // namespace
+
+std::string volleBedingung(const std::vector<std::string>& bedingungen, std::size_t zweig)
+{
+    std::vector<std::string> teile;
+    for (std::size_t i = 0; i < zweig && i < bedingungen.size(); ++i) teile.push_back(verneint(bedingungen[i]));
+    if (zweig < bedingungen.size() && bedingungen[zweig] != "else") teile.push_back(bedingungen[zweig]);
+    std::string aus;
+    for (const std::string& t : teile)
+    {
+        // `A || B` hinter einem `&&` braucht Klammern
+        const bool klammern = teile.size() > 1 && (t.find("||") != std::string::npos || t.find('?') != std::string::npos) &&
+                              !t.starts_with("!(");
+        aus += (aus.empty() ? "" : " && ") + (klammern ? "(" + t + ")" : t);
+    }
+    return aus;
+}
+
+namespace
+{
+
 bool istNamenZeichen(char c)
 {
     return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
@@ -52,7 +90,8 @@ void sammle(const Anweisung& a, std::vector<std::string>& aus)
             if (std::find(aus.begin(), aus.end(), name) == aus.end()) aus.push_back(std::move(name));
     };
     if (a.art != AnweisungArt::Fall && a.art != AnweisungArt::Marke && a.art != AnweisungArt::Sprung &&
-        a.art != AnweisungArt::Direktive)
+        a.art != AnweisungArt::Direktive && a.art != AnweisungArt::Varianten && a.art != AnweisungArt::Zweig &&
+        a.art != AnweisungArt::Bedingt)
         dazu(a.text);
     dazu(a.init);
     dazu(a.schritt);

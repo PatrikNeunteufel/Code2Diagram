@@ -8,6 +8,7 @@
 #include "AppInfo.hpp"
 #include "sichttest/Anbindung.hpp"
 #include "ui/Hauptfenster.hpp"
+#include "ui/Konfiguration.hpp"
 
 #include <QApplication>
 #include <QDebug>
@@ -118,14 +119,52 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                      });
 
     anbindung.aktion(QStringLiteral("zweige_waehlen"),
-                     QStringLiteral("Evaluates #if / #ifdef, or reads all branches"),
-                     QStringLiteral("name=<auswerten | alle>"),
+                     QStringLiteral("Evaluates #if / #ifdef, reads all branches, shows variants in the flow, "
+                                    "or evaluates and frames #if regions"),
+                     QStringLiteral("name=<auswerten | alle | varianten | rahmen>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
                          const QString name = st::argument(argumente, QStringLiteral("name"));
-                         if (name != QLatin1String("auswerten") && name != QLatin1String("alle"))
-                             return st::ungueltig(QStringLiteral("name is auswerten or alle"));
+                         if (name != QLatin1String("auswerten") && name != QLatin1String("alle") &&
+                             name != QLatin1String("varianten") && name != QLatin1String("rahmen"))
+                             return st::ungueltig(QStringLiteral("name is auswerten, alle, varianten or rahmen"));
                          fenster.setzeAlleZweige(name == QLatin1String("alle"));
+                         fenster.setzeVarianten(name == QLatin1String("varianten"));
+                         fenster.setzeBereiche(name == QLatin1String("rahmen"));
                          return st::ok();
+                     });
+
+    anbindung.aktion(QStringLiteral("schalter_setzen"),
+                     QStringLiteral("Configuration: ticks or unticks a name asked by #if (writes Defines, reads again)"),
+                     QStringLiteral("name=<NAME> an=<ja | nein> [wert=<value>]"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         const QString an = st::argument(argumente, QStringLiteral("an"));
+                         if (an != QLatin1String("ja") && an != QLatin1String("nein"))
+                             return st::ungueltig(QStringLiteral("an is ja or nein"));
+                         if (!fenster.konfiguration().setzeSchalter(name, an == QLatin1String("ja"),
+                                                                    argumente.value(QStringLiteral("wert")).toString()))
+                             return st::fehler(QStringLiteral("No such name, or it is locked: %1")
+                                                   .arg(fenster.konfiguration().schalter().join(QStringLiteral(", "))));
+                         return st::ok(fenster.konfiguration().schalter().join(QStringLiteral(", ")));
+                     });
+
+    anbindung.aktion(QStringLiteral("zweig_waehlen"),
+                     QStringLiteral("Configuration: chooses a branch of the #if chain in a line (sets the names)"),
+                     QStringLiteral("zeile=<line of the #if> zweig=<0, 1, ...>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         const int zweig = st::argument(argumente, QStringLiteral("zweig")).toInt();
+                         if (!fenster.konfiguration().waehleZweig(zeile, zweig))
+                             return st::fehler(QStringLiteral("Cannot choose it: %1")
+                                                   .arg(fenster.konfiguration().weichen().join(QStringLiteral("; "))));
+                         return st::ok(fenster.konfiguration().weichen().join(QStringLiteral("; ")));
+                     });
+
+    anbindung.aktion(QStringLiteral("konfiguration_speichern"),
+                     QStringLiteral("Configuration: writes what Defines holds into the project file"), QString(),
+                     [&fenster](const QJsonObject&) -> st::Ergebnis {
+                         QString fehler;
+                         return fenster.speichereKonfiguration(&fehler) ? st::ok() : st::fehler(fehler);
                      });
 
     anbindung.aktion(QStringLiteral("ansicht_waehlen"), QStringLiteral("Shows the drawn preview or the text"),
@@ -225,7 +264,7 @@ bool Application::init(int argc, char* argv[])
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
-    bool alleZweige = false, zurueck = false;
+    bool alleZweige = false, varianten = false, rahmen = false, zurueck = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
     {
         const QString& a = argumente[i];
@@ -240,6 +279,8 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--format")) m_impl->format = wert();
         else if (a == QLatin1String("--ansicht")) m_impl->ansicht = wert();
         else if (a == QLatin1String("--alle-zweige")) alleZweige = true;
+        else if (a == QLatin1String("--varianten")) varianten = true;
+        else if (a == QLatin1String("--rahmen")) rahmen = true;
         else if (a == QLatin1String("-D")) definitionen << wert();
         else if (a.startsWith(QLatin1String("-D"))) definitionen << a.mid(2);
         else if (!a.startsWith(QLatin1Char('-')) && datei.isEmpty()) datei = a;
@@ -248,6 +289,8 @@ bool Application::init(int argc, char* argv[])
     // vor dem Oeffnen: so wird die Datei gleich mit ihnen gelesen
     fenster.setzeDefinitionen(definitionen.join(QLatin1Char(' ')));
     fenster.setzeAlleZweige(alleZweige);
+    fenster.setzeVarianten(varianten);
+    fenster.setzeBereiche(rahmen);
     if (!datei.isEmpty())
     {
         QString fehler;

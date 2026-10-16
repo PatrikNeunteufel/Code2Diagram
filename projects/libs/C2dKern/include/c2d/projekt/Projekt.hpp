@@ -44,6 +44,8 @@ inline constexpr std::size_t kKeine = static_cast<std::size_t>(-1);
 struct ProjektOptionen
 {
     bool alleZweige = false;
+    bool varianten = false;  ///< wie sprache::LeseOptionen::varianten
+    bool bereiche = false;   ///< wie sprache::LeseOptionen::bereiche
     /// Von aussen (`-D`, das Feld Defines); gehen allem anderen vor.
     std::vector<sprache::Definition> definitionen;
 };

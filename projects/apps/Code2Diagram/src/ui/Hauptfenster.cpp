@@ -8,6 +8,7 @@
 #include "AppInfo.hpp"
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "ui/Konfiguration.hpp"
 #include "ui/Vorschau.hpp"
 
 #include <QAction>
@@ -19,6 +20,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -165,14 +167,30 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_alleZweige = new QCheckBox(QStringLiteral("All #if branches"), links);
     m_alleZweige->setObjectName(QStringLiteral("alleZweige"));
     m_alleZweige->setToolTip(QStringLiteral("Do not evaluate #if and #ifdef: read every branch, one after the other."));
+    m_varianten = new QCheckBox(QStringLiteral("Show #if variants"), links);
+    m_varianten->setObjectName(QStringLiteral("varianten"));
+    m_varianten->setToolTip(QStringLiteral(
+        "An #if inside a function whose branches hold whole statements becomes a hexagon in the flow,\n"
+        "with one edge per branch; the branch that holds is marked (active). Everything else is evaluated."));
+    m_bereiche = new QCheckBox(QStringLiteral("Frame #if regions"), links);
+    m_bereiche->setObjectName(QStringLiteral("bereiche"));
+    m_bereiche->setToolTip(QStringLiteral(
+        "Evaluate #if, but frame what an #if inside a function switches on: one colour per condition,\n"
+        "with a legend. Show #if variants frames its branches as well."));
     auto* lesen = new QHBoxLayout;
     lesen->addWidget(new QLabel(QStringLiteral("Defines:"), links));
     lesen->addWidget(m_definitionen, 1);
-    lesen->addWidget(m_alleZweige);
+    // die Haken in einer eigenen Zeile: sonst bleibt fuer Defines kaum Platz
+    auto* haken = new QHBoxLayout;
+    haken->addWidget(m_alleZweige);
+    haken->addWidget(m_varianten);
+    haken->addWidget(m_bereiche);
+    haken->addStretch(1);
     auto* linkeSpalte = new QVBoxLayout(links);
     linkeSpalte->setContentsMargins(0, 0, 0, 0);
     linkeSpalte->addWidget(m_quelle, 1);
     linkeSpalte->addLayout(lesen);
+    linkeSpalte->addLayout(haken);
     linksTeiler->addWidget(m_baum);
     linksTeiler->addWidget(links);
     linksTeiler->setStretchFactor(0, 1);
@@ -183,8 +201,15 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     });
     connect(m_alleZweige, &QCheckBox::toggled, this, [this](bool alle) {
         m_definitionen->setEnabled(!alle);
+        m_varianten->setEnabled(!alle);  // Varianten und Rahmen gibt es nur beim Auswerten
+        m_bereiche->setEnabled(!alle && !m_varianten->isChecked());
         liesNeu();
     });
+    connect(m_varianten, &QCheckBox::toggled, this, [this](bool zeigen) {
+        m_bereiche->setEnabled(!zeigen && !m_alleZweige->isChecked());  // Varianten rahmen ihre Zweige selbst
+        liesNeu();
+    });
+    connect(m_bereiche, &QCheckBox::toggled, this, [this] { liesNeu(); });
     connect(m_baum, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* eintrag) {
         if (eintrag != nullptr && eintrag->data(0, kArt).toInt() == kEintragDatei)
             waehleDatei(eintrag->data(0, kPfad).toString());
@@ -331,6 +356,26 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         statusBar()->showMessage(QStringLiteral("Diagram text copied"), 3000);
     });
 
+    // das Feld Configuration: rechts angedockt, ein- und ausblendbar im Menue Project
+    auto* dock = new QDockWidget(QStringLiteral("Configuration"), this);
+    dock->setObjectName(QStringLiteral("konfigurationDock"));
+    m_konfiguration = new Konfiguration(dock);
+    m_konfiguration->setObjectName(QStringLiteral("konfiguration"));
+    dock->setWidget(m_konfiguration);
+    addDockWidget(Qt::RightDockWidgetArea, dock);
+    projekt->addSeparator();
+    QAction* zeigen = dock->toggleViewAction();
+    zeigen->setText(QStringLiteral("&Configuration (#if names and branches)"));
+    projekt->addAction(zeigen);
+    m_konfiguration->beiAenderung = [this](const QString& text) { setzeDefinitionen(text); };
+    m_konfiguration->beimSpeichern = [this] {
+        QString fehler;
+        if (speichereKonfiguration(&fehler))
+            statusBar()->showMessage(QStringLiteral("Defines written to the project file"), 4000);
+        else
+            QMessageBox::warning(this, windowTitle(), fehler);
+    };
+
     QMenu* hilfe = menuBar()->addMenu(QStringLiteral("&Help"));
     hilfe->addAction(QStringLiteral("&About"), this, [this] {
         QMessageBox::about(this, windowTitle(),
@@ -404,13 +449,10 @@ void Hauptfenster::liesEin()
 {
     c2d::projekt::ProjektOptionen optionen;
     optionen.alleZweige = m_alleZweige->isChecked();
+    optionen.varianten = m_varianten->isChecked();
+    optionen.bereiche = m_bereiche->isChecked();
     m_gelesenMit = m_definitionen->text();
-    static const QRegularExpression kTrenner(QStringLiteral("[\\s,;]+"));
-    for (const QString& stueck : m_definitionen->text().split(kTrenner, Qt::SkipEmptyParts))
-    {
-        c2d::sprache::Definition d = c2d::sprache::definitionAus(stueck.toStdString());
-        if (!d.name.empty()) optionen.definitionen.push_back(std::move(d));
-    }
+    optionen.definitionen = definitionenImFeld();
     if (m_ordner.isEmpty())
         m_projekt = c2d::projekt::liesText(m_einzelText.toStdString(), m_einzelName.toStdString(), optionen);
     else
@@ -424,6 +466,58 @@ void Hauptfenster::liesEin()
     m_projektdateiAktion->setEnabled(istProjekt());
     m_meldungenAktion->setEnabled(istProjekt());
     fuelleBaum();
+}
+
+std::vector<c2d::sprache::Definition> Hauptfenster::definitionenImFeld() const
+{
+    std::vector<c2d::sprache::Definition> aus;
+    static const QRegularExpression kTrenner(QStringLiteral("[\\s,;]+"));
+    for (const QString& stueck : m_definitionen->text().split(kTrenner, Qt::SkipEmptyParts))
+    {
+        c2d::sprache::Definition d = c2d::sprache::definitionAus(stueck.toStdString());
+        if (!d.name.empty()) aus.push_back(std::move(d));
+    }
+    return aus;
+}
+
+void Hauptfenster::aktualisiereKonfiguration()
+{
+    if (m_datei >= m_projekt.dateien.size())
+    {
+        m_konfiguration->zeige(nullptr, definitionenImFeld(), 0, 0, istProjekt());
+        return;
+    }
+    // die Ketten der gezeigten Funktion — bei den Datentypen oder einem Automaten die der Datei
+    int von = 0, bis = 0;
+    if (const std::optional<Fundstelle> f = gezeigteFunktion(); f && f->datei == m_datei)
+    {
+        const c2d::modell::Funktion& funktion = c2d::projekt::funktion(m_projekt, *f);
+        von = funktion.zeile;
+        bis = funktion.bisZeile;
+    }
+    m_konfiguration->zeige(&m_projekt.dateien[m_datei].ergebnis, definitionenImFeld(), von, bis, istProjekt());
+}
+
+bool Hauptfenster::speichereKonfiguration(QString* fehler)
+{
+    if (!istProjekt())
+    {
+        if (fehler != nullptr) *fehler = QStringLiteral("No folder is open");
+        return false;
+    }
+    std::optional<c2d::projekt::Projektdatei> p = einstellungenZumAendern(fehler);
+    if (!p) return false;
+    // was im Feld steht, ersetzt gleichnamige Definitionen der Projektdatei
+    for (const c2d::sprache::Definition& d : definitionenImFeld())
+    {
+        const auto alt = std::find_if(p->definitionen.begin(), p->definitionen.end(),
+                                      [&](const c2d::sprache::Definition& x) { return x.name == d.name; });
+        if (alt != p->definitionen.end())
+            alt->wert = d.wert;
+        else
+            p->definitionen.push_back(d);
+    }
+    return schreibeProjektdatei(*p, fehler);
 }
 
 void Hauptfenster::liesNeu()
@@ -610,6 +704,18 @@ void Hauptfenster::setzeAlleZweige(bool alle)
 {
     if (m_alleZweige->isChecked() == alle) return;
     m_alleZweige->setChecked(alle);  // liest ueber das Signal neu
+}
+
+void Hauptfenster::setzeVarianten(bool zeigen)
+{
+    if (m_varianten->isChecked() == zeigen) return;
+    m_varianten->setChecked(zeigen);  // liest ueber das Signal neu
+}
+
+void Hauptfenster::setzeBereiche(bool rahmen)
+{
+    if (m_bereiche->isChecked() == rahmen) return;
+    m_bereiche->setChecked(rahmen);  // liest ueber das Signal neu
 }
 
 QStringList Hauptfenster::unbekannteNamen() const
@@ -1001,7 +1107,8 @@ std::size_t Hauptfenster::dateiVon(c2d::diagramm::KnotenId knoten) const
 {
     if (knoten < m_fluss.knoten().size())
     {
-        const std::size_t gruppe = m_fluss.knoten()[knoten].gruppe;
+        // die Einbettung, nicht ein Rahmen einer Bedingung darin, weiss die Datei
+        const std::size_t gruppe = m_fluss.einbettungVon(m_fluss.knoten()[knoten].gruppe);
         if (gruppe < m_fluss.gruppen().size() && !m_fluss.gruppen()[gruppe].herkunft.empty())
             if (const std::size_t d = m_projekt.finde(m_fluss.gruppen()[gruppe].herkunft); d != kKeine) return d;
     }
@@ -1070,7 +1177,7 @@ bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const Fundstelle& ge
     const c2d::modell::Funktion& f = c2d::projekt::funktion(m_projekt, gerufen);
     Flussdiagramm neu = c2d::diagramm::betteEin(m_fluss, knoten, fasseAnweisungsfolgenZusammen(flussVon(f)), f.signatur(),
                                                 m_projekt.dateien[gerufen.datei].pfad);
-    if (neu.gruppen().size() == m_fluss.gruppen().size()) return false;
+    if (neu.einbettungen() == m_fluss.einbettungen()) return false;
     m_fluss = std::move(neu);
     zeichne();
     return true;
@@ -1095,14 +1202,14 @@ bool Hauptfenster::betteEin(const QString& funktionName)
 
 bool Hauptfenster::loeseEinbettungen()
 {
-    if (m_fluss.gruppen().empty()) return false;
+    if (m_fluss.einbettungen() == 0) return false;
     baueNeu();
     return true;
 }
 
 int Hauptfenster::einbettungen() const
 {
-    return static_cast<int>(m_fluss.gruppen().size());
+    return static_cast<int>(m_fluss.einbettungen());
 }
 
 QString Hauptfenster::quelltext() const
@@ -1160,6 +1267,7 @@ void Hauptfenster::baueNeu()
     }
     zeichne();
     aktualisiereLeiste();
+    aktualisiereKonfiguration();
 }
 
 void Hauptfenster::zeichne()
@@ -1240,16 +1348,17 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                             [this, von, zeile = k.quellZeile] { zeigeZeile(von, zeile); });
         }
     }
-    if (gruppe < m_fluss.gruppen().size())
+    // ein Rahmen einer Bedingung laesst sich nicht herausnehmen — die Einbettung um ihn schon
+    if (const std::size_t einbettung = m_fluss.einbettungVon(gruppe); einbettung < m_fluss.gruppen().size())
     {
         if (!menue.isEmpty()) menue.addSeparator();
-        menue.addAction(QStringLiteral("Remove embedding: %1").arg(QString::fromStdString(m_fluss.gruppen()[gruppe].titel)),
-                        this, [this, gruppe] {
-                            m_fluss = c2d::diagramm::loeseEin(m_fluss, gruppe);
+        menue.addAction(QStringLiteral("Remove embedding: %1").arg(QString::fromStdString(m_fluss.gruppen()[einbettung].titel)),
+                        this, [this, einbettung] {
+                            m_fluss = c2d::diagramm::loeseEin(m_fluss, einbettung);
                             zeichne();
                         });
     }
-    if (!m_fluss.gruppen().empty())
+    if (m_fluss.einbettungen() > 0)
         menue.addAction(QStringLiteral("Remove all embeddings"), this, [this] { loeseEinbettungen(); });
     if (!m_verlauf.isEmpty() || gezeigteFunktion())
         if (!menue.isEmpty()) menue.addSeparator();

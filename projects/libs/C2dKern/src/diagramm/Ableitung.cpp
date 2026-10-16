@@ -95,6 +95,7 @@ private:
         k.zeilen.emplace_back(text);
         k.quellZeile = zeile;
         k.aufrufe = aufrufeIn(text);
+        k.gruppe = rahmen();
         const KnotenId id = m_d.neuerKnoten(std::move(k));
         verbinde(eingang, id);
         return id;
@@ -104,6 +105,35 @@ private:
     {
         for (const modell::AnweisungPtr& a : folge) eingang = baue(*a, std::move(eingang));
         return eingang;
+    }
+
+    /// Die Folge in einem Rahmen der Art Bedingung. Der Rahmen entsteht erst mit
+    /// seinem ersten Knoten: ein Zweig ohne Knoten bekommt keinen.
+    Enden baueImRahmen(const std::string& bedingung, const std::vector<modell::AnweisungPtr>& folge, Enden eingang)
+    {
+        m_rahmen.push_back({bedingung, kKeine});
+        Enden aus = baueFolge(folge, std::move(eingang));
+        m_rahmen.pop_back();
+        return aus;
+    }
+
+    /// Die Gruppe fuer einen neuen Knoten: der innerste offene Rahmen — angelegt, wo er noch fehlt.
+    std::size_t rahmen()
+    {
+        std::size_t eltern = kKeine;
+        for (OffenerRahmen& r : m_rahmen)
+        {
+            if (r.gruppe == kKeine)
+            {
+                Gruppe g;
+                g.art = GruppenArt::Bedingung;
+                g.titel = r.bedingung;
+                g.eltern = eltern;
+                r.gruppe = m_d.neueGruppe(std::move(g));
+            }
+            eltern = r.gruppe;
+        }
+        return eltern;
     }
 
     /// Baut die Anweisung hinter die offenen Enden `eingang`; liefert, was danach offen ist.
@@ -241,6 +271,29 @@ private:
                 return aus;
             }
 
+            case AnweisungArt::Varianten:
+            {
+                // je Zweig eine Kante mit seiner Bedingung; ein leerer Zweig fuehrt gleich weiter
+                // je Zweig, der Knoten hat, ein Rahmen mit seiner vollen Bedingung
+                const KnotenId kopf = knoten(KnotenArt::Variante, a.text, a.zeile, eingang);
+                std::vector<std::string> bedingungen;
+                for (const modell::AnweisungPtr& zweig : a.kinder) bedingungen.push_back(zweig->text);
+                Enden aus;
+                for (std::size_t z = 0; z < a.kinder.size(); ++z)
+                {
+                    const Anweisung& zweig = *a.kinder[z];
+                    const Enden hinein{{kopf, zweig.gilt ? zweig.text + " (active)" : zweig.text}};
+                    haengeAn(aus, baueImRahmen(modell::volleBedingung(bedingungen, z), zweig.kinder, hinein));
+                }
+                return aus;
+            }
+
+            case AnweisungArt::Bedingt:  // der geltende Zweig eines #if: im Rahmen seiner Bedingung
+                return baueImRahmen(a.text, a.kinder, std::move(eingang));
+
+            case AnweisungArt::Zweig:  // ausserhalb von Varianten: wie ein Block
+                return baueFolge(a.kinder, std::move(eingang));
+
             case AnweisungArt::Wurf:  // verlaesst die Funktion wie ein return
                 m_ruecksprunge.emplace_back(
                     knoten(KnotenArt::Anweisung, a.text.empty() ? "throw" : "throw " + a.text, a.zeile, eingang),
@@ -303,7 +356,14 @@ private:
         FlussBauer& m_bauer;
     };
 
+    struct OffenerRahmen
+    {
+        std::string bedingung;
+        std::size_t gruppe;  ///< kKeine, bis ein Knoten in ihn faellt
+    };
+
     Flussdiagramm& m_d;
+    std::vector<OffenerRahmen> m_rahmen;  ///< von aussen nach innen
     std::vector<Enden*> m_abbruch;
     std::vector<Enden*> m_fortsetzung;
     Enden m_ruecksprunge;

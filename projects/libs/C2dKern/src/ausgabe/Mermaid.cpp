@@ -36,6 +36,8 @@ constexpr Form formVon(KnotenArt art)
             return {"{", "}"};  // Raute
         case KnotenArt::Aufruf:
             return {"[[", "]]"};  // Unterprogramm
+        case KnotenArt::Variante:
+            return {"{{", "}}"};  // Sechseck
         case KnotenArt::Anweisung:
             break;
     }
@@ -181,6 +183,14 @@ public:
             }
         };
         schreibeEbene(schreibeEbene, kKeine, "    ");
+        // ein Rahmen einer Bedingung traegt ihre Farbe
+        const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
+        for (std::size_t g = 0; g < farben.size(); ++g)
+        {
+            if (farben[g] == kKeine) continue;
+            const std::string f(rahmenFarbe(farben[g]));
+            aus += "    style g" + std::to_string(g) + " fill:" + f + ",fill-opacity:0.08,stroke:" + f + ",color:" + f + '\n';
+        }
         for (const Kante& k : diagramm.kanten())
         {
             aus += "    n" + std::to_string(k.von) + " -->";

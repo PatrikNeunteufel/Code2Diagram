@@ -95,6 +95,8 @@ sprache::Ergebnis lies(const sprache::Sprache& sprache, const std::string& text,
 {
     sprache::LeseOptionen lesen;
     lesen.alleZweige = optionen.alleZweige;
+    lesen.varianten = optionen.varianten;
+    lesen.bereiche = optionen.bereiche;
     lesen.definitionen = definitionen;
     fuegeHinzu(lesen.definitionen, optionen.definitionen);
     return sprache.lies(text, name, lesen);

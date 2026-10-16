@@ -8,7 +8,10 @@
 #include "Bedingt.hpp"
 
 #include <algorithm>
+#include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace c2d::sprache::cfamilie
 {
@@ -77,9 +80,14 @@ bool wieEinMakro(std::string_view name)
 class CFamilienLeser : private Leser
 {
 public:
-    CFamilienLeser(std::string_view text, const lexer::Sprachtabelle& tabelle, Dialekt dialekt, Ergebnis& aus)
+    /// `varianten`: die #if, die als Varianten stehen geblieben sind (Bedingt.hpp); darf fehlen.
+    CFamilienLeser(std::string_view text, const lexer::Sprachtabelle& tabelle, Dialekt dialekt, Ergebnis& aus,
+                   const Varianten* varianten = nullptr)
         : Leser(text, tabelle, aus), m_cpp(dialekt.cpp)
     {
+        if (varianten == nullptr) return;
+        m_nurGeltend = varianten->nurGeltend;
+        for (const Variantengruppe& g : varianten->gruppen) m_varianten.emplace(g.direktiven.front(), &g);
     }
 
     void liesEinheit()
@@ -87,6 +95,9 @@ public:
         Rahmen wurzel;
         liesFolge(wurzel, false);
     }
+
+    /// Die Ruempfe der gelesenen Funktionen, als Versatz [von, bis) im Text.
+    [[nodiscard]] const std::vector<std::pair<std::size_t, std::size_t>>& ruempfe() const { return m_ruempfe; }
 
 private:
     /// Worin gerade gelesen wird: die Datei, ein Namensraum oder der Rumpf eines Typs.
@@ -975,7 +986,10 @@ private:
         if (rumpf)
         {
             m_p = q;
+            const std::size_t von = akt().ort.versatz;
             f.rumpf = liesBlock();
+            m_ruempfe.emplace_back(von, m_p > q ? tok(m_p - 1).ort.versatz + tok(m_p - 1).text.size() : von + 1);
+            f.bisZeile = m_p > q ? tok(m_p - 1).ort.zeile : f.zeile;
             einheit().funktionen.push_back(std::move(f));
         }
         else
@@ -1056,6 +1070,7 @@ private:
         const Token& t = akt();
         if (t.art == TokenArt::Direktive)
         {
+            if (const auto g = m_varianten.find(t.ort.versatz); g != m_varianten.end()) return liesVarianten(*g->second);
             ++m_p;
             return neu(AnweisungArt::Direktive, t, eineZeile(t.text));
         }
@@ -1258,8 +1273,51 @@ private:
         return a;
     }
 
+    /// m_p steht auf dem #if der Gruppe: je Zweig seine Anweisungen bis zur naechsten Direktive der Gruppe.
+    AnweisungPtr liesVarianten(const Variantengruppe& g)
+    {
+        AnweisungPtr varianten = neu(AnweisungArt::Varianten, akt(), "#if");
+        for (std::size_t z = 0; z < g.bedingungen.size() && akt().ort.versatz == g.direktiven[z]; ++z)
+        {
+            AnweisungPtr zweig = neu(AnweisungArt::Zweig, akt(), g.bedingungen[z]);
+            zweig->gilt = z == g.geltend;
+            ++m_p;
+            // die Zweige sind geklammert wie ganze Anweisungen (Bedingt.hpp): eine `}` kommt nicht
+            while (!amEnde(m_p) && akt().ort.versatz != g.direktiven[z + 1] && !akt().istOp("}"))
+            {
+                const std::size_t davor = m_p;
+                if (AnweisungPtr a = liesAnweisung()) zweig->kinder.push_back(std::move(a));
+                if (m_p == davor) ++m_p;
+            }
+            varianten->kinder.push_back(std::move(zweig));
+        }
+        if (akt().art == TokenArt::Direktive && akt().ort.versatz == g.direktiven.back()) ++m_p;  // #endif
+        if (g.bedingungen.back() != "else")
+        {
+            AnweisungPtr sonst = neu(AnweisungArt::Zweig, tok(m_p - 1), "else");
+            sonst->gilt = g.geltend == g.bedingungen.size();
+            varianten->kinder.push_back(std::move(sonst));
+        }
+        if (!m_nurGeltend) return varianten;
+
+        // nur der Zweig, der gilt (die uebrigen sind ausgeblendet und leer): ein Bereich, wenn er etwas enthaelt
+        for (std::size_t z = 0; z < varianten->kinder.size(); ++z)
+        {
+            AnweisungPtr& zweig = varianten->kinder[z];
+            if (!zweig->gilt || zweig->kinder.empty()) continue;
+            zweig->art = AnweisungArt::Bedingt;
+            zweig->text = volleBedingung(g.bedingungen, z);
+            zweig->gilt = false;
+            return std::move(zweig);
+        }
+        return nullptr;
+    }
+
     bool m_cpp;
     int m_anonym = 0;
+    std::map<std::size_t, const Variantengruppe*> m_varianten;  ///< nach dem Versatz ihres #if
+    bool m_nurGeltend = false;  ///< Varianten::nurGeltend: Bereiche statt Varianten
+    std::vector<std::pair<std::size_t, std::size_t>> m_ruempfe;
 };
 
 }  // namespace
@@ -1276,9 +1334,32 @@ Ergebnis lies(std::string_view text, std::string_view einheitName, const lexer::
     }
     // Erst entscheiden, welche Zweige gelten; der Leser sieht nur sie. Die Token
     // des Lesers zeigen in diesen Text: er lebt, bis das Lesen fertig ist.
-    const std::string geltend = werteBedingteAus(text, tabelle, optionen.definitionen, dialekt.cpp,
-                                                 ergebnis.meldungen, ergebnis.unbekannteNamen);
-    CFamilienLeser(geltend, tabelle, dialekt, ergebnis).liesEinheit();
+    if (!optionen.varianten && !optionen.bereiche)
+    {
+        const std::string geltend = werteBedingteAus(text, tabelle, optionen.definitionen, dialekt.cpp,
+                                                     ergebnis.meldungen, ergebnis.unbekannteNamen, nullptr,
+                                                     &ergebnis.schalter, &ergebnis.weichen);
+        CFamilienLeser(geltend, tabelle, dialekt, ergebnis).liesEinheit();
+        return ergebnis;
+    }
+    // Varianten: erst ausgewertet lesen, um die Ruempfe zu kennen; dann bleiben in
+    // ihnen die #if stehen, die ganze Anweisungen schalten. Weil deren Zweige
+    // geklammert sind wie ganze Anweisungen, liegen die Ruempfe danach noch dort.
+    // Bereiche: dieselben #if, nur ihr geltender Zweig bleibt.
+    Varianten varianten;
+    varianten.nurGeltend = !optionen.varianten;
+    {
+        Ergebnis erst;
+        const std::string geltend = werteBedingteAus(text, tabelle, optionen.definitionen, dialekt.cpp,
+                                                     erst.meldungen, erst.unbekannteNamen);
+        CFamilienLeser leser(geltend, tabelle, dialekt, erst);
+        leser.liesEinheit();
+        varianten.ruempfe = leser.ruempfe();
+    }
+    const std::string gezeigt = werteBedingteAus(text, tabelle, optionen.definitionen, dialekt.cpp,
+                                                 ergebnis.meldungen, ergebnis.unbekannteNamen, &varianten,
+                                                 &ergebnis.schalter, &ergebnis.weichen);
+    CFamilienLeser(gezeigt, tabelle, dialekt, ergebnis, &varianten).liesEinheit();
     return ergebnis;
 }
 

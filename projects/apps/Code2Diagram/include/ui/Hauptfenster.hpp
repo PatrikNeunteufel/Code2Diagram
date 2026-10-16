@@ -46,6 +46,7 @@ class QTreeWidgetItem;
 namespace c2d::ui
 {
 
+class Konfiguration;
 class Vorschau;
 
 class Hauptfenster : public QMainWindow
@@ -147,6 +148,18 @@ public:
     void setzeDefinitionen(const QString& definitionen);
     /// Bedingte Uebersetzung nicht auswerten, sondern alle Zweige lesen.
     void setzeAlleZweige(bool alle);
+    /// Ein #if im Rumpf, das ganze Anweisungen schaltet, als Varianten zeigen
+    /// (sprache::LeseOptionen::varianten); wirkt nur, solange ausgewertet wird.
+    void setzeVarianten(bool zeigen);
+    /// Auswerten, aber umrahmen, was ein #if im Rumpf zuschaltet (sprache::LeseOptionen::bereiche).
+    void setzeBereiche(bool rahmen);
+    /// Das Feld Configuration (Namen und Ketten #if der gewaehlten Datei); es schreibt ins Feld Defines.
+    [[nodiscard]] Konfiguration& konfiguration() { return *m_konfiguration; }
+    [[nodiscard]] const Konfiguration& konfiguration() const { return *m_konfiguration; }
+    /// Was im Feld Defines steht, in `definitionen` der Projektdatei schreiben
+    /// (gleichnamige ersetzen) und neu lesen. false = kein Ordner offen, oder die
+    /// Projektdatei hat Meldungen; `fehler` sagt, was.
+    bool speichereKonfiguration(QString* fehler = nullptr);
     /// Namen, nach denen ein #if der gewaehlten Datei gefragt hat und die nirgends definiert sind.
     [[nodiscard]] QStringList unbekannteNamen() const;
 
@@ -176,6 +189,10 @@ private:
     void liesEin();
     /// Neu einlesen; Datei und Diagramm bleiben, wenn es sie noch gibt.
     void liesNeu();
+    /// Was im Feld Defines steht.
+    [[nodiscard]] std::vector<c2d::sprache::Definition> definitionenImFeld() const;
+    /// Das Feld Configuration auf die gewaehlte Datei und Funktion bringen.
+    void aktualisiereKonfiguration();
     /// Die Datei `index` zur gewaehlten machen: Quelltext, Auswahl, Diagramm.
     void zeigeDatei(std::size_t index);
     void fuelleBaum();
@@ -217,12 +234,15 @@ private:
     QPlainTextEdit* m_quelle = nullptr;
     QPlainTextEdit* m_text = nullptr;
     Vorschau* m_vorschau = nullptr;
+    Konfiguration* m_konfiguration = nullptr;
     QTabWidget* m_ansichten = nullptr;
     QComboBox* m_auswahl = nullptr;
     QComboBox* m_format = nullptr;
     QComboBox* m_richtung = nullptr;
     QLineEdit* m_definitionen = nullptr;
     QCheckBox* m_alleZweige = nullptr;
+    QCheckBox* m_varianten = nullptr;
+    QCheckBox* m_bereiche = nullptr;
     QAction* m_zurueckAktion = nullptr;
     QAction* m_aufruferAktion = nullptr;
     QAction* m_projektdateiAktion = nullptr;

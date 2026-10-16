@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <numeric>
 #include <utility>
 
@@ -28,8 +29,15 @@ constexpr double kSpurAbstand = 8;      // eine Kante zurueck, die unten aus- od
 constexpr double kPunkt = 18;          // ein Knoten ohne Text
 constexpr double kGruppenRand = 14;
 constexpr double kGruppenTitel = 22;
+constexpr double kLegendenFeld = 12;   // das Farbfeld einer Zeile der Legende
 
 using Paar = std::pair<std::size_t, std::size_t>;
+
+/// Wie weit die i-te Schlaufe eines Knotens an sich selbst rechts von ihm verlaeuft.
+constexpr double schlaufe(std::size_t i)
+{
+    return kRueckAbstand + kRueckStaffel * static_cast<double>(i);
+}
 
 struct Schichtung
 {
@@ -47,8 +55,15 @@ struct Schichtung
 /// Stuetzpunkt: einen Knoten ohne Inhalt, der ihr den Platz freihaelt. So laeuft
 /// sie in einer eigenen Spalte, statt durch Knoten oder aussen herum. Der erste
 /// Stuetzpunkt ist `stuetzBreite[e]` breit (0: schmal) — Platz fuer eine Beschriftung.
+///
+/// `gruppenVon[v]`: die Rahmen, in denen Knoten v liegt (alle, auch die aeusseren).
+/// Ueber der Zeile, in der ein Rahmen beginnt, bleibt Platz fuer seinen Titel und
+/// Rand, unter der, in der er endet, fuer seinen Rand — so biegen die Kanten
+/// ausserhalb der Rahmen ab, und ihre Beschriftungen stehen nicht auf dem Titel.
+/// `zeileOben` ist die Oberkante dieses Platzes, nicht die der Knoten.
 Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten,
-                    const std::vector<double>& stuetzBreite = {})
+                    const std::vector<double>& stuetzBreite = {},
+                    const std::vector<std::vector<std::size_t>>& gruppenVon = {})
 {
     const std::size_t n = groesse.size();
     Schichtung s;
@@ -212,12 +227,49 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         const auto [a, b] = kanten[e];
         if (!s.zurueck[e] && s.rang[b] == s.rang[a] + 1) breite[b] = std::max(breite[b], stuetzBreite[e]);
     }
+    // Eine Schlaufe an sich selbst haengt rechts am Knoten (ordneAn): ihr und ihrer
+    // Beschriftung bleibt dort Platz, sonst liefe eine lange Kante daneben durch sie.
+    std::vector<double> rechts(alle, 0);
+    std::vector<std::size_t> schlaufen(n, 0);
+    for (std::size_t e = 0; e < kanten.size(); ++e)
+    {
+        const auto [a, b] = kanten[e];
+        if (a != b) continue;
+        const double schild = e < stuetzBreite.size() ? stuetzBreite[e] / 2 : 0;
+        rechts[a] = std::max(rechts[a], schlaufe(schlaufen[a]++) + schild);
+    }
+    // je Schicht: wie viele Rahmen in ihr beginnen (Platz darueber) und enden (darunter) — hoechstens
+    std::vector<double> vorher(schicht.size(), 0), nachher(schicht.size(), 0);
+    {
+        std::size_t gruppen = 0;
+        for (const auto& liste : gruppenVon)
+            for (const std::size_t g : liste) gruppen = std::max(gruppen, g + 1);
+        std::vector<int> erste(gruppen, std::numeric_limits<int>::max()), letzte(gruppen, -1);
+        for (std::size_t v = 0; v < gruppenVon.size() && v < n; ++v)
+            for (const std::size_t g : gruppenVon[v])
+            {
+                erste[g] = std::min(erste[g], s.rang[v]);
+                letzte[g] = std::max(letzte[g], s.rang[v]);
+            }
+        for (std::size_t v = 0; v < gruppenVon.size() && v < n; ++v)
+        {
+            const auto r = static_cast<std::size_t>(s.rang[v]);
+            const auto beginnen = std::count_if(gruppenVon[v].begin(), gruppenVon[v].end(),
+                                                [&](std::size_t g) { return erste[g] == s.rang[v]; });
+            const auto enden = std::count_if(gruppenVon[v].begin(), gruppenVon[v].end(),
+                                             [&](std::size_t g) { return letzte[g] == s.rang[v]; });
+            vorher[r] = std::max(vorher[r], static_cast<double>(beginnen) * (kGruppenRand + kGruppenTitel));
+            nachher[r] = std::max(nachher[r], static_cast<double>(enden) * kGruppenRand);
+        }
+    }
     const auto setze = [&] {
         s.zeileOben.clear();
         double y = 0;
-        for (const auto& reihe : schicht)
+        for (std::size_t r = 0; r < schicht.size(); ++r)
         {
+            const auto& reihe = schicht[r];
             s.zeileOben.push_back(y);
+            y += vorher[r];
             double hoehe = 0;
             for (const std::size_t v : reihe) hoehe = std::max(hoehe, masse[v].y);
             double frei = 0;  // rechter Rand des Knotens davor
@@ -235,9 +287,9 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
                 double links = std::max(wunsch - breite[v] / 2, mindestens[v] - rand);  // der linke Rand des Platzes
                 if (i > 0) links = std::max(links, frei + abstand(reihe[i - 1], v));
                 orte[v] = {links + rand, y + (hoehe - masse[v].y) / 2, masse[v].x, masse[v].y};
-                frei = links + breite[v];
+                frei = links + breite[v] + rechts[v];
             }
-            y += hoehe + kAbstandSchicht;
+            y += hoehe + nachher[r] + kAbstandSchicht;
         }
     };
     setze();
@@ -293,6 +345,7 @@ Punkt groesseVon(const Knoten& k, const AnordnungOptionen& o)
         case KnotenArt::Start:
         case KnotenArt::Ende: return {text + 44, zeilen + 16};
         case KnotenArt::Aufruf: return {text + 44, zeilen + 18};  // Platz fuer die doppelten Raender
+        case KnotenArt::Variante: return {text + 26 + 2 * kSechseckSpitze, zeilen + 18};
         case KnotenArt::Anweisung: break;
     }
     return {text + 26, zeilen + 18};
@@ -318,6 +371,23 @@ Punkt randpunkt(const Rechteck& r, Punkt ziel)
 }
 
 }  // namespace
+
+std::vector<Punkt> sechseck(const Rechteck& r)
+{
+    const double s = std::min(kSechseckSpitze, r.breite / 4);
+    const double m = r.y + r.hoehe / 2;
+    return {{r.x + s, r.y}, {r.x + r.breite - s, r.y}, {r.x + r.breite, m},
+            {r.x + r.breite - s, r.y + r.hoehe}, {r.x + s, r.y + r.hoehe}, {r.x, m}};
+}
+
+std::size_t titelZeichen(const Rechteck& rahmen, const AnordnungOptionen& optionen)
+{
+    constexpr std::size_t kWenigstens = 8;
+    const double frei = rahmen.breite - 16;  // links 8 Einzug, rechts 8 Luft
+    const auto passen = frei > 0 ? static_cast<std::size_t>(frei / optionen.zeichenBreite) : 0;
+    const std::size_t zeichen = std::max(passen, kWenigstens);
+    return optionen.maxZeilenLaenge == 0 ? zeichen : std::min(zeichen, optionen.maxZeilenLaenge);
+}
 
 double kopfHoehe(const AnordnungOptionen& optionen)
 {
@@ -348,7 +418,13 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         const double breite = static_cast<double>(k.beschriftung.size()) * optionen.zeichenBreite + 10;
         stuetzBreite.push_back(k.beschriftung.empty() ? 0 : drehen ? optionen.zeilenHoehe + 6 : breite);
     }
-    const Schichtung s = schichte(groesse, paare, stuetzBreite);
+    // Platz fuer Titel und Rand der Rahmen — nach unten gerechnet; nach rechts steht der Titel
+    // oben quer zur Richtung und braucht keinen.
+    std::vector<std::vector<std::size_t>> gruppenVon(drehen ? 0 : knoten.size());
+    for (std::size_t v = 0; v < gruppenVon.size(); ++v)
+        for (std::size_t g = knoten[v].gruppe; g < diagramm.gruppen().size(); g = diagramm.gruppen()[g].eltern)
+            gruppenVon[v].push_back(g);
+    const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon);
     a.knoten = s.orte;
 
     const auto entlang = [](Punkt von, Punkt nach, double weit) {
@@ -359,6 +435,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     };
 
     std::size_t staffel = 0;
+    std::vector<std::size_t> schlaufen(knoten.size(), 0);  // je Knoten: seine Schlaufen bisher
     for (std::size_t e = 0; e < kanten.size(); ++e)
     {
         const Rechteck& von = a.knoten[kanten[e].von];
@@ -398,13 +475,27 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         }
         else
         {
-            // zurueck (oder in der eigenen Schicht): rechts aussen herum
-            double aussen = 0;
-            for (std::size_t v = 0; v < knoten.size(); ++v)
-                if (s.rang[v] >= rangNach && s.rang[v] <= rangVon)
-                    aussen = std::max(aussen, a.knoten[v].x + a.knoten[v].breite);
-            aussen += kRueckAbstand + kRueckStaffel * static_cast<double>(staffel++);
+            // zurueck (oder in der eigenen Schicht): rechts aussen herum — rechts an allem, was in
+            // den Schichten dazwischen steht, auch an den Spalten langer Kanten. Eine Schlaufe an
+            // sich selbst bleibt am Knoten, im Platz, den schichte() ihr freigehalten hat.
             const bool selbst = kanten[e].von == kanten[e].nach;
+            double aussen = 0;
+            if (selbst)
+                aussen = von.x + von.breite + schlaufe(schlaufen[kanten[e].von]++);
+            else
+            {
+                for (std::size_t v = 0; v < knoten.size(); ++v)
+                    if (s.rang[v] >= rangNach && s.rang[v] <= rangVon)
+                        aussen = std::max(aussen, a.knoten[v].x + a.knoten[v].breite);
+                for (std::size_t f = 0; f < kanten.size(); ++f)
+                    for (std::size_t i = 0; i < s.stuetzen[f].size(); ++i)
+                    {
+                        const int r = s.rang[kanten[f].von] + 1 + static_cast<int>(i);
+                        const double halb = i == 0 ? std::max(stuetzBreite[f], kStuetzBreite) / 2 : kStuetzBreite / 2;
+                        if (r >= rangNach && r <= rangVon) aussen = std::max(aussen, s.stuetzen[f][i].x + halb);
+                    }
+                aussen += kRueckAbstand + kRueckStaffel * static_cast<double>(staffel++);
+            }
             // Steht in der Schicht rechts daneben noch ein Knoten, ginge die Linie waagrecht durch
             // ihn: dann unten aus der Quelle (oben ins Ziel) und auf einer Spur knapp an der Zeile
             // entlang — nicht in der Mitte der Luecke, wo Kanten abbiegen und Beschriftungen stehen.
@@ -474,6 +565,17 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     };
     for (std::size_t v = 0; v < knoten.size(); ++v)
         if (knoten[v].gruppe < a.gruppen.size()) umfasse(knoten[v].gruppe, a.knoten[v]);
+    // eine Schlaufe an sich selbst gehoert zu ihrem Knoten: samt Beschriftung in seinen Rahmen
+    for (std::size_t e = 0; e < kanten.size(); ++e)
+    {
+        const std::size_t g = knoten[kanten[e].von].gruppe;
+        if (kanten[e].von != kanten[e].nach || g >= a.gruppen.size()) continue;
+        for (const Punkt& p : a.kanten[e]) umfasse(g, {p.x, p.y, 0, 0});
+        const double breite = static_cast<double>(kanten[e].beschriftung.size()) * optionen.zeichenBreite + 4;
+        const Punkt m = a.beschriftungen[e];
+        if (!kanten[e].beschriftung.empty())
+            umfasse(g, {m.x - breite / 2, m.y - optionen.zeilenHoehe / 2, breite, optionen.zeilenHoehe});
+    }
     for (std::size_t g = a.gruppen.size(); g-- > 0;)  // eine Gruppe steht immer hinter ihren Eltern
     {
         if (!belegt[g]) continue;
@@ -528,6 +630,27 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     for (const Rechteck& r : schilder) weite(r);
     for (const Linienzug& l : a.kanten)
         for (const Punkt& p : l) weite({p.x, p.y, 0, 0});
+
+    // die Legende der Bedingungen: rechts neben allem, oben
+    const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
+    std::vector<std::string_view> genannt;
+    const double links0 = a.breite;
+    double y = kRand;
+    for (std::size_t g = 0; g < farben.size(); ++g)
+    {
+        if (farben[g] == kKeine) continue;
+        const std::string& titel = diagramm.gruppen()[g].titel;
+        if (std::find(genannt.begin(), genannt.end(), titel) != genannt.end()) continue;
+        genannt.push_back(titel);
+        const double zeichen = static_cast<double>(laengsteZeile({titel}, optionen.maxZeilenLaenge));
+        FlussAnordnung::Legende eintrag{{links0, y + (optionen.zeilenHoehe - kLegendenFeld) / 2, kLegendenFeld, kLegendenFeld},
+                                        {links0 + kLegendenFeld + 6, y + optionen.zeilenHoehe / 2},
+                                        g};
+        a.breite = std::max(a.breite, eintrag.text.x + zeichen * optionen.zeichenBreite + kRand);
+        a.legende.push_back(eintrag);
+        y += optionen.zeilenHoehe + 4;
+    }
+    a.hoehe = std::max(a.hoehe, y + kRand);
     return a;
 }
 

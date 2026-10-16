@@ -36,7 +36,9 @@ struct Dialekt
 /// Ausdruecke bleiben Text.
 ///
 /// Bedingte Uebersetzung wird vorher ausgewertet (Bedingt.hpp), ausser
-/// `optionen.alleZweige` ist gesetzt.
+/// `optionen.alleZweige` ist gesetzt. Mit `optionen.varianten` wird zweimal
+/// gelesen: erst ausgewertet (das ergibt die Ruempfe), dann mit den #if, die in
+/// den Ruempfen als Varianten stehen bleiben.
 ///
 /// Grenzen (README, "Was es noch nicht kann"): Makros werden nicht ersetzt;
 /// Typen werden nicht aufgeloest — ein unbekannter Name vor einem Bezeichner

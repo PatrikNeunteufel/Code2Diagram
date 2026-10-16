@@ -107,6 +107,23 @@ Definitionen, die man angibt; ein Name, der nicht definiert ist, zählt 0; in C+
 - Eine Bedingung, die sich nicht ausrechnen lässt (ein Makro mit Parametern, `__has_include`),
   gibt einen Hinweis; ihr Zweig wird gelesen.
 - Der Schalter „alle Zweige" liest wie vor der Auswertung jeden Zweig, hintereinander.
+- Der Schalter **„Varianten"** zeigt ein `#if` im Rumpf einer Funktion im Ablauf: ein
+  **Sechseck** `#if`, je Zweig eine Kante mit seiner Bedingung (`#ifdef A` → `defined(A)`,
+  `#else` → `else`; fehlt das `#else`, führt eine Kante `else` gleich weiter); der Zweig, der mit
+  den Definitionen gilt, trägt `(active)`. Das gilt für ein `#if`, dessen Zweige je **ganze
+  Anweisungen** enthalten: die Klammern gehen im Zweig auf, er beginnt nicht mit `else`, `case`
+  oder `default` und enthält keine Fall-Marke, endet auf `;` oder `}`; davor endet eine
+  Anweisung (also nicht der Rumpf eines `if` ohne Klammern), dahinter steht kein `else`; ein
+  `#if` darin erfüllt das selbst. Jedes andere `#if` im Rumpf wird ausgewertet und bekommt einen
+  Hinweis. Außerhalb von Funktionen wird immer ausgewertet. Gelesen wird dafür zweimal (erst
+  ausgewertet, um die Rümpfe zu kennen). Jeder Zweig, der etwas enthält, steht in einem
+  **farbigen Rahmen** mit seiner vollen Bedingung (`#elif B` nach `#ifdef A`:
+  `!defined(A) && B`).
+- Der Schalter **„Rahmen"** wertet aus wie sonst, umrahmt aber, was ein solches `#if`
+  zuschaltet — den Zweig, der gilt, mit seiner vollen Bedingung. Je Bedingung eine Farbe
+  (dieselbe Bedingung in derselben Funktion: dieselbe Farbe), rechts oben eine Legende. Passt
+  ein Titel nicht in seinen Rahmen, wird er gekürzt; ganz steht er in der Legende (und in der
+  Vorschau im Tooltip).
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -117,7 +134,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -142,8 +159,27 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
   dieses Namens im Projekt; `<x.h>` nur in den Include-Pfaden.
 - Unter dem Quelltext: **Defines** — was beim Auswerten von `#if`/`#ifdef` zusätzlich als
   definiert gilt (`NAME` oder `NAME=wert`, durch Leerzeichen getrennt; Enter liest neu) — und
-  der Haken **All #if branches**. Die Statuszeile nennt, wonach gefragt wurde und was nicht
+  die Haken **All #if branches**, **Show #if variants** und **Frame #if regions** (die beiden
+  letzten gesperrt, solange alle Zweige gelesen werden; Rahmen auch, solange Varianten gezeigt
+  werden — die rahmen selbst). Die Statuszeile nennt, wonach gefragt wurde und was nicht
   definiert ist.
+- Rechts angedockt das Feld **Configuration** (Project > Configuration ein- und ausblenden):
+  - **Names asked by #if:** jeder Name, nach dem eine Bedingung der Datei fragt, als Haken
+    — mit einem Wertfeld, wo er verglichen oder verrechnet wird (`STUFE >= 2`). Gesperrt ist,
+    was die Datei selbst definiert (`file, line n`), die Sprache (`__cplusplus`) oder die
+    Projektdatei bzw. ein Kopf (`project`) — von hier nicht zu ändern. Include-Wächter
+    stehen nicht da.
+  - **#if chains:** je Kette `#if` / `#elif` / `#else` der gezeigten Funktion (oder mit
+    *Whole file* der Datei) ein Knopf je Zweig; gesetzt ist der, der gilt. Ein Klick setzt
+    die Namen, unter denen ein anderer gilt — abgeleitet und nachgerechnet: `defined(X)`,
+    `X`, `X == n` direkt, eine Bedingung mit genau einem Namen (`X >= 2`) durch Probieren
+    (X entfernen, die Zahlen der Bedingung, je eins daneben, 1); eine Kette in einem Zweig
+    zieht die Namen fuer diesen Zweig mit. Was sich nicht ableiten lässt (zwei Namen, ein
+    Makro mit Parametern, ein Name der Datei), ist gesperrt; der Tooltip sagt, warum.
+  - Haken und Knöpfe schreiben ins Feld **Defines**; die Namen dort sind die Wahrheit.
+    **Save to project file** schreibt sie in `definitionen` der Projektdatei (gleichnamige
+    ersetzt). Entfernen lässt sich nur, was im Feld Defines steht — die Projektdatei kennt
+    kein „nicht definiert".
 - Rechts oben: **Diagram** (eine Funktion, mit Bereich wie `Klasse::methode`, ein erkannter
   Zustandsautomat — *State machine: …* — oder die Datentypen), **Format**, Richtung.
 - **Zustandsautomaten** werden erkannt, nicht geraten: ein `switch (V)`, in dessen Fällen
@@ -183,7 +219,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert]]... [--alle-zweige] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -198,7 +234,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
-  als 1; `--alle-zweige` wertet nicht aus
+  als 1; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
+  `--rahmen` wertet aus und umrahmt, was ein `#if` im Rumpf zuschaltet
 - `--funktion`: der Name allein (`starte`) oder mit Bereich (`antrieb::Motor::starte`)
 - `--roh`: je Anweisung ein Knoten, nichts gebündelt
 - das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe
@@ -282,8 +319,11 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   ab dem Anfang der einbindenden Datei, nicht erst ab der Zeile des `#include`; ein Kopf wird mit
   seinen eigenen Definitionen gelesen, nicht mit denen, die vor dem `#include` galten. Ein
   `#undef` im Kopf wirkt nicht auf die einbindende Datei. Ein Systemkopf (`<x.h>`), der nicht in
-  den Include-Pfaden liegt, bleibt ohne Meldung außen vor. Die Varianten erscheinen nicht im
-  Diagramm: gezeigt wird die eine, die gilt.
+  den Include-Pfaden liegt, bleibt ohne Meldung außen vor. Varianten im Diagramm nur im Rumpf
+  einer Funktion und nur, wo jeder Zweig ganze Anweisungen enthält (Schalter „Varianten"); ein
+  `#if` um `case`-Marken oder um ganze Funktionen wird ausgewertet. Die Legende der Rahmen
+  zeichnen SVG, draw.io und die Vorschau; Mermaid und DOT tragen nur die Farben (ordnen selbst
+  an). Nach rechts (`LR`) bekommt der Titel eines Rahmens keinen eigenen Platz.
 - **C++-Schablonen** werden übergangen, nicht verstanden: `template<…>` vor einer Deklaration
   fällt weg, eine Spezialisierung heisst wie ihr Text. Überladene Funktionen: im Fenster steht
   die erste zur Wahl. Lambdas sind Text ihrer Anweisung, kein eigener Ablauf.
@@ -293,7 +333,8 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   weiß Code2Diagram nicht.
 - **Die Anordnung ist einfach:** Schichten, Schwerpunkt, Kanten zurück außen herum; eine Kante
   über mehrere Schichten bekommt eine eigene Spalte; steht rechts neben der Quelle einer Kante
-  zurück noch ein Knoten, tritt sie unten aus. Kreuzungen vermeidet sie nicht immer; ein
+  zurück noch ein Knoten, tritt sie unten aus; eine Schlaufe an sich selbst bekommt rechts
+  neben ihrem Knoten Platz, über einer Zeile, in der ein Rahmen beginnt, sein Titel. Kreuzungen vermeidet sie nicht immer; ein
   Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
   wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten

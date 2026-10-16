@@ -59,6 +59,46 @@ bool Flussdiagramm::liegtIn(std::size_t innen, std::size_t aussen) const
     return false;
 }
 
+std::size_t Flussdiagramm::einbettungVon(std::size_t gruppe) const
+{
+    for (std::size_t g = gruppe; g < m_gruppen.size(); g = m_gruppen[g].eltern)
+        if (m_gruppen[g].art == GruppenArt::Einbettung) return g;
+    return kKeine;
+}
+
+std::size_t Flussdiagramm::einbettungen() const
+{
+    return static_cast<std::size_t>(std::count_if(m_gruppen.begin(), m_gruppen.end(), [](const Gruppe& g) {
+        return g.art == GruppenArt::Einbettung;
+    }));
+}
+
+std::vector<std::size_t> farbenDerRahmen(const Flussdiagramm& diagramm)
+{
+    std::vector<std::size_t> aus;
+    std::vector<std::string_view> bedingungen;  // in der Reihenfolge ihres ersten Vorkommens
+    for (const Gruppe& g : diagramm.gruppen())
+    {
+        if (g.art != GruppenArt::Bedingung)
+        {
+            aus.push_back(kKeine);
+            continue;
+        }
+        auto stelle = std::find(bedingungen.begin(), bedingungen.end(), g.titel);
+        if (stelle == bedingungen.end()) stelle = bedingungen.insert(bedingungen.end(), g.titel);
+        aus.push_back(static_cast<std::size_t>(stelle - bedingungen.begin()) % kRahmenFarben);
+    }
+    return aus;
+}
+
+std::string_view rahmenFarbe(std::size_t farbe)
+{
+    // blau, orange, gruen, violett, rot, ocker — kraeftig genug fuer einen Rand auf Hell und Dunkel
+    static constexpr std::string_view kFarben[kRahmenFarben] = {"#3b82f6", "#f08c2e", "#22a37a",
+                                                                "#9b5de5", "#e5484d", "#c49a1c"};
+    return kFarben[farbe % kRahmenFarben];
+}
+
 Flussdiagramm fasseAnweisungsfolgenZusammen(const Flussdiagramm& diagramm, std::size_t maxZeilen)
 {
     const std::vector<Knoten>& knoten = diagramm.knoten();

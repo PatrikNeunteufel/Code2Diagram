@@ -30,3 +30,22 @@ void melde(const uint8_t *daten, index_t laenge)
         sende(daten[i]);
     }
 }
+
+/* Mit --varianten: die erste Kette wird ein Sechseck mit drei Kanten; das zweite #if
+   setzt das if davor fort (else if) und wird deshalb ausgewertet, mit einem Hinweis. */
+void regle(int soll, int ist)
+{
+#if FILTER_STUFE >= 2
+    ist = glaette(filtere(ist));
+#elif FILTER_STUFE == 1
+    ist = filtere(ist);
+#endif
+    if (ist < soll)
+        heize();
+#ifdef MIT_KUEHLUNG
+    else if (ist > soll)
+        kuehle();
+#endif
+    else
+        halte();
+}

@@ -29,6 +29,9 @@ enum class KnotenArt
     Anweisung,    ///< eine oder mehrere Anweisungen ohne Verzweigung
     Verzweigung,  ///< Bedingung: if, Schleifenkopf, case
     Aufruf,       ///< eine Anweisung, die nur eine Funktion ruft
+    /// Varianten der bedingten Uebersetzung (`#if`): keine Entscheidung zur
+    /// Laufzeit; je Zweig eine Kante mit seiner Bedingung. Ein Sechseck.
+    Variante,
 };
 
 /// Kennung eines Knotens: seine Stelle in Flussdiagramm::knoten().
@@ -56,10 +59,18 @@ struct Kante
     std::string beschriftung;  ///< etwa "yes" / "no"; leer = keine
 };
 
-/// Ein umrahmter Teil: der eingebettete Ablauf einer gerufenen Funktion.
+enum class GruppenArt
+{
+    Einbettung,  ///< der eingebettete Ablauf einer gerufenen Funktion (betteEin)
+    Bedingung,   ///< was nur unter einer Bedingung der Uebersetzung steht; titel = die Bedingung
+};
+
+/// Ein umrahmter Teil: der eingebettete Ablauf einer gerufenen Funktion, oder
+/// was unter einer Bedingung der Uebersetzung steht.
 struct Gruppe
 {
-    std::string titel;               ///< etwa die Signatur der Funktion
+    GruppenArt art = GruppenArt::Einbettung;
+    std::string titel;               ///< etwa die Signatur der Funktion, die Bedingung
     std::size_t eltern = kKeine;     ///< die Gruppe, in der diese liegt
     KnotenId aufrufer = kKeine;      ///< der Knoten, hinter dem sie haengt
     std::vector<Kante> ersetzt;      ///< die Kanten des Aufrufers vor dem Einbetten
@@ -86,6 +97,10 @@ public:
 
     /// Liegt die Gruppe `innen` in `aussen` — oder ist sie es selbst?
     [[nodiscard]] bool liegtIn(std::size_t innen, std::size_t aussen) const;
+    /// Die innerste Einbettung, in der die Gruppe liegt (oder sie selbst); kKeine = keine.
+    [[nodiscard]] std::size_t einbettungVon(std::size_t gruppe) const;
+    /// Wie viele Gruppen Einbettungen sind.
+    [[nodiscard]] std::size_t einbettungen() const;
 
 private:
     std::string m_titel;
@@ -93,6 +108,18 @@ private:
     std::vector<Kante> m_kanten;
     std::vector<Gruppe> m_gruppen;
 };
+
+/// Wie viele Farben es fuer Rahmen von Bedingungen gibt; dann wiederholen sie sich.
+inline constexpr std::size_t kRahmenFarben = 6;
+
+/// Je Gruppe ihre Farbe (0 .. kRahmenFarben-1): gleiche Bedingung, gleiche Farbe,
+/// vergeben in der Reihenfolge, in der die Bedingungen zuerst vorkommen. kKeine
+/// fuer eine Einbettung. Welche Farbe eine Nummer ist, entscheidet, wer zeichnet
+/// (rahmenFarbe ist die Vorgabe).
+[[nodiscard]] std::vector<std::size_t> farbenDerRahmen(const Flussdiagramm& diagramm);
+
+/// Die Farbe einer Nummer als `#rrggbb` — gut zu unterscheiden, hell wie dunkel lesbar.
+[[nodiscard]] std::string_view rahmenFarbe(std::size_t farbe);
 
 /// Folgen von Anweisungen zu einem Knoten buendeln: A -> B wird ein Knoten,
 /// wenn beide Anweisungen sind, in derselben Gruppe liegen, A nur nach B fuehrt

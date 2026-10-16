@@ -5,6 +5,7 @@
 #include <doctest.h>
 
 #include "ui/Hauptfenster.hpp"
+#include "ui/Konfiguration.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -130,6 +131,70 @@ TEST_SUITE("Hauptfenster")
         fenster.setzeAlleZweige(false);
         fenster.setzeDefinitionen("");
         CHECK(fenster.diagramme() == QStringList{"b", "immer"});
+    }
+
+    TEST_CASE("Das Feld Configuration: Haken und Knoepfe schreiben ins Feld Defines, gelesen wird neu")
+    {
+        const char* quelle = "#define FEST 1\nvoid f(void)\n{\n#if STUFE >= 2\n  laut();\n#elif STUFE == 1\n  leise();\n"
+                             "#endif\n#ifdef DEBUG\n  log();\n#endif\n#if FEST\n  fest();\n#endif\n}\n";
+        Hauptfenster fenster;
+        fenster.zeige(quelle, "k.c");
+        c2d::ui::Konfiguration& k = fenster.konfiguration();
+        CHECK(k.schalter() == QStringList{"-STUFE", "-DEBUG", "FEST (locked)"});
+        CHECK(k.weichen() == QStringList{"4: STUFE >= 2 | STUFE == 1 | [(no #else)]",
+                                         "9: defined(DEBUG) | [(no #else)]", "12: [FEST] | ((no #else))"});
+
+        // ein Zweig waehlt die Namen; das Diagramm folgt
+        CHECK(k.waehleZweig(4, 1));
+        CHECK(fenster.diagramm() == "f");
+        CHECK(fenster.diagrammText().contains("leise"));
+        CHECK(k.schalter().first() == "STUFE=1");
+        CHECK(k.weichen().first() == "4: STUFE >= 2 | [STUFE == 1] | (no #else)");
+        CHECK(k.waehleZweig(4, 0));  // STUFE >= 2: nachgerechnet, STUFE=2
+        CHECK(k.schalter().first() == "STUFE=2");
+        CHECK(k.waehleZweig(4, 2));  // das fehlende #else: STUFE entfernt
+        CHECK(k.schalter().first() == "-STUFE");
+        CHECK_FALSE(k.waehleZweig(12, 1));  // FEST definiert die Datei
+
+        // die Haken
+        CHECK(k.setzeSchalter("DEBUG", true));
+        CHECK(fenster.diagrammText().contains("log()"));
+        CHECK(k.setzeSchalter("STUFE", true, "2"));
+        CHECK(fenster.diagrammText().contains("laut"));
+        CHECK(k.setzeSchalter("DEBUG", false));
+        CHECK_FALSE(k.setzeSchalter("FEST", false));  // die Datei definiert ihn
+        CHECK(k.schalter() == QStringList{"STUFE=2", "-DEBUG", "FEST (locked)"});
+
+        // ohne Ordner gibt es keine Projektdatei
+        QString fehler;
+        CHECK_FALSE(fenster.speichereKonfiguration(&fehler));
+        CHECK(fehler == "No folder is open");
+    }
+
+    TEST_CASE("Das Feld Configuration im Projekt: in die Projektdatei schreiben; von dort Definiertes ist gesperrt")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        QFile quelle(QDir(ordner.path()).filePath(QStringLiteral("a.c")));
+        REQUIRE(quelle.open(QIODevice::WriteOnly));
+        quelle.write("void f(void)\n{\n#ifdef BOARD_X\n  x();\n#endif\n}\n");
+        quelle.close();
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        c2d::ui::Konfiguration& k = fenster.konfiguration();
+        CHECK(k.schalter() == QStringList{"-BOARD_X"});
+        CHECK(k.setzeSchalter("BOARD_X", true));
+        CHECK(k.schalter() == QStringList{"BOARD_X"});
+
+        QString fehler;
+        REQUIRE(fenster.speichereKonfiguration(&fehler));
+        CHECK(fenster.projektdateiText().contains("BOARD_X"));
+        // Defines leer: BOARD_X kommt jetzt aus der Projektdatei — hier nicht zu entfernen
+        fenster.setzeDefinitionen("");
+        CHECK(k.schalter() == QStringList{"BOARD_X (locked)"});
+        CHECK_FALSE(k.setzeSchalter("BOARD_X", false));
+        CHECK(k.weichen() == QStringList{"3: [defined(BOARD_X)] | ((no #else))"});
     }
 
     TEST_CASE("Eine Datei oeffnen; eine fehlende meldet es und laesst das Fenster, wie es war")
