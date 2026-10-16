@@ -74,7 +74,7 @@ void fuegeHinzu(std::vector<sprache::Definition>& ziel, const std::vector<sprach
     {
         const auto gleich = std::find_if(ziel.begin(), ziel.end(), [&](const sprache::Definition& z) { return z.name == d.name; });
         if (gleich != ziel.end())
-            gleich->wert = d.wert;
+            *gleich = d;  // auch eine Aufhebung `!NAME` oder ihr Gegenteil
         else
             ziel.push_back(d);
     }
@@ -347,11 +347,28 @@ std::size_t Projekt::typen() const
 
 std::vector<sprache::Definition> definitionenFuer(const Projektdatei& einstellungen, std::string_view pfad)
 {
-    std::vector<sprache::Definition> aus = einstellungen.definitionen;
+    std::vector<sprache::Definition> aus;
+    fuegeHinzu(aus, einstellungen.definitionen);  // je Name einmal, auch wo die Datei ihn zweimal nennt
     const std::string ordner = ordnerVon(pfad);
     for (const Abschnitt& a : einstellungen.abschnitte)
         if (liegtIn(a.ordner, ordner)) fuegeHinzu(aus, a.definitionen);
     return aus;
+}
+
+Herkunft herkunft(const Projektdatei& einstellungen, const Datei& datei, std::string_view name)
+{
+    const auto gleich = [&](const sprache::Definition& x) { return x.name == name; };
+    const auto gelesen = std::find_if(datei.definitionen.begin(), datei.definitionen.end(), gleich);
+    if (gelesen == datei.definitionen.end()) return Herkunft::keine;
+    // ohne die Koepfe anders (oder gar nicht): ein Kopf hat ihn festgelegt
+    const std::vector<sprache::Definition> eigene = definitionenFuer(einstellungen, datei.pfad);
+    const auto ohneKoepfe = std::find_if(eigene.begin(), eigene.end(), gleich);
+    if (ohneKoepfe == eigene.end() || sprache::alsText(*ohneKoepfe) != sprache::alsText(*gelesen)) return Herkunft::kopf;
+    const std::string ordner = ordnerVon(datei.pfad);
+    for (const Abschnitt& a : einstellungen.abschnitte)
+        if (liegtIn(a.ordner, ordner) && std::any_of(a.definitionen.begin(), a.definitionen.end(), gleich))
+            return Herkunft::abschnitt;
+    return Herkunft::projekt;
 }
 
 Projekt liesOrdner(const fs::path& wurzel, const ProjektOptionen& optionen)

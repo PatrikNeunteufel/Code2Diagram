@@ -637,7 +637,13 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
     Makros makros;
     if (cpp) makros["__cplusplus"] = {"202002L", false, 0, true};
     for (const Definition& d : definitionen)
-        if (!d.name.empty()) makros[d.name] = {d.wert, false, 0, false};
+    {
+        if (d.name.empty()) continue;
+        if (d.definiert)
+            makros[d.name] = {d.wert, false, 0, false};
+        else
+            makros.erase(d.name);  // `!NAME`: aufgehoben, auch was die Sprache vorgibt
+    }
     std::set<std::string, std::less<>> jeDefiniert;  // irgendwo in der Datei, auch in einem Zweig, der nicht gilt
     std::vector<std::string> gefragt;
     const Umfeld umfeld{tabelle, makros, gefragt, schalter};

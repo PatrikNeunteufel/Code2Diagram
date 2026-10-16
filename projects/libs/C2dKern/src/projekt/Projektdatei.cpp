@@ -153,7 +153,8 @@ private:
             sprache::Definition d = sprache::definitionAus(e.text);
             if (d.name.empty())
             {
-                melde(Schwere::Warnung, e, "\"" + e.text + "\" is not a definition (NAME or NAME=value) - ignored");
+                melde(Schwere::Warnung, e,
+                      "\"" + e.text + "\" is not a definition (NAME, NAME=value or !NAME) - ignored");
                 continue;
             }
             aus.push_back(std::move(d));
@@ -206,7 +207,7 @@ std::string liste(const std::vector<std::string>& eintraege, std::string_view ei
 std::vector<std::string> alsTexte(const std::vector<sprache::Definition>& definitionen)
 {
     std::vector<std::string> aus;
-    for (const sprache::Definition& d : definitionen) aus.push_back(alsText(d));
+    for (const sprache::Definition& d : definitionen) aus.push_back(sprache::alsText(d));
     return aus;
 }
 
@@ -245,9 +246,31 @@ std::string schreibe(const Projektdatei& datei)
     return aus + "}\n";
 }
 
-std::string alsText(const sprache::Definition& definition)
+Projektdatei mitDefinitionen(Projektdatei datei, const std::vector<sprache::Definition>& aussen,
+                             std::vector<std::string>& hinweise)
 {
-    return definition.wert == "1" ? definition.name : definition.name + "=" + definition.wert;
+    for (const sprache::Definition& d : aussen)
+    {
+        const auto gleich = [&](const sprache::Definition& x) { return x.name == d.name; };
+        auto alt = std::find_if(datei.definitionen.begin(), datei.definitionen.end(), gleich);
+        if (alt != datei.definitionen.end())
+        {
+            *alt = d;
+            // ein spaeterer Eintrag gleichen Namens ginge vor: weg damit
+            datei.definitionen.erase(std::remove_if(std::next(alt), datei.definitionen.end(), gleich),
+                                     datei.definitionen.end());
+        }
+        else
+            datei.definitionen.push_back(d);
+        for (const Abschnitt& a : datei.abschnitte)
+        {
+            const auto dort = std::find_if(a.definitionen.rbegin(), a.definitionen.rend(), gleich);
+            if (dort == a.definitionen.rend() || sprache::alsText(*dort) == sprache::alsText(d)) continue;
+            hinweise.push_back("the section \"" + a.ordner + "\" sets " + sprache::alsText(*dort) + ", not " +
+                               sprache::alsText(d) + " - files there keep it");
+        }
+    }
+    return datei;
 }
 
 bool passt(std::string_view muster, std::string_view ordner)

@@ -232,6 +232,71 @@ TEST_SUITE("Projekt")
         }
     }
 
+    TEST_CASE("Nicht definiert: !NAME in Projektdatei, Abschnitt und von aussen; Koepfe und die Datei selbst")
+    {
+        TempOrdner t;
+        t.lege("code2diagram.json", R"({"definitionen": ["MIT_LOG", "DEBUG", "!DEBUG", "!MIT_KOPF"], "includePfade": ["inc"],
+                 "abschnitte": [{"ordner": "slave", "definitionen": ["!MIT_LOG"]}]})");
+        t.lege("inc/config.h", "#define MIT_KOPF\n#define TAKT 100\n");
+        t.lege("main.c", "#include \"config.h\"\n#define EIGEN\n"
+                         "#ifdef MIT_LOG\nvoid log_an(void) {}\n#endif\n"
+                         "#ifdef DEBUG\nvoid dbg(void) {}\n#endif\n"
+                         "#ifdef MIT_KOPF\nvoid aus_kopf(void) {}\n#endif\n"
+                         "#if TAKT > 50\nvoid schnell(void) {}\n#endif\n"
+                         "#ifdef EIGEN\nvoid eigen(void) {}\n#endif\n");
+        t.lege("slave/s.c", "#ifdef MIT_LOG\nvoid slave_log(void) {}\n#endif\nvoid s(void) {}\n");
+
+        const Projekt p = liesOrdner(t.weg());
+        CHECK(p.meldungen.empty());
+        const Datei& haupt = p.dateien[p.finde("main.c")];
+        const Datei& slave = p.dateien[p.finde("slave/s.c")];
+        CHECK(hatFunktion(haupt, "log_an"));
+        CHECK_FALSE(hatFunktion(haupt, "dbg"));     // in einer Liste gilt der spaetere Eintrag
+        CHECK(hatFunktion(haupt, "aus_kopf"));      // der Kopf definiert ihn nach der Projektdatei wieder
+        CHECK_FALSE(hatFunktion(slave, "slave_log"));  // der Abschnitt hebt auf
+
+        CHECK(herkunft(p.einstellungen, haupt, "MIT_LOG") == Herkunft::projekt);
+        CHECK(herkunft(p.einstellungen, haupt, "DEBUG") == Herkunft::projekt);
+        CHECK(herkunft(p.einstellungen, haupt, "MIT_KOPF") == Herkunft::kopf);
+        CHECK(herkunft(p.einstellungen, haupt, "TAKT") == Herkunft::kopf);
+        CHECK(herkunft(p.einstellungen, slave, "MIT_LOG") == Herkunft::abschnitt);
+        CHECK(herkunft(p.einstellungen, haupt, "EIGEN") == Herkunft::keine);  // die Datei selbst
+        CHECK(herkunft(p.einstellungen, haupt, "GIBT_ES_NICHT") == Herkunft::keine);
+
+        SUBCASE("von aussen hebt auch auf, was ein Kopf definiert - nicht, was die Datei definiert")
+        {
+            const Projekt q = liesOrdner(t.weg(), {.definitionen = {{"MIT_KOPF", "1", false},
+                                                                   {"TAKT", "1", false},
+                                                                   {"EIGEN", "1", false},
+                                                                   {"DEBUG", "1"}}});
+            const Datei& h = q.dateien[q.finde("main.c")];
+            CHECK_FALSE(hatFunktion(h, "aus_kopf"));
+            CHECK_FALSE(hatFunktion(h, "schnell"));
+            CHECK(hatFunktion(h, "eigen"));
+            CHECK(hatFunktion(h, "dbg"));
+        }
+        SUBCASE("mitDefinitionen: das Feld in die Projektdatei, mit Hinweis auf Abschnitte")
+        {
+            std::vector<std::string> hinweise;
+            const Projektdatei neu =
+                mitDefinitionen(p.einstellungen, {{"MIT_LOG", "2"}, {"NEU", "1", false}, {"DEBUG", "1"}}, hinweise);
+            std::vector<std::string> texte;
+            for (const c2d::sprache::Definition& d : neu.definitionen) texte.push_back(c2d::sprache::alsText(d));
+            CHECK(texte == std::vector<std::string>{"MIT_LOG=2", "DEBUG", "!MIT_KOPF", "!NEU"});  // das spaetere !DEBUG ist weg
+            REQUIRE(hinweise.size() == 1);
+            CHECK(hinweise[0].find("\"slave\" sets !MIT_LOG") != std::string::npos);
+            hinweise.clear();
+            (void)mitDefinitionen(p.einstellungen, {{"MIT_LOG", "1", false}}, hinweise);
+            CHECK(hinweise.empty());  // der Abschnitt sagt dasselbe
+            // geschrieben und wieder gelesen
+            std::vector<c2d::quelle::Meldung> meldungen;
+            const Projektdatei wieder = liesProjektdatei(schreibe(neu), meldungen);
+            CHECK(meldungen.empty());
+            REQUIRE(wieder.definitionen.size() == 4);
+            CHECK_FALSE(wieder.definitionen[3].definiert);
+        }
+    }
+
     TEST_CASE("Ohne Projektdatei: ein Kopf findet sich ueber seinen Namen, wenn es ihn genau einmal gibt")
     {
         TempOrdner t;

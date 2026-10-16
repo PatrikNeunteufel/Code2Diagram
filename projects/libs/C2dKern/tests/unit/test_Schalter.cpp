@@ -171,7 +171,31 @@ TEST_SUITE("Schalter und Weichen")
         CHECK(anwenden({}, {{"DEBUG", true, ""}}) == "DEBUG=1");
         CHECK(anwenden({{"BOARD_B", "1"}}, {{"BOARD_B", false, ""}}) == "");
         CHECK(anwenden({{"STUFE", "1"}}, {{"STUFE", true, "2"}}) == "STUFE=2");
-        CHECK(anwenden({}, {{"FEST", true, "5"}}) == "-");     // die Datei definiert ihn
-        CHECK(anwenden({}, {{"BOARD_B", false, ""}}) == "-");  // definiert, aber nicht von aussen: nicht zu entfernen
+        CHECK(anwenden({}, {{"FEST", true, "5"}}) == "-");  // die Datei definiert ihn
+    }
+
+    TEST_CASE("mitForderungen: was darunter definiert ist, hebt !NAME auf; Anhaken nimmt es zurueck")
+    {
+        // so liest es die Datei, wenn die Projektdatei BOARD_B und STUFE=2 definiert
+        const Ergebnis e = lies({"BOARD_B", "STUFE=2"});
+        const std::vector<Definition> darunter = {{"BOARD_B", "1"}, {"STUFE", "2"}};
+        const auto anwenden = [&](std::vector<std::string> aussen, std::vector<Forderung> f, bool mitDarunter = true) {
+            std::vector<Definition> a;
+            for (const std::string& d : aussen) a.push_back(definitionAus(d));
+            const auto neu = mitForderungen(std::move(a), f, e.schalter, mitDarunter ? darunter : std::vector<Definition>{});
+            if (!neu) return std::string("-");
+            std::string s;
+            for (const Definition& d : *neu) s += (s.empty() ? "" : " ") + alsText(d);
+            return s;
+        };
+        CHECK(anwenden({}, {{"BOARD_B", false, ""}}) == "!BOARD_B");
+        CHECK(anwenden({}, {{"BOARD_B", false, ""}}, false) == "!BOARD_B");  // ohne darunter: der Schalter sagt es
+        CHECK(anwenden({"!BOARD_B"}, {{"BOARD_B", true, ""}}) == "");        // zurueck: darunter gilt wieder
+        CHECK(anwenden({"BOARD_B=7"}, {{"BOARD_B", false, ""}}) == "!BOARD_B");
+        CHECK(anwenden({"!STUFE"}, {{"STUFE", true, "2"}}) == "");           // darunter schon 2
+        CHECK(anwenden({"!STUFE"}, {{"STUFE", true, "3"}}) == "STUFE=3");
+        CHECK(anwenden({}, {{"DEBUG", false, ""}}) == "");                   // nirgends definiert: nichts zu tun
+        CHECK(anwenden({"!DEBUG"}, {{"DEBUG", true, ""}}) == "DEBUG");       // darunter nicht definiert
+        CHECK(anwenden({}, {{"FEST", false, ""}}) == "-");                   // die Datei definiert ihn
     }
 }

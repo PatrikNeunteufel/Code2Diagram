@@ -160,10 +160,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_quelle->setPlaceholderText(QStringLiteral("Open a source file or a folder (File > Open...)"));
     m_definitionen = new QLineEdit(links);
     m_definitionen->setObjectName(QStringLiteral("definitionen"));
-    m_definitionen->setPlaceholderText(QStringLiteral("NAME NAME=value ... (for #if / #ifdef)"));
+    m_definitionen->setPlaceholderText(QStringLiteral("NAME NAME=value !NAME ... (for #if / #ifdef)"));
     m_definitionen->setToolTip(QStringLiteral(
-        "What counts as defined when #if and #ifdef are evaluated, in addition to the #define of the file\n"
-        "and to the project file. Separate with spaces. Press Enter to read again."));
+        "What counts as defined when #if and #ifdef are evaluated, in addition to the #define of the file.\n"
+        "Goes before the project file and the included headers. !NAME: not defined (like -U).\n"
+        "Separate with spaces. Press Enter to read again."));
     m_alleZweige = new QCheckBox(QStringLiteral("All #if branches"), links);
     m_alleZweige->setObjectName(QStringLiteral("alleZweige"));
     m_alleZweige->setToolTip(QStringLiteral("Do not evaluate #if and #ifdef: read every branch, one after the other."));
@@ -368,12 +369,21 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     zeigen->setText(QStringLiteral("&Configuration (#if names and branches)"));
     projekt->addAction(zeigen);
     m_konfiguration->beiAenderung = [this](const QString& text) { setzeDefinitionen(text); };
+    m_konfiguration->herkunft = [this](const std::string& name) {
+        if (!istProjekt() || m_datei >= m_projekt.dateien.size()) return c2d::projekt::Herkunft::keine;
+        return c2d::projekt::herkunft(m_projekt.einstellungen, m_projekt.dateien[m_datei], name);
+    };
     m_konfiguration->beimSpeichern = [this] {
         QString fehler;
-        if (speichereKonfiguration(&fehler))
-            statusBar()->showMessage(QStringLiteral("Defines written to the project file"), 4000);
-        else
+        QStringList hinweise;
+        if (!speichereKonfiguration(&fehler, &hinweise))
             QMessageBox::warning(this, windowTitle(), fehler);
+        else if (!hinweise.isEmpty())
+            QMessageBox::information(this, windowTitle(),
+                                     QStringLiteral("Defines written to the project file.\n\n%1")
+                                         .arg(hinweise.join(QLatin1Char('\n'))));
+        else
+            statusBar()->showMessage(QStringLiteral("Defines written to the project file"), 4000);
     };
 
     QMenu* hilfe = menuBar()->addMenu(QStringLiteral("&Help"));
@@ -484,7 +494,7 @@ void Hauptfenster::aktualisiereKonfiguration()
 {
     if (m_datei >= m_projekt.dateien.size())
     {
-        m_konfiguration->zeige(nullptr, definitionenImFeld(), 0, 0, istProjekt());
+        m_konfiguration->zeige(nullptr, definitionenImFeld(), {}, 0, 0, istProjekt());
         return;
     }
     // die Ketten der gezeigten Funktion — bei den Datentypen oder einem Automaten die der Datei
@@ -495,10 +505,11 @@ void Hauptfenster::aktualisiereKonfiguration()
         von = funktion.zeile;
         bis = funktion.bisZeile;
     }
-    m_konfiguration->zeige(&m_projekt.dateien[m_datei].ergebnis, definitionenImFeld(), von, bis, istProjekt());
+    const c2d::projekt::Datei& datei = m_projekt.dateien[m_datei];
+    m_konfiguration->zeige(&datei.ergebnis, definitionenImFeld(), datei.definitionen, von, bis, istProjekt());
 }
 
-bool Hauptfenster::speichereKonfiguration(QString* fehler)
+bool Hauptfenster::speichereKonfiguration(QString* fehler, QStringList* hinweise)
 {
     if (!istProjekt())
     {
@@ -508,16 +519,11 @@ bool Hauptfenster::speichereKonfiguration(QString* fehler)
     std::optional<c2d::projekt::Projektdatei> p = einstellungenZumAendern(fehler);
     if (!p) return false;
     // was im Feld steht, ersetzt gleichnamige Definitionen der Projektdatei
-    for (const c2d::sprache::Definition& d : definitionenImFeld())
-    {
-        const auto alt = std::find_if(p->definitionen.begin(), p->definitionen.end(),
-                                      [&](const c2d::sprache::Definition& x) { return x.name == d.name; });
-        if (alt != p->definitionen.end())
-            alt->wert = d.wert;
-        else
-            p->definitionen.push_back(d);
-    }
-    return schreibeProjektdatei(*p, fehler);
+    std::vector<std::string> abweichend;
+    const c2d::projekt::Projektdatei neu = c2d::projekt::mitDefinitionen(std::move(*p), definitionenImFeld(), abweichend);
+    if (hinweise != nullptr)
+        for (const std::string& h : abweichend) *hinweise << ausStd(h);
+    return schreibeProjektdatei(neu, fehler);
 }
 
 void Hauptfenster::liesNeu()

@@ -3,12 +3,13 @@
  * @brief Die Projektparameter: `code2diagram.json` im Wurzelordner eines Projekts
  *
  * Was beim Kompilieren als Argument mitgeht, steht hier fuer das ganze Projekt:
- * Definitionen (wie `-D`) und Include-Pfade (wie `-I`), dazu je Ordner eigene
+ * Definitionen (wie `-D`; `!NAME` hebt auf wie `-U`, in einer Liste gilt der
+ * spaetere Eintrag) und Include-Pfade (wie `-I`), dazu je Ordner eigene
  * (`abschnitte`) und die Ordner, die beim Einlesen uebergangen werden. Fehlt die
  * Datei, gelten die Vorgaben (alles leer). Ein Beispiel:
  *
  *     {
- *       "definitionen": ["CPU1", "DEBUG=1"],
+ *       "definitionen": ["CPU1", "DEBUG=1", "!SIMULATION"],
  *       "includePfade": ["firmware/Global/Header_Files"],
  *       "uebergehen": ["old", "firmware/bak*"],
  *       "abschnitte": [
@@ -63,8 +64,12 @@ struct Projektdatei
 /// Die Projektdatei als Text, eingerueckt; `liesProjektdatei` liest ihn wieder genau so.
 [[nodiscard]] std::string schreibe(const Projektdatei& datei);
 
-/// Eine Definition, wie man sie schreibt: `NAME` (Wert 1) oder `NAME=wert`.
-[[nodiscard]] std::string alsText(const sprache::Definition& definition);
+/// Die Definitionen von aussen (das Feld Defines) in die Projektdatei uebernommen: je
+/// Name ersetzt eine den gleichnamigen Eintrag in `definitionen` oder kommt dazu —
+/// auch eine Aufhebung `!NAME`. Nichts wird entfernt. Legt ein Abschnitt denselben
+/// Namen anders fest, gilt dort weiter der Abschnitt: dafuer je ein Hinweis.
+[[nodiscard]] Projektdatei mitDefinitionen(Projektdatei datei, const std::vector<sprache::Definition>& aussen,
+                                           std::vector<std::string>& hinweise);
 
 /// Passt das Ordnermuster auf diesen Ordner (Weg relativ zum Wurzelordner, mit `/`)?
 [[nodiscard]] bool passt(std::string_view muster, std::string_view ordner);

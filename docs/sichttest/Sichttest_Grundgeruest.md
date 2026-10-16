@@ -212,8 +212,15 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
       `aktion: schalter_setzen name=MIT_PRUEFSUMME an=ja` `aktion: definitionen_setzen wert=""`
 - [ ] **H15 In die Projektdatei (im Projekt):** `beispiele/projekt` als Ordner öffnen, einen
       Namen anhaken, **Save to project file**: Project > Edit project file zeigt ihn unter
-      `definitionen`. Defines leeren: der Haken steht jetzt grau mit `(project)`. Danach den
-      Eintrag in der Projektdatei wieder entfernen.
+      `definitionen`. Defines leeren: der Haken bleibt frei, mit `(project)` dahinter. Danach
+      den Eintrag in der Projektdatei wieder entfernen.
+- [ ] **H16 Nicht definiert (im Projekt):** `beispiele/projekt`, Datei `log/log.c`, `protokolliere`.
+      Im Feld `MIT_LOG (project)` angehakt, der Ablauf hat `schreibe`. Abwählen: Defines
+      zeigt `!MIT_LOG`, der Haken heisst `MIT_LOG (project, !MIT_LOG)`, `schreibe` ist weg;
+      Tooltip *Set by the project file, undefined by !MIT_LOG in Defines*. Wieder anhaken:
+      Defines leer. Dann `main.c`, `main`: `MIT_DIAGNOSE (header)` angehakt, abwählen nimmt
+      `protokolliere` aus der Schleife — Defines `!MIT_DIAGNOSE`. Defines leeren.
+      `aktion: schalter_setzen name=MIT_DIAGNOSE an=nein` `aktion: definitionen_setzen wert=""`
 
 ## I. Das eigene Format SVG; ein switch in Spalten
 

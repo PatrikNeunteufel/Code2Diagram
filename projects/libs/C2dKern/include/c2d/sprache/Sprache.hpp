@@ -24,15 +24,22 @@
 namespace c2d::sprache
 {
 
-/// Eine Definition von aussen, wie `-D NAME=wert` beim Compiler.
+/// Eine Definition von aussen, wie `-D NAME=wert` beim Compiler — oder, mit
+/// `definiert = false`, eine Aufhebung wie `-U NAME`. In einer Liste gilt fuer
+/// einen Namen der spaetere Eintrag.
 struct Definition
 {
     std::string name;
-    std::string wert = "1";
+    std::string wert = "1";  ///< ohne Bedeutung bei einer Aufhebung
+    bool definiert = true;
 };
 
-/// `NAME` oder `NAME=wert` als Definition; ohne Wert gilt 1. Ein leerer Name: kein gueltiger Text.
+/// `NAME` oder `NAME=wert` als Definition (ohne Wert gilt 1), `!NAME` als Aufhebung.
+/// Ein leerer Name — auch `!NAME=wert` —: kein gueltiger Text.
 [[nodiscard]] Definition definitionAus(std::string_view text);
+
+/// Eine Definition, wie `definitionAus` sie liest: `NAME` (Wert 1), `NAME=wert` oder `!NAME`.
+[[nodiscard]] std::string alsText(const Definition& definition);
 
 /// Wie gelesen wird. Was eine Sprache nicht kennt, uebergeht sie.
 struct LeseOptionen
@@ -101,14 +108,17 @@ struct Weiche
 };
 
 /// Die Definitionen von aussen (`aussen`, etwa das Feld Defines), so geaendert, dass
-/// die Forderungen gelten: ein Name, der definiert sein soll, wird gesetzt oder
-/// ersetzt (`wert` leer: bleibt er, wie er ist, sonst ohne Wert), einer, der es nicht
-/// sein soll, entfernt. nullopt = das geht nicht: er ist nicht von dort definiert
-/// (die Datei, die Sprache oder eine andere Quelle wie die Projektdatei) — `schalter`
-/// sagt, wie es um ihn steht.
+/// die Forderungen gelten. Ein Name, der definiert sein soll, wird gesetzt oder
+/// ersetzt (`wert` leer: bleibt er, wie er ist, sonst ohne Wert); einer, der es nicht
+/// sein soll, wird entfernt — und als `!NAME` aufgehoben, wo er darunter definiert
+/// ist. `darunter` sind die Definitionen, die vor denen von aussen gelten
+/// (Projektdatei, Abschnitte, Koepfe: projekt::Datei::definitionen); fehlt ein Name
+/// dort, sagt `schalter`, wie es um ihn steht. nullopt = das geht nicht: die Datei
+/// oder die Sprache definiert ihn selbst.
 [[nodiscard]] std::optional<std::vector<Definition>> mitForderungen(std::vector<Definition> aussen,
                                                                    const std::vector<Forderung>& forderungen,
-                                                                   const std::vector<Schalter>& schalter);
+                                                                   const std::vector<Schalter>& schalter,
+                                                                   const std::vector<Definition>& darunter = {});
 
 struct Ergebnis
 {

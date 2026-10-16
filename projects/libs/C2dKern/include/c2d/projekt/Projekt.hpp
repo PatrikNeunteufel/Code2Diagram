@@ -22,7 +22,10 @@
  *
  * Reihenfolge der Definitionen einer Datei, das Spaetere ersetzt Gleichnamiges:
  * Projekt, Abschnitte (in ihrer Reihenfolge), Koepfe, von aussen (`-D`, das
- * Feld Defines).
+ * Feld Defines). Das gilt auch fuer Aufhebungen (`!NAME`): eine in der
+ * Projektdatei hebt ein spaeterer Abschnitt oder ein Kopf wieder auf, eine von
+ * aussen auch das `#define` eines Kopfs. Was die Datei selbst definiert, gilt
+ * immer.
  */
 #pragma once
 
@@ -95,6 +98,18 @@ struct Projekt
 
 /// Die Definitionen fuer eine Datei an diesem Pfad aus Projekt und Abschnitten (ohne Koepfe, ohne von aussen).
 [[nodiscard]] std::vector<sprache::Definition> definitionenFuer(const Projektdatei& einstellungen, std::string_view pfad);
+
+/// Wer fuer eine Datei zuletzt festlegt, ob ein Name definiert ist — ohne die von aussen.
+enum class Herkunft
+{
+    keine,      ///< niemand: es zaehlt nur, was die Datei selbst definiert
+    projekt,    ///< `definitionen` der Projektdatei
+    abschnitt,  ///< ein Abschnitt der Projektdatei
+    kopf,       ///< ein Kopf, den die Datei einbindet
+};
+
+/// Woher der Zustand von `name` fuer diese Datei kommt (nach Datei::definitionen).
+[[nodiscard]] Herkunft herkunft(const Projektdatei& einstellungen, const Datei& datei, std::string_view name);
 
 /// Eine Funktion in einer Datei des Projekts.
 struct Fundstelle

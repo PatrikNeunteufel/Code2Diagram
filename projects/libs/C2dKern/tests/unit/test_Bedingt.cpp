@@ -117,6 +117,35 @@ TEST_SUITE("Bedingte Uebersetzung")
         CHECK(c2d::sprache::definitionAus("=3").name.empty());
     }
 
+    TEST_CASE("definitionAus und alsText: !NAME hebt auf; das Spaetere gilt")
+    {
+        using c2d::sprache::alsText;
+        using c2d::sprache::definitionAus;
+        CHECK(definitionAus("!A").name == "A");
+        CHECK_FALSE(definitionAus("!A").definiert);
+        CHECK(definitionAus(" ! B ").name == "B");
+        CHECK(definitionAus("!A=1").name.empty());  // eine Aufhebung traegt keinen Wert
+        CHECK(definitionAus("!").name.empty());
+        CHECK(alsText(definitionAus("!A")) == "!A");
+        CHECK(alsText(definitionAus("A")) == "A");
+        CHECK(alsText(definitionAus("A=2")) == "A=2");
+
+        constexpr std::string_view kText = "#ifdef A\nint a;\n#endif\n#ifdef __cplusplus\nint p;\n#endif\n"
+                                           "#define B\n#ifdef B\nint b;\n#endif\n";
+        const auto namen = [&](std::vector<std::string> definitionen) {
+            c2d::sprache::LeseOptionen optionen;
+            for (const std::string& d : definitionen) optionen.definitionen.push_back(definitionAus(d));
+            std::string s;
+            for (const auto& v : c2d::sprache::cpp().lies(kText, "t.cpp", optionen).einheit.variablen) s += v.name;
+            return s;
+        };
+        CHECK(namen({"A"}) == "apb");
+        CHECK(namen({"A", "!A"}) == "pb");          // das Spaetere gilt
+        CHECK(namen({"!A", "A"}) == "apb");
+        CHECK(namen({"!__cplusplus"}) == "b");      // auch was die Sprache vorgibt
+        CHECK(namen({"!B"}) == "pb");                // was die Datei selbst definiert, gilt immer
+    }
+
     TEST_CASE("Rechnen wie der Praeprozessor")
     {
         const auto gilt = [](std::string_view bedingung, std::string_view davor = {}) {

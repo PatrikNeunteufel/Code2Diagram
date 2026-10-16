@@ -1,7 +1,8 @@
 // c2d — Code2Diagram fuer die Kommandozeile.
 //
 // Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
-//                             [--struktur] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen]
+//                             [--struktur] [-D NAME[=wert] | -D !NAME | -U NAME]...
+//                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
@@ -17,7 +18,9 @@
 //   --automat      das Zustandsdiagramm des Automaten mit dieser Variable (auch nur ihr
 //                  letztes Glied: Bus_State); --liste nennt die erkannten
 //   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
-//                  erlaubt; geht der Projektdatei vor
+//                  erlaubt; geht der Projektdatei und den Koepfen vor (nicht der Datei selbst)
+//   -U NAME        gilt als nicht definiert, auch wo Projektdatei oder ein Kopf ihn
+//                  definieren; gleich -D !NAME. Fuer einen Namen gilt die letzte Angabe
 //   --alle-zweige  bedingte Uebersetzung nicht auswerten: alle Zweige lesen
 //   --varianten    ein #if im Rumpf, das ganze Anweisungen schaltet, als Varianten zeigen
 //                  (ein Sechseck, je Zweig eine Kante, je Zweig ein farbiger Rahmen); das
@@ -65,7 +68,7 @@ std::string alsText(const fs::path& weg)
 int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
-                 "                         [--struktur] [--automat <variable>] [-D NAME[=value]]...\n"
+                 "                         [--struktur] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
@@ -140,6 +143,8 @@ int main(int argc, char* argv[])
         else if (a == "--rahmen") lesen.bereiche = true;
         else if (a == "-D") lesen.definitionen.push_back(c2d::sprache::definitionAus(wert()));
         else if (a.starts_with("-D")) lesen.definitionen.push_back(c2d::sprache::definitionAus(a.substr(2)));
+        else if (a == "-U") lesen.definitionen.push_back(c2d::sprache::definitionAus("!" + wert()));
+        else if (a.starts_with("-U")) lesen.definitionen.push_back(c2d::sprache::definitionAus("!" + std::string(a.substr(2))));
         else if (a == "--format") formatName = wert();
         else if (a == "--richtung") richtung = wert();
         else if (a.starts_with("-") || !ziel.empty()) return aufruf();

@@ -164,7 +164,10 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                      QStringLiteral("Configuration: writes what Defines holds into the project file"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
                          QString fehler;
-                         return fenster.speichereKonfiguration(&fehler) ? st::ok() : st::fehler(fehler);
+                         QStringList hinweise;
+                         return fenster.speichereKonfiguration(&fehler, &hinweise)
+                                    ? st::ok(hinweise.join(QStringLiteral("; ")))
+                                    : st::fehler(fehler);
                      });
 
     anbindung.aktion(QStringLiteral("ansicht_waehlen"), QStringLiteral("Shows the drawn preview or the text"),

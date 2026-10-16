@@ -99,8 +99,9 @@ Ein Kopf mit der Endung `.h` wird als C++ gelesen, wenn er etwas nennt, das es i
 **Bedingte Übersetzung** (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`) wird
 ausgewertet, bevor gelesen wird: der Leser sieht nur die Zweige, die gelten. Gerechnet wird wie
 im Compiler — mit den `#define` und `#undef` der Datei bis zu dieser Stelle und mit
-Definitionen, die man angibt; ein Name, der nicht definiert ist, zählt 0; in C++ ist
-`__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
+Definitionen, die man angibt (`NAME`, `NAME=wert`, oder `!NAME` für „nicht definiert" wie
+`-U`; für einen Namen gilt die letzte Angabe); ein Name, der nicht definiert ist, zählt 0; in
+C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
 
 - Wonach eine Bedingung gefragt hat und was nirgends definiert ist, wird genannt (Statuszeile,
   `c2d --liste`): so sieht man, welche Variante gelesen wurde und was sich wählen lässt.
@@ -134,7 +135,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -146,7 +147,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
 - **Die Projektdatei** `code2diagram.json` im Ordner trägt die Projektparameter (Beispiel und
   Regeln: `projects/libs/C2dKern/include/c2d/projekt/Projektdatei.hpp`, ein ganzes Projekt:
   `beispiele/projekt/`):
-  - `definitionen` wie `-D`, `includePfade` wie `-I` (relativ zum Ordner),
+  - `definitionen` wie `-D` (`"CPU1"`, `"TAKT=10"`), `"!NAME"` hebt auf wie `-U`; in einer
+    Liste gilt der spätere Eintrag; `includePfade` wie `-I` (relativ zum Ordner),
   - `abschnitte`: je Ordner (`"ordner": "firmware/Slave"`) eigene Definitionen und Include-Pfade,
   - `uebergehen`: Ordnermuster, die nicht gelesen werden (`old`, `firmware/bak*`, `**/test`).
   Immer übergangen werden Ordner, die mit `.` beginnen, und `out`, `build`, `node_modules`.
@@ -154,32 +156,38 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
   `uebergehen` aus der `.gitignore` des Ordners. Was nicht passt, wird nicht gespeichert.
   Project > Show project messages nennt übergangene Ordner und Köpfe, die sich nicht finden.
 - **Gelesen** wird jede Datei mit den Definitionen aus Projekt, Abschnitten und den `#define`
-  der Köpfe, die sie einbindet (auch mittelbar); das Feld Defines geht allem vor. Ein Kopf
+  der Köpfe, die sie einbindet (auch mittelbar); das Spätere ersetzt Gleichnamiges, auch ein
+  `!NAME`: was die Projektdatei aufhebt, kann ein Abschnitt oder ein Kopf wieder definieren.
+  Das Feld Defines geht allem vor — auch `!NAME` dort hebt das `#define` eines Kopfs auf.
+  Was die Datei selbst definiert, gilt immer. Ein Kopf
   `"x.h"` wird neben der Datei gesucht, dann in den Include-Pfaden, zuletzt als einzige Datei
   dieses Namens im Projekt; `<x.h>` nur in den Include-Pfaden.
 - Unter dem Quelltext: **Defines** — was beim Auswerten von `#if`/`#ifdef` zusätzlich als
-  definiert gilt (`NAME` oder `NAME=wert`, durch Leerzeichen getrennt; Enter liest neu) — und
+  definiert gilt (`NAME`, `NAME=wert` oder `!NAME` für nicht definiert, durch Leerzeichen
+  getrennt; Enter liest neu) — und
   die Haken **All #if branches**, **Show #if variants** und **Frame #if regions** (die beiden
   letzten gesperrt, solange alle Zweige gelesen werden; Rahmen auch, solange Varianten gezeigt
   werden — die rahmen selbst). Die Statuszeile nennt, wonach gefragt wurde und was nicht
   definiert ist.
 - Rechts angedockt das Feld **Configuration** (Project > Configuration ein- und ausblenden):
   - **Names asked by #if:** jeder Name, nach dem eine Bedingung der Datei fragt, als Haken
-    — mit einem Wertfeld, wo er verglichen oder verrechnet wird (`STUFE >= 2`). Gesperrt ist,
-    was die Datei selbst definiert (`file, line n`), die Sprache (`__cplusplus`) oder die
-    Projektdatei bzw. ein Kopf (`project`) — von hier nicht zu ändern. Include-Wächter
-    stehen nicht da.
+    — mit einem Wertfeld, wo er verglichen oder verrechnet wird (`STUFE >= 2`). Gesperrt ist
+    nur, was die Datei selbst definiert (`file, line n`) oder die Sprache (`__cplusplus`).
+    Woher ein Name sonst kommt, steht dahinter (`project`, `section`, `header`); einen
+    solchen abzuwählen schreibt `!NAME` ins Feld Defines (`project, !NAME`), Anhaken nimmt
+    es zurück. Include-Wächter stehen nicht da.
   - **#if chains:** je Kette `#if` / `#elif` / `#else` der gezeigten Funktion (oder mit
     *Whole file* der Datei) ein Knopf je Zweig; gesetzt ist der, der gilt. Ein Klick setzt
     die Namen, unter denen ein anderer gilt — abgeleitet und nachgerechnet: `defined(X)`,
     `X`, `X == n` direkt, eine Bedingung mit genau einem Namen (`X >= 2`) durch Probieren
     (X entfernen, die Zahlen der Bedingung, je eins daneben, 1); eine Kette in einem Zweig
     zieht die Namen fuer diesen Zweig mit. Was sich nicht ableiten lässt (zwei Namen, ein
-    Makro mit Parametern, ein Name der Datei), ist gesperrt; der Tooltip sagt, warum.
+    Makro mit Parametern, ein Name, den die Datei selbst definiert), ist gesperrt; der
+    Tooltip sagt, warum.
   - Haken und Knöpfe schreiben ins Feld **Defines**; die Namen dort sind die Wahrheit.
     **Save to project file** schreibt sie in `definitionen` der Projektdatei (gleichnamige
-    ersetzt). Entfernen lässt sich nur, was im Feld Defines steht — die Projektdatei kennt
-    kein „nicht definiert".
+    ersetzt, auch durch `!NAME`; nichts entfernt). Legt ein Abschnitt denselben Namen anders
+    fest, gilt dort weiter der Abschnitt — das sagt ein Hinweis nach dem Speichern.
 - Rechts oben: **Diagram** (eine Funktion, mit Bereich wie `Klasse::methode`, ein erkannter
   Zustandsautomat — *State machine: …* — oder die Datentypen), **Format**, Richtung.
 - **Zustandsautomaten** werden erkannt, nicht geraten: ein `switch (V)`, in dessen Fällen
@@ -219,7 +227,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert]]... [--
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert]]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -234,7 +242,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
-  als 1; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
+  als 1; `-U NAME` (auch `-UNAME`, `-D !NAME`): gilt als nicht definiert, auch wo Projektdatei
+  oder ein Kopf ihn definieren; für einen Namen gilt die letzte Angabe; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
   `--rahmen` wertet aus und umrahmt, was ein `#if` im Rumpf zuschaltet
 - `--funktion`: der Name allein (`starte`) oder mit Bereich (`antrieb::Motor::starte`)
 - `--roh`: je Anweisung ein Knoten, nichts gebündelt

@@ -76,12 +76,13 @@ Konfiguration::Konfiguration(QWidget* parent) : QWidget(parent)
     baue();
 }
 
-void Konfiguration::zeige(const sprache::Ergebnis* ergebnis, std::vector<Definition> aussen, int von, int bis,
-                          bool projekt)
+void Konfiguration::zeige(const sprache::Ergebnis* ergebnis, std::vector<Definition> aussen,
+                          std::vector<Definition> darunter, int von, int bis, bool projekt)
 {
     m_schalter = ergebnis != nullptr ? ergebnis->schalter : std::vector<Schalter>();
     m_weichen = ergebnis != nullptr ? ergebnis->weichen : std::vector<Weiche>();
     m_aussen = std::move(aussen);
+    m_darunter = std::move(darunter);
     m_von = von;
     m_bis = bis;
     m_projekt = projekt;
@@ -91,24 +92,21 @@ void Konfiguration::zeige(const sprache::Ergebnis* ergebnis, std::vector<Definit
 QString Konfiguration::alsText(const std::vector<Definition>& definitionen)
 {
     QStringList teile;
-    for (const Definition& d : definitionen)
-        teile << (d.wert == "1" ? ausStd(d.name) : QStringLiteral("%1=%2").arg(ausStd(d.name), ausStd(d.wert)));
+    for (const Definition& d : definitionen) teile << ausStd(sprache::alsText(d));
     return teile.join(QLatin1Char(' '));
 }
 
 bool Konfiguration::gesperrt(const Schalter& s) const
 {
-    if (s.inDatei > 0 || s.vorgegeben) return true;
-    // definiert, aber nicht im Feld: in der Projektdatei oder einem Kopf — von hier nicht zu entfernen
-    const bool imFeld = std::any_of(m_aussen.begin(), m_aussen.end(), [&](const Definition& d) { return d.name == s.name; });
-    return s.definiert && !imFeld;
+    // was die Projektdatei oder ein Kopf definiert, hebt `!NAME` im Feld auf; die Datei selbst nicht
+    return s.inDatei > 0 || s.vorgegeben;
 }
 
 std::optional<std::vector<Definition>> Konfiguration::nachWahl(std::size_t w, std::size_t zweig) const
 {
     const Weiche& weiche = m_weichen[w];
     if (zweig >= weiche.wahl.size() || !weiche.wahl[zweig]) return std::nullopt;
-    return sprache::mitForderungen(m_aussen, *weiche.wahl[zweig], m_schalter);
+    return sprache::mitForderungen(m_aussen, *weiche.wahl[zweig], m_schalter, m_darunter);
 }
 
 std::vector<std::size_t> Konfiguration::gezeigteWeichen() const
@@ -150,10 +148,27 @@ void Konfiguration::baue()
         }
         else if (s.vorgegeben)
             warum = kurz = QStringLiteral("language");
-        else if (zu)
+        else if (const projekt::Herkunft h = herkunft ? herkunft(s.name) : projekt::Herkunft::keine;
+                 h != projekt::Herkunft::keine)
         {
-            warum = QStringLiteral("defined in the project file or an included header - change it there");
-            kurz = QStringLiteral("project");
+            // die Projektdatei oder ein Kopf legt ihn fest; das Feld Defines geht vor
+            const bool aufgehoben = std::any_of(m_aussen.begin(), m_aussen.end(), [&](const Definition& d) {
+                return d.name == s.name && !d.definiert;
+            });
+            const QString wo = h == projekt::Herkunft::projekt     ? QStringLiteral("the project file")
+                               : h == projekt::Herkunft::abschnitt ? QStringLiteral("a section of the project file")
+                                                                   : QStringLiteral("an included header");
+            kurz = h == projekt::Herkunft::projekt     ? QStringLiteral("project")
+                   : h == projekt::Herkunft::abschnitt ? QStringLiteral("section")
+                                                       : QStringLiteral("header");
+            if (aufgehoben)
+            {
+                kurz += QStringLiteral(", !") + name;
+                warum = QStringLiteral("Set by %1, undefined by !%2 in Defines. Tick to take that back.").arg(wo, name);
+            }
+            else
+                warum = QStringLiteral("Set by %1. Untick to undefine it here (!%2 in Defines); the file stays as it is.")
+                            .arg(wo, name);
         }
         auto* haken = new QCheckBox(kurz.isEmpty() ? name : QStringLiteral("%1  (%2)").arg(name, kurz), namen);
         haken->setObjectName(QStringLiteral("schalter_") + name);
@@ -216,7 +231,7 @@ void Konfiguration::baue()
             else if (!weiche.wahl[z])
                 knopf->setToolTip(QStringLiteral("Cannot be chosen from names: %1").arg(bedingung));
             else if (!neu)
-                knopf->setToolTip(QStringLiteral("Needs %1 - not possible from here (defined in the file or the project)")
+                knopf->setToolTip(QStringLiteral("Needs %1 - not possible from here (defined in the file itself)")
                                       .arg(beschreibe(*weiche.wahl[z])));
             else
                 knopf->setToolTip(QStringLiteral("Sets %1").arg(beschreibe(*weiche.wahl[z])));
@@ -236,7 +251,8 @@ void Konfiguration::baue()
 
 bool Konfiguration::wende(const std::vector<Forderung>& forderungen)
 {
-    const std::optional<std::vector<Definition>> neu = sprache::mitForderungen(m_aussen, forderungen, m_schalter);
+    const std::optional<std::vector<Definition>> neu =
+        sprache::mitForderungen(m_aussen, forderungen, m_schalter, m_darunter);
     if (!neu) return false;
     if (beiAenderung) beiAenderung(alsText(*neu));
     return true;

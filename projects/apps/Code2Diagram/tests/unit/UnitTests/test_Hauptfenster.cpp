@@ -171,7 +171,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fehler == "No folder is open");
     }
 
-    TEST_CASE("Das Feld Configuration im Projekt: in die Projektdatei schreiben; von dort Definiertes ist gesperrt")
+    TEST_CASE("Das Feld Configuration im Projekt: in die Projektdatei schreiben; von dort Definiertes mit !NAME aufheben")
     {
         QTemporaryDir ordner;
         REQUIRE(ordner.isValid());
@@ -190,11 +190,24 @@ TEST_SUITE("Hauptfenster")
         QString fehler;
         REQUIRE(fenster.speichereKonfiguration(&fehler));
         CHECK(fenster.projektdateiText().contains("BOARD_X"));
-        // Defines leer: BOARD_X kommt jetzt aus der Projektdatei — hier nicht zu entfernen
+        // Defines leer: BOARD_X kommt jetzt aus der Projektdatei — abwaehlen hebt ihn mit !BOARD_X auf
         fenster.setzeDefinitionen("");
-        CHECK(k.schalter() == QStringList{"BOARD_X (locked)"});
-        CHECK_FALSE(k.setzeSchalter("BOARD_X", false));
-        CHECK(k.weichen() == QStringList{"3: [defined(BOARD_X)] | ((no #else))"});
+        CHECK(k.schalter() == QStringList{"BOARD_X"});
+        CHECK(k.weichen() == QStringList{"3: [defined(BOARD_X)] | (no #else)"});
+        CHECK(k.setzeSchalter("BOARD_X", false));
+        CHECK(k.schalter() == QStringList{"-BOARD_X"});
+        CHECK(k.weichen() == QStringList{"3: defined(BOARD_X) | [(no #else)]"});
+        CHECK(k.waehleZweig(3, 0));  // der Zweig nimmt !BOARD_X zurueck
+        CHECK(k.schalter() == QStringList{"BOARD_X"});
+        CHECK(k.waehleZweig(3, 1));
+        CHECK(k.schalter() == QStringList{"-BOARD_X"});
+
+        // gespeichert: aus BOARD_X wird !BOARD_X
+        REQUIRE(fenster.speichereKonfiguration(&fehler));
+        CHECK(fenster.projektdateiText().contains("\"!BOARD_X\""));
+        CHECK_FALSE(fenster.projektdateiText().contains("\"BOARD_X\""));
+        fenster.setzeDefinitionen("");
+        CHECK(k.schalter() == QStringList{"-BOARD_X"});
     }
 
     TEST_CASE("Eine Datei oeffnen; eine fehlende meldet es und laesst das Fenster, wie es war")

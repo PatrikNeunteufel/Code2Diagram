@@ -157,9 +157,10 @@ public:
     [[nodiscard]] Konfiguration& konfiguration() { return *m_konfiguration; }
     [[nodiscard]] const Konfiguration& konfiguration() const { return *m_konfiguration; }
     /// Was im Feld Defines steht, in `definitionen` der Projektdatei schreiben
-    /// (gleichnamige ersetzen) und neu lesen. false = kein Ordner offen, oder die
-    /// Projektdatei hat Meldungen; `fehler` sagt, was.
-    bool speichereKonfiguration(QString* fehler = nullptr);
+    /// (gleichnamige ersetzen, auch durch `!NAME`) und neu lesen. false = kein Ordner
+    /// offen, oder die Projektdatei hat Meldungen; `fehler` sagt, was. `hinweise`: je
+    /// Abschnitt, der einen Namen anders festlegt (dort gilt weiter der Abschnitt).
+    bool speichereKonfiguration(QString* fehler = nullptr, QStringList* hinweise = nullptr);
     /// Namen, nach denen ein #if der gewaehlten Datei gefragt hat und die nirgends definiert sind.
     [[nodiscard]] QStringList unbekannteNamen() const;
 
