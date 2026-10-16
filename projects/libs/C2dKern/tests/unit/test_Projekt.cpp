@@ -10,9 +10,9 @@
 #include "c2d/projekt/Projektdatei.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
+#include "TempOrdner.hpp"
+
 #include <algorithm>
-#include <atomic>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -21,37 +21,6 @@ using namespace c2d::projekt;
 
 namespace
 {
-
-/// Ein Ordner unter dem Temp-Ordner, der mit dem Test wieder verschwindet.
-class TempOrdner
-{
-public:
-    TempOrdner()
-    {
-        static std::atomic<int> zaehler{0};
-        const auto jetzt = std::chrono::steady_clock::now().time_since_epoch().count();
-        m_weg = fs::temp_directory_path() / ("c2d_test_" + std::to_string(jetzt) + "_" + std::to_string(++zaehler));
-        fs::create_directories(m_weg);
-    }
-    ~TempOrdner()
-    {
-        std::error_code egal;
-        fs::remove_all(m_weg, egal);
-    }
-    TempOrdner(const TempOrdner&) = delete;
-    TempOrdner& operator=(const TempOrdner&) = delete;
-
-    void lege(const std::string& relativ, std::string_view inhalt) const
-    {
-        const fs::path weg = m_weg / relativ;
-        fs::create_directories(weg.parent_path());
-        std::ofstream(weg, std::ios::binary) << inhalt;
-    }
-    [[nodiscard]] const fs::path& weg() const { return m_weg; }
-
-private:
-    fs::path m_weg;
-};
 
 bool hatFunktion(const Datei& d, std::string_view name)
 {

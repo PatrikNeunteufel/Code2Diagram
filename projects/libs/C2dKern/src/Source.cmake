@@ -13,7 +13,9 @@
 #   diagramm/  die Diagramm-Modelle und ihre Ableitung aus dem Codemodell
 #   ausgabe/   die Formate (Diagramm -> Text)
 #   projekt/   ein Ordner als Projekt: Projektdatei, Suche, Lesen ueber Dateien
-#              hinweg, Aufloesen von Aufrufen (kennt sprache und modell, kein Diagramm)
+#              hinweg, Aufloesen von Aufrufen; der Aufrufgraph, weil nur das Projekt
+#              weiss, was ein Aufruf meint (kennt sprache, modell und das Modell des
+#              Aufrufgraphen — kein Diagramm kennt das Projekt)
 # ==============================================================================
 
 dbg(${DBG_OFTEN}
@@ -33,12 +35,14 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cpp/CppSprache.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Ableitung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Anordnung.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/diagramm/Aufrufgraph.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Flussdiagramm.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Ausgabe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Dot.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Drawio.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Mermaid.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Svg.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Aufrufgraph.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projekt.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projektdatei.cpp"
@@ -51,10 +55,12 @@ set(_local_headers
     "${_c2d_inc}/sprache/Sprache.hpp"
     "${_c2d_inc}/diagramm/Ableitung.hpp"
     "${_c2d_inc}/diagramm/Anordnung.hpp"
+    "${_c2d_inc}/diagramm/Aufrufgraph.hpp"
     "${_c2d_inc}/diagramm/Flussdiagramm.hpp"
     "${_c2d_inc}/diagramm/Strukturdiagramm.hpp"
     "${_c2d_inc}/diagramm/Zustandsdiagramm.hpp"
     "${_c2d_inc}/ausgabe/Ausgabe.hpp"
+    "${_c2d_inc}/projekt/Aufrufgraph.hpp"
     "${_c2d_inc}/projekt/Projekt.hpp"
     "${_c2d_inc}/projekt/Projektdatei.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Json.hpp"

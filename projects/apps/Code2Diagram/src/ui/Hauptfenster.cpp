@@ -34,6 +34,7 @@
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -266,6 +267,18 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         connect(liste, &QComboBox::currentIndexChanged, this, [this] { zeichne(); });
 
     m_vorschau->beiDoppelklick = [this](c2d::diagramm::KnotenId knoten) {
+        if (istAufrufgraph())
+        {
+            // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
+            if (knoten >= m_aufrufgraph.stellen.size()) return;
+            const Fundstelle stelle = m_aufrufgraph.stellen[knoten];
+            if (stelle.datei == kKeine)
+                statusBar()->showMessage(
+                    QStringLiteral("%1: no body in the project").arg(ausStd(m_aufrufgraph.graph.knoten[knoten].name)), 4000);
+            else
+                gehe(stelle, knoten);
+            return;
+        }
         if (knoten >= m_fluss.knoten().size()) return;
         const std::vector<Fundstelle> ziele = zieleVon(knoten);
         if (ziele.size() == 1)
@@ -287,7 +300,10 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         wahl.exec(QCursor::pos());
     };
     m_vorschau->beiKontext = [this](c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort) {
-        kontextMenue(knoten, gruppe, ort);
+        if (istAufrufgraph())
+            aufrufgraphMenue(knoten, ort);
+        else
+            kontextMenue(knoten, gruppe, ort);
     };
 
     QMenu* datei = menuBar()->addMenu(QStringLiteral("&File"));
@@ -344,9 +360,54 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     if (auto* knopf = qobject_cast<QToolButton*>(navigation->widgetForAction(m_aufruferAktion)))
         knopf->setPopupMode(QToolButton::InstantPopup);
 
+    // der Aufrufgraph: ab der gezeigten Funktion (sonst der Datei), mit Richtung, Tiefe und Fremden
+    navigation->addSeparator();
+    m_aufrufgraphAktion =
+        new QAction(style()->standardIcon(QStyle::SP_FileDialogListView), QStringLiteral("Call &graph from here"), this);
+    m_aufrufgraphAktion->setToolTip(
+        QStringLiteral("The call graph from the function shown; without one, the call graph of the file"));
+    connect(m_aufrufgraphAktion, &QAction::triggered, this, [this] {
+        if (const std::optional<Fundstelle> f = gezeigteFunktion())
+            geheZuAufrufgraph(*f);
+        else
+            zeigeAufrufgraph();
+    });
+    navigation->addAction(m_aufrufgraphAktion);
+    m_aufrufRichtung = new QComboBox(navigation);
+    m_aufrufRichtung->setObjectName(QStringLiteral("aufrufRichtung"));
+    m_aufrufRichtung->addItem(QStringLiteral("Calls"), QStringLiteral("calls"));
+    m_aufrufRichtung->addItem(QStringLiteral("Callers"), QStringLiteral("callers"));
+    m_aufrufRichtung->addItem(QStringLiteral("Both"), QStringLiteral("both"));
+    m_aufrufRichtung->setToolTip(QStringLiteral("Call graph: what the function calls, who calls it, or both"));
+    m_tiefe = new QSpinBox(navigation);
+    m_tiefe->setObjectName(QStringLiteral("tiefe"));
+    m_tiefe->setRange(0, 99);
+    m_tiefe->setValue(2);
+    m_tiefe->setPrefix(QStringLiteral("Depth: "));
+    m_tiefe->setSpecialValueText(QStringLiteral("Depth: all"));
+    m_tiefe->setToolTip(QStringLiteral("Call graph: how many levels from the function (0 = all). "
+                                       "A function at the edge that calls further shows \u2026"));
+    m_ohneFremde = new QCheckBox(QStringLiteral("Hide external calls"), navigation);
+    m_ohneFremde->setObjectName(QStringLiteral("ohneFremde"));
+    m_ohneFremde->setToolTip(QStringLiteral("Call graph: leave out calls without a body in the project "
+                                            "(library, SDK, macro); the status bar counts them"));
+    navigation->addWidget(m_aufrufRichtung);
+    navigation->addWidget(m_tiefe);
+    navigation->addWidget(m_ohneFremde);
+    const auto neuAbleiten = [this] {
+        if (!istAufrufgraph()) return;
+        leiteAufrufgraphAb();
+        zeichne();
+        zeigeLage();
+    };
+    connect(m_aufrufRichtung, &QComboBox::currentIndexChanged, this, neuAbleiten);
+    connect(m_tiefe, &QSpinBox::valueChanged, this, neuAbleiten);
+    connect(m_ohneFremde, &QCheckBox::toggled, this, neuAbleiten);
+
     QMenu* diagramm = menuBar()->addMenu(QStringLiteral("&Diagram"));
     diagramm->addAction(m_zurueckAktion);
     diagramm->addAction(m_aufruferAktion);
+    diagramm->addAction(m_aufrufgraphAktion);
     diagramm->addAction(QStringLiteral("&Remove all embeddings"), this, [this] {
         if (!loeseEinbettungen()) statusBar()->showMessage(QStringLiteral("Nothing is embedded"), 3000);
     });
@@ -473,6 +534,8 @@ void Hauptfenster::liesEin()
     m_quelleZeigt = kKeine;
     m_gezeigt.clear();
     m_verlauf.clear();
+    m_aufrufgraph = {};
+    m_aufgeklappt.clear();
     m_projektdateiAktion->setEnabled(istProjekt());
     m_meldungenAktion->setEnabled(istProjekt());
     fuelleBaum();
@@ -536,7 +599,7 @@ void Hauptfenster::liesNeu()
     zeigeDatei(index == kKeine ? 0 : index);
     // das Diagramm von vorher wieder zeigen, wenn es das noch gibt — ohne Eintrag im Verlauf
     m_ohneVerlauf = true;
-    waehle(m_auswahl, gezeigt);
+    waehleEintrag(gezeigt);
     m_ohneVerlauf = false;
 }
 
@@ -589,6 +652,9 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (!einheit.typen.empty())
             m_auswahl->addItem(QStringLiteral("Data types (%1)").arg(einheit.typen.size()),
                                QString::fromLatin1(kDatentypen));
+        if (std::any_of(einheit.funktionen.begin(), einheit.funktionen.end(),
+                        [](const c2d::modell::Funktion& f) { return f.rumpf != nullptr; }))
+            m_auswahl->addItem(QStringLiteral("Call graph of this file"), QString::fromLatin1(kAufrufgraphDatei));
     }
     {
         // im Baum die Datei markieren, ohne dass er sie noch einmal waehlt
@@ -663,11 +729,16 @@ void Hauptfenster::zeigeLage()
     const c2d::projekt::Datei& d = m_projekt.dateien[m_datei];
     const QString name = istProjekt() ? ausStd(d.pfad) : m_einzelName;
     const bool ersatz = c2d::sprache::spracheFuer(letzterName(name).toStdString()) == nullptr;
+    // die Funktionen der Auswahl: alles, was kein Automat, keine Datentypen und kein Aufrufgraph ist
+    int funktionen = 0;
+    for (const QString& eintrag : diagramme())
+        if (!eintrag.startsWith(QLatin1String(kAutomat)) && eintrag != QLatin1String(kDatentypen) &&
+            eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)))
+            ++funktionen;
     QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
                        .arg(name, ausStd(d.sprache->name()),
                             ersatz ? QStringLiteral(" (no reader for this file type)") : QString())
-                       .arg(m_auswahl->count() - static_cast<int>(m_automaten.size()) -
-                            (d.ergebnis.einheit.typen.empty() ? 0 : 1))
+                       .arg(funktionen)
                        .arg(d.ergebnis.einheit.typen.size());
     if (!m_automaten.empty()) lage += QStringLiteral(", %1 state machine(s)").arg(m_automaten.size());
     if (!d.ergebnis.meldungen.empty())
@@ -683,6 +754,20 @@ void Hauptfenster::zeigeLage()
         // wonach ein #if gefragt hat: so sieht man, welche Variante gelesen wurde und was sich waehlen laesst
         lage += QStringLiteral(" - not defined in #if: %1%2")
                     .arg(offen.mid(0, 6).join(QStringLiteral(", ")), offen.size() > 6 ? QStringLiteral(", ...") : QString());
+    }
+    if (istAufrufgraph())
+    {
+        // der Aufrufgraph: wie gross, was mehrdeutig ist, was weggelassen wurde
+        const c2d::diagramm::Aufrufgraph& g = m_aufrufgraph.graph;
+        QString graph = QStringLiteral(" | call graph: %1 node(s), %2 file(s)").arg(g.knoten.size()).arg(g.dateien.size());
+        if (!m_aufrufgraph.meldungen.empty())
+            graph += QStringLiteral(", %1 ambiguous call(s), first %2:%3: %4")
+                         .arg(m_aufrufgraph.meldungen.size())
+                         .arg(ausStd(m_aufrufgraph.meldungen.front().pfad))
+                         .arg(m_aufrufgraph.meldungen.front().meldung.ort.zeile)
+                         .arg(QString::fromStdString(m_aufrufgraph.meldungen.front().meldung.text));
+        if (m_aufrufgraph.ausgelassen != 0) graph += QStringLiteral(", %1 external call(s) hidden").arg(m_aufrufgraph.ausgelassen);
+        lage += graph;
     }
     if (istProjekt())
     {
@@ -989,7 +1074,170 @@ QStringList Hauptfenster::diagramme() const
 
 bool Hauptfenster::waehleDiagramm(const QString& name)
 {
+    return waehleEintrag(name);
+}
+
+bool Hauptfenster::waehleEintrag(const QString& name)
+{
+    if (waehle(m_auswahl, name)) return true;
+    // ein Aufrufgraph ab einer Funktion der Datei steht erst da, wenn er gezeigt wird
+    const QString praefix = QString::fromLatin1(kAufrufgraph);
+    if (!name.startsWith(praefix) || m_datei >= m_projekt.dateien.size()) return false;
+    const std::string funktion = name.mid(praefix.size()).toStdString();
+    const auto& fs = m_projekt.dateien[m_datei].ergebnis.einheit.funktionen;
+    if (std::none_of(fs.begin(), fs.end(),
+                     [&](const c2d::modell::Funktion& f) { return f.rumpf && f.vollerName() == funktion; }))
+        return false;
+    m_auswahl->addItem(QStringLiteral("Call graph from %1()").arg(name.mid(praefix.size())), name);
     return waehle(m_auswahl, name);
+}
+
+bool Hauptfenster::istAufrufgraph() const
+{
+    return m_gezeigt == QLatin1String(kAufrufgraphDatei) || m_gezeigt.startsWith(QLatin1String(kAufrufgraph));
+}
+
+bool Hauptfenster::zeigeAufrufgraph(const QString& funktion)
+{
+    if (funktion.isEmpty()) return waehleEintrag(QString::fromLatin1(kAufrufgraphDatei));
+    if (m_datei >= m_projekt.dateien.size()) return false;
+    // der Name allein oder mit Bereich; im Eintrag steht der volle
+    const std::string name = funktion.toStdString();
+    for (const c2d::modell::Funktion& f : m_projekt.dateien[m_datei].ergebnis.einheit.funktionen)
+        if (f.rumpf && (f.name == name || f.vollerName() == name))
+            return waehleEintrag(QString::fromLatin1(kAufrufgraph) + QString::fromStdString(f.vollerName()));
+    return false;
+}
+
+bool Hauptfenster::setzeAufrufRichtung(const QString& name)
+{
+    return waehle(m_aufrufRichtung, name);  // leitet ueber das Signal neu ab
+}
+
+void Hauptfenster::setzeTiefe(int tiefe)
+{
+    m_tiefe->setValue(tiefe);  // leitet ueber das Signal neu ab
+}
+
+int Hauptfenster::tiefe() const
+{
+    return m_tiefe->value();
+}
+
+void Hauptfenster::setzeOhneFremde(bool ohne)
+{
+    m_ohneFremde->setChecked(ohne);  // leitet ueber das Signal neu ab
+}
+
+bool Hauptfenster::klappeAuf(const QString& funktion)
+{
+    if (!istAufrufgraph()) return false;
+    const std::string name = funktion.toStdString();
+    const c2d::diagramm::Aufrufgraph& g = m_aufrufgraph.graph;
+    for (std::size_t k = 0; k < g.knoten.size(); ++k)
+    {
+        const c2d::diagramm::AufrufKnoten& knoten = g.knoten[k];
+        if (knoten.art != c2d::diagramm::AufrufKnotenArt::Funktion || knoten.name != name) continue;
+        const Fundstelle stelle = m_aufrufgraph.stellen[k];
+        if (std::none_of(m_aufgeklappt.begin(), m_aufgeklappt.end(), [&](const Fundstelle& a) { return a == stelle; }))
+            m_aufgeklappt.push_back(stelle);
+        leiteAufrufgraphAb();
+        zeichne();
+        zeigeLage();
+        return true;
+    }
+    return false;
+}
+
+QStringList Hauptfenster::aufrufgraphKnoten() const
+{
+    QStringList aus;
+    if (istAufrufgraph())
+        for (const c2d::diagramm::AufrufKnoten& k : m_aufrufgraph.graph.knoten) aus << QString::fromStdString(knotenText(k));
+    return aus;
+}
+
+void Hauptfenster::leiteAufrufgraphAb()
+{
+    m_aufrufgraph = {};
+    if (!istAufrufgraph() || m_datei >= m_projekt.dateien.size()) return;
+    c2d::projekt::AufrufgraphOptionen o;
+    const QString richtung = m_aufrufRichtung->currentData().toString();
+    o.richtung = richtung == QLatin1String("callers") ? c2d::projekt::AufrufRichtung::Aufrufer
+                 : richtung == QLatin1String("both")  ? c2d::projekt::AufrufRichtung::Beide
+                                                      : c2d::projekt::AufrufRichtung::Gerufene;
+    o.tiefe = m_tiefe->value();
+    o.ohneFremde = m_ohneFremde->isChecked();
+    o.aufgeklappt = m_aufgeklappt;
+    if (m_gezeigt == QLatin1String(kAufrufgraphDatei))
+    {
+        m_aufrufgraph = c2d::projekt::aufrufgraphDerDatei(m_projekt, m_datei, o);
+        return;
+    }
+    const std::string name = m_gezeigt.mid(static_cast<qsizetype>(std::string_view(kAufrufgraph).size())).toStdString();
+    const auto& fs = m_projekt.dateien[m_datei].ergebnis.einheit.funktionen;
+    for (std::size_t f = 0; f < fs.size(); ++f)
+        if (fs[f].rumpf && fs[f].vollerName() == name)
+        {
+            m_aufrufgraph = c2d::projekt::aufrufgraphAb(m_projekt, {m_datei, f}, o);
+            return;
+        }
+}
+
+void Hauptfenster::geheZuAufrufgraph(const Fundstelle& stelle, c2d::diagramm::KnotenId von)
+{
+    const QString name =
+        QString::fromLatin1(kAufrufgraph) + QString::fromStdString(c2d::projekt::funktion(m_projekt, stelle).vollerName());
+    if (stelle.datei == m_datei && name == m_gezeigt) return;
+    if (!m_gezeigt.isEmpty()) m_verlauf << Stelle{m_datei, m_gezeigt, von};
+    m_ohneVerlauf = true;
+    if (stelle.datei != m_datei) zeigeDatei(stelle.datei);
+    waehleEintrag(name);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+}
+
+void Hauptfenster::aufrufgraphMenue(c2d::diagramm::KnotenId knoten, const QPoint& ort)
+{
+    QMenu menue(this);
+    if (knoten < m_aufrufgraph.stellen.size())
+    {
+        const c2d::diagramm::AufrufKnoten& k = m_aufrufgraph.graph.knoten[knoten];
+        const Fundstelle stelle = m_aufrufgraph.stellen[knoten];
+        const QString name = QString::fromStdString(k.name);
+        if (stelle.datei == kKeine)
+            menue.addAction(k.art == c2d::diagramm::AufrufKnotenArt::Makro ? QStringLiteral("%1: a macro of the project").arg(name)
+                                                                          : QStringLiteral("%1: no body in the project").arg(name))
+                ->setEnabled(false);
+        else
+        {
+            const QString wo = stelle.datei == m_datei ? QString()
+                                                       : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[stelle.datei].pfad));
+            menue.addAction(QStringLiteral("Show the flow of %1()%2").arg(name, wo), this, [this, stelle, knoten] { gehe(stelle, knoten); });
+            menue.addAction(QStringLiteral("Call graph from %1()%2").arg(name, wo), this,
+                            [this, stelle, knoten] { geheZuAufrufgraph(stelle, knoten); })
+                ->setEnabled(!k.wurzel);
+            const bool auf = std::any_of(m_aufgeklappt.begin(), m_aufgeklappt.end(), [&](const Fundstelle& a) { return a == stelle; });
+            if (k.weiter)
+                menue.addAction(QStringLiteral("Expand one level"), this, [this, name] { klappeAuf(name); });
+            if (auf)
+                menue.addAction(QStringLiteral("Collapse"), this, [this, stelle] {
+                    std::erase_if(m_aufgeklappt, [&](const Fundstelle& a) { return a == stelle; });
+                    leiteAufrufgraphAb();
+                    zeichne();
+                    zeigeLage();
+                });
+            if (k.zeile > 0)
+                menue.addAction(QStringLiteral("Show line %1 in the source%2").arg(k.zeile).arg(wo), this,
+                                [this, stelle, zeile = k.zeile] { zeigeZeile(stelle.datei, zeile); });
+        }
+    }
+    if (!m_verlauf.isEmpty())
+    {
+        if (!menue.isEmpty()) menue.addSeparator();
+        menue.addAction(QStringLiteral("Back to %1").arg(m_verlauf.last().diagramm), this, [this] { zurueck(); });
+    }
+    if (!menue.isEmpty()) menue.exec(ort);
 }
 
 QString Hauptfenster::diagramm() const
@@ -1003,7 +1251,7 @@ bool Hauptfenster::zurueck()
     const Stelle davor = m_verlauf.takeLast();
     m_ohneVerlauf = true;
     if (davor.datei != m_datei) zeigeDatei(davor.datei);
-    const bool gefunden = waehle(m_auswahl, davor.diagramm);
+    const bool gefunden = waehleEintrag(davor.diagramm);
     m_ohneVerlauf = false;
     // zurueck zum Aufruf, von dem man kam: er ist hervorgehoben
     if (gefunden && m_gezeigt == davor.diagramm) m_vorschau->markiere(davor.knoten);
@@ -1259,8 +1507,12 @@ QString Hauptfenster::dateiFilter()
 void Hauptfenster::baueNeu()
 {
     using namespace c2d::diagramm;
+    const QString bisher = m_gezeigt;
     m_gezeigt = m_auswahl->currentData().toString();
     m_fluss = Flussdiagramm();
+    // ein anderer Aufrufgraph beginnt zugeklappt
+    if (m_gezeigt != bisher) m_aufgeklappt.clear();
+    leiteAufrufgraphAb();
     if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
     {
         const std::string name = m_gezeigt.toStdString();
@@ -1274,6 +1526,7 @@ void Hauptfenster::baueNeu()
     zeichne();
     aktualisiereLeiste();
     aktualisiereKonfiguration();
+    if (istAufrufgraph()) zeigeLage();
 }
 
 void Hauptfenster::zeichne()
@@ -1296,6 +1549,12 @@ void Hauptfenster::zeichne()
         const Strukturdiagramm typen = strukturVon(m_projekt.dateien[m_datei].ergebnis.einheit);
         m_vorschau->zeige(typen, nachRechts);
         m_text->setPlainText(QString::fromStdString(format->schreibe(typen, optionen)));
+        return;
+    }
+    if (istAufrufgraph())
+    {
+        m_vorschau->zeige(m_aufrufgraph.graph, nachRechts);
+        m_text->setPlainText(QString::fromStdString(format->schreibe(m_aufrufgraph.graph, optionen)));
         return;
     }
     if (const qsizetype automat = m_automatNamen.indexOf(m_gezeigt); automat >= 0)
@@ -1334,6 +1593,8 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f, knoten] { gehe(f, knoten); });
                 menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
                     ->setEnabled(!traegtSchon);
+                menue.addAction(QStringLiteral("Call graph from %1()%2").arg(voll, wo), this,
+                                [this, f, knoten] { geheZuAufrufgraph(f, knoten); });
             }
             else if (gemeint.size() > 1)
             {
@@ -1376,7 +1637,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                                : QStringLiteral(" (%1)").arg(ausStd(m_projekt.dateien[davor.datei].pfad));
         menue.addAction(QStringLiteral("Back to %1%2").arg(davor.diagramm, wo), this, [this] { zurueck(); });
     }
-    if (gezeigteFunktion())
+    if (const std::optional<Fundstelle> ich = gezeigteFunktion())
     {
         // wer ruft die gezeigte Funktion? erst beim Oeffnen gesucht
         QMenu* von = menue.addMenu(QStringLiteral("Called from"));
@@ -1384,6 +1645,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
             von->clear();
             fuelleAufruferMenue(von);
         });
+        menue.addAction(QStringLiteral("Call graph from here"), this, [this, stelle = *ich] { geheZuAufrufgraph(stelle); });
     }
     if (!menue.isEmpty()) menue.exec(ort);
 }

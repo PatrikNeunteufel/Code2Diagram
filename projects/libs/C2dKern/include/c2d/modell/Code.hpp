@@ -131,6 +131,23 @@ struct Funktion
 /// Was der Rumpf einer Funktion ruft, ueber alle Anweisungen, jeder einmal.
 [[nodiscard]] std::vector<std::string> aufrufeVon(const Funktion& funktion);
 
+/// Ein Aufruf im Rumpf, mit der Bedingung der Uebersetzung, unter der er steht.
+struct Aufrufstelle
+{
+    std::string name;  ///< wie bei aufrufeIn
+    int zeile = 0;     ///< die Zeile der ersten Anweisung, die so ruft
+    /// Die innerste Bedingung, unter der er steht: die volle Bedingung eines Zweigs von
+    /// Varianten, der nicht gilt, oder eines Bereichs (AnweisungArt::Bedingt). Leer = keine
+    /// — auch im geltenden Zweig von Varianten.
+    std::string bedingung;
+    /// false: er steht in einem Zweig von Varianten, der mit den Definitionen nicht gilt.
+    bool gilt = true;
+};
+
+/// Was der Rumpf einer Funktion ruft, mit den Bedingungen: jede Verbindung aus Name,
+/// Bedingung und `gilt` einmal, in der Reihenfolge des Rumpfs.
+[[nodiscard]] std::vector<Aufrufstelle> aufrufstellenVon(const Funktion& funktion);
+
 enum class TypArt
 {
     Struktur,

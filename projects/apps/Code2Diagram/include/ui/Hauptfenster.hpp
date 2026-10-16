@@ -17,11 +17,18 @@
  * Diagramm (Back fuehrt zurueck), das Kontextmenue bettet ihren Ablauf
  * umrahmt ein oder nimmt ihn wieder heraus. Meint ein Aufruf mehr als eine
  * Funktion (projekt::kandidaten), waehlt man im Menue, welche.
+ *
+ * Der Aufrufgraph (projekt/Aufrufgraph.hpp) steht als `calls` (die Datei) und
+ * `calls:<Funktion>` (ab ihr) zur Wahl; Richtung, Tiefe und ob Fremde zu sehen
+ * sind, stellt die Leiste ein. Ein Doppelklick auf eine Funktion zeigt ihren
+ * Ablauf, Back fuehrt zurueck; das Kontextmenue klappt eine Funktion an der
+ * Grenze eine Stufe auf.
  */
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
+#include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
 
 #include <QImage>
@@ -39,6 +46,7 @@ class QComboBox;
 class QLineEdit;
 class QMenu;
 class QPlainTextEdit;
+class QSpinBox;
 class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -57,6 +65,10 @@ public:
     /// So beginnt der Name eines Zustandsautomaten: `automat:<Variable>`
     /// (bei zweien mit derselben Variable `automat:<Variable>@<Funktion>`).
     static constexpr const char* kAutomat = "automat:";
+    /// Der Aufrufgraph der gewaehlten Datei.
+    static constexpr const char* kAufrufgraphDatei = "calls";
+    /// So beginnt der Name des Aufrufgraphen ab einer Funktion: `calls:<Funktion>` (mit Bereich).
+    static constexpr const char* kAufrufgraph = "calls:";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -105,10 +117,28 @@ public:
 
     /// Was sich zeigen laesst: die Funktionen mit Rumpf der gewaehlten Datei
     /// (mit Bereich: `Klasse::methode`), dann die erkannten Zustandsautomaten
-    /// (`automat:...`), dann `types`, wenn es Datentypen gibt.
+    /// (`automat:...`), dann `types`, wenn es Datentypen gibt, dann `calls`, wenn
+    /// es Funktionen gibt, und jeder Aufrufgraph `calls:...`, der schon gezeigt wurde.
     [[nodiscard]] QStringList diagramme() const;
-    /// Das Diagramm wechseln; das bisherige kommt in den Verlauf fuer zurueck(). false = so heisst keines.
+    /// Das Diagramm wechseln; das bisherige kommt in den Verlauf fuer zurueck(). Auch
+    /// `calls:<Funktion>` fuer jede Funktion der Datei. false = so heisst keines.
     bool waehleDiagramm(const QString& name);
+
+    /// Den Aufrufgraph zeigen: ab der Funktion `funktion` der gewaehlten Datei (Name, auch
+    /// mit Bereich), leer = den der Datei. false = keine solche Funktion.
+    bool zeigeAufrufgraph(const QString& funktion = {});
+    /// `calls` (was gerufen wird), `callers` (wer ruft) oder `both`; false = so heisst keine.
+    bool setzeAufrufRichtung(const QString& name);
+    /// Wie viele Stufen der Aufrufgraph zeigt; 0 = alle.
+    void setzeTiefe(int tiefe);
+    [[nodiscard]] int tiefe() const;
+    /// Aufrufe ohne Funktion im Projekt (Bibliothek, Makro) im Aufrufgraph weglassen.
+    void setzeOhneFremde(bool ohne);
+    /// Im gezeigten Aufrufgraph eine Funktion an der Grenze eine Stufe aufklappen.
+    /// false = kein Aufrufgraph, oder keine Funktion dieses Namens darin.
+    bool klappeAuf(const QString& funktion);
+    /// Die Knoten des gezeigten Aufrufgraphen, je ihr Text (an der Grenze mit ` …`); leer = keiner gezeigt.
+    [[nodiscard]] QStringList aufrufgraphKnoten() const;
     [[nodiscard]] QString diagramm() const;
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
@@ -223,6 +253,14 @@ private:
     void markiereAufrufVon(const c2d::projekt::Fundstelle& ziel);
     /// Knopf Back und Menue Called from auf den Stand bringen.
     void aktualisiereLeiste();
+    /// Den Eintrag `name` waehlen; ein Aufrufgraph `calls:<Funktion>` der Datei wird dafuer angelegt.
+    bool waehleEintrag(const QString& name);
+    [[nodiscard]] bool istAufrufgraph() const;
+    /// Den gezeigten Aufrufgraph neu ableiten (Richtung, Tiefe, Fremde, aufgeklappt).
+    void leiteAufrufgraphAb();
+    /// Zum Aufrufgraph ab dieser Funktion, auch in einer anderen Datei; `von` wie bei gehe().
+    void geheZuAufrufgraph(const c2d::projekt::Fundstelle& stelle, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    void aufrufgraphMenue(c2d::diagramm::KnotenId knoten, const QPoint& ort);
     void fuelleAufruferMenue(QMenu* menue);
     bool betteEin(c2d::diagramm::KnotenId knoten, const c2d::projekt::Fundstelle& gerufen);
     [[nodiscard]] QString projektdateiPfad() const;
@@ -248,6 +286,10 @@ private:
     QAction* m_aufruferAktion = nullptr;
     QAction* m_projektdateiAktion = nullptr;
     QAction* m_meldungenAktion = nullptr;
+    QAction* m_aufrufgraphAktion = nullptr;
+    QComboBox* m_aufrufRichtung = nullptr;
+    QSpinBox* m_tiefe = nullptr;
+    QCheckBox* m_ohneFremde = nullptr;
 
     QString m_ordner;      ///< der Ordner des Projekts; leer = eine einzelne Datei
     QString m_einzelText;  ///< bei einer einzelnen Datei: ihr Text, zum neu Lesen
@@ -259,7 +301,9 @@ private:
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
-    QString m_gezeigt;                      ///< wofuer m_fluss gebaut ist
+    c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph
+    std::vector<c2d::projekt::Fundstelle> m_aufgeklappt;  ///< darin aufgeklappt
+    QString m_gezeigt;                      ///< wofuer m_fluss (m_aufrufgraph) gebaut ist
     QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()
     bool m_ohneVerlauf = false;             ///< der Wechsel gerade ist ein zurueck() oder ein Sprung
 };

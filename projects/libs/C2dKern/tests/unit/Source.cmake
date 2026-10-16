@@ -20,10 +20,12 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Varianten.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Rahmen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Schalter.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Aufrufgraph.cpp"
 )
 
 set(_local_headers
     "${CMAKE_CURRENT_LIST_DIR}/Beispiele.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/TempOrdner.hpp"
 )
 
 list(APPEND ${TARGET_NAME}_SOURCES ${_local_sources})

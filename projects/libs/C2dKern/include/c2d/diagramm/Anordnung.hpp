@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
@@ -67,13 +68,14 @@ struct FlussAnordnung
     /// nah an der Stelle, wo sie sich von den anderen Kanten ihrer Quelle trennt
     std::vector<Punkt> beschriftungen;
     std::vector<Rechteck> gruppen;   ///< je Gruppe der Rahmen um alles, was in ihr liegt; oben Platz fuer den Titel
-    /// Je Bedingung, die einen Rahmen hat, eine Zeile rechts oben neben dem
-    /// Diagramm: ein Farbfeld und dahinter die Bedingung.
+    /// Je Bedingung, die eine Farbe hat (ein Rahmen, im Aufrufgraph eine Kante), eine
+    /// Zeile rechts oben neben dem Diagramm: ein Farbfeld und dahinter die Bedingung.
     struct Legende
     {
-        Rechteck feld;         ///< das Farbfeld
-        Punkt text;            ///< wo der Text beginnt: links, auf halber Hoehe
-        std::size_t gruppe;    ///< ein Rahmen dieser Bedingung (Titel und Farbe)
+        Rechteck feld;      ///< das Farbfeld
+        Punkt text;         ///< wo der Text beginnt: links, auf halber Hoehe
+        std::string titel;  ///< die Bedingung
+        std::size_t farbe;  ///< ihre Farbe (rahmenFarbe)
     };
     std::vector<Legende> legende;
     double breite = 0;
@@ -96,6 +98,14 @@ struct StrukturAnordnung
 /// des Modells). Der Punkt "von aussen" ist klein; Beschriftungen laenger als
 /// `maxZeilenLaenge` zaehlen so lang, wie ein Format sie gekuerzt zeigt.
 [[nodiscard]] FlussAnordnung ordneAn(const Zustandsdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+
+/// Ein Aufrufgraph ordnet sich wie ein Flussdiagramm: je Knoten ein Knoten, je Kante
+/// eine Kante (in der Reihenfolge des Modells), beschriftet mit `beschriftung`. Mit
+/// Rahmen je Datei (Aufrufgraph::mitRahmen) steht jede Datei in einem Band quer zur
+/// Richtung — nach unten: einer Spalte —, die Bänder nebeneinander in der Reihenfolge
+/// der Dateien, Fremd und Makro im letzten; so umfasst kein Rahmen einen fremden
+/// Knoten. `gruppen` je Datei. Die Legende nennt die Bedingungen der Kanten mit Farbe.
+[[nodiscard]] FlussAnordnung ordneAn(const Aufrufgraph& graph, const AnordnungOptionen& optionen = {});
 
 /// Wie viele Zeichen des Titels in den Rahmen `rahmen` passen (mindestens ein
 /// paar): wer zeichnet, kuerzt ihn darauf — ganz steht er in der Legende.

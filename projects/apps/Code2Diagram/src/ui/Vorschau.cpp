@@ -49,6 +49,14 @@ QPointF alsPunkt(const Punkt& p)
     return {p.x, p.y};
 }
 
+/// Die Farbe einer Bedingung (rahmenFarbe); kKeine: keine (ungueltig).
+QColor farbeVon(std::size_t farbe)
+{
+    if (farbe == kKeine) return {};
+    const std::string_view f = rahmenFarbe(farbe);
+    return QColor(QString::fromLatin1(f.data(), static_cast<qsizetype>(f.size())));
+}
+
 /// Zeichnet auf eine Szene, mit den Farben der Palette (hell wie dunkel lesbar).
 class Zeichner
 {
@@ -138,6 +146,41 @@ public:
         text(zeilen.join(QLatin1Char('\n')), r)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
     }
 
+    /// Ein Knoten des Aufrufgraphen: eine Funktion wie ein Aufruf im Ablauf (der Ausgangspunkt
+    /// getoent und kraeftig umrandet), Fremd grau und kursiv, ein Makro dazu gestrichelt.
+    void aufrufKnoten(KnotenId id, const AufrufKnoten& k, const QRectF& r, const QColor& grau)
+    {
+        QPainterPath form;
+        form.addRect(r);
+        QPen stift = m_strich;
+        QColor pinsel = m_flaeche;
+        const bool funktion = k.art == AufrufKnotenArt::Funktion;
+        if (funktion)
+        {
+            form.moveTo(r.left() + 8, r.top());
+            form.lineTo(r.left() + 8, r.bottom());
+            form.moveTo(r.right() - 8, r.top());
+            form.lineTo(r.right() - 8, r.bottom());
+            if (k.wurzel)
+            {
+                stift.setWidthF(2.4);
+                pinsel = m_getoent;
+            }
+        }
+        else
+        {
+            stift = QPen(grau, 1.2, k.art == AufrufKnotenArt::Makro ? Qt::DashLine : Qt::SolidLine);
+            pinsel = m_getoent;
+        }
+        QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
+        stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        stueck->setZValue(2);
+        stueck->setToolTip(funktion ? QStringLiteral("Double-click: show its flow. Right-click: more.")
+                                    : k.art == AufrufKnotenArt::Makro ? QStringLiteral("A macro of the project")
+                                                                       : QStringLiteral("No body in the project"));
+        text(gekuerzt(knotenText(k)), r, false, !funktion)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+    }
+
     /// Ein Zustand: ein Kasten mit runden Ecken; der Punkt von aussen: ein gefuellter Kreis.
     void zustand(const Zustand& z, const QRectF& r)
     {
@@ -154,14 +197,16 @@ public:
         text(gekuerzt(z.name), r);
     }
 
-    /// Ein Linienzug mit Pfeilspitze am Ende; `inhalt` steht an `ort`.
-    void kante(const Linienzug& linie, const QString& inhalt, const Punkt& ort)
+    /// Ein Linienzug mit Pfeilspitze am Ende; `inhalt` steht an `ort`. `stift` gueltig
+    /// (Breite > 0): so gezogen — gestrichelt, gepunktet, in einer Farbe.
+    void kante(const Linienzug& linie, const QString& inhalt, const Punkt& ort, const QPen& stift = QPen(Qt::NoPen))
     {
         if (linie.size() < 2) return;
+        const QPen& zug = stift.style() == Qt::NoPen ? m_strich : stift;
         QPainterPath weg(alsPunkt(linie[0]));
         for (std::size_t i = 1; i < linie.size(); ++i) weg.lineTo(alsPunkt(linie[i]));
-        m_szene.addPath(weg, m_strich)->setZValue(1);
-        spitze(alsPunkt(linie[linie.size() - 2]), alsPunkt(linie.back()), true);
+        m_szene.addPath(weg, zug)->setZValue(1);
+        spitze(alsPunkt(linie[linie.size() - 2]), alsPunkt(linie.back()), true, 9, zug.color());
 
         if (inhalt.isEmpty()) return;
         // die Beschriftung auf einem Feld in der Farbe des Grunds: die Linie laeuft nicht durch die Schrift
@@ -172,16 +217,17 @@ public:
         m_szene.addRect(schild->sceneBoundingRect().adjusted(-2, 0, 2, 0), Qt::NoPen, m_flaeche)->setZValue(4);
     }
 
-    /// Ein Dreieck am Punkt `an`, das von `von` her zeigt; gefuellt oder hohl.
-    void spitze(QPointF von, QPointF an, bool gefuellt, double laenge = 9)
+    /// Ein Dreieck am Punkt `an`, das von `von` her zeigt; gefuellt oder hohl, in `farbe` (ungueltig: die des Strichs).
+    void spitze(QPointF von, QPointF an, bool gefuellt, double laenge = 9, QColor farbe = QColor())
     {
+        if (!farbe.isValid()) farbe = m_strich.color();
         const double winkel = std::atan2(an.y() - von.y(), an.x() - von.x());
         const auto ecke = [&](double drehung) {
             return QPointF(an.x() - laenge * std::cos(winkel + drehung), an.y() - laenge * std::sin(winkel + drehung));
         };
         QPolygonF dreieck;
         dreieck << an << ecke(0.42) << ecke(-0.42);
-        m_szene.addPolygon(dreieck, m_strich, gefuellt ? QBrush(m_strich.color()) : QBrush(m_flaeche))->setZValue(2);
+        m_szene.addPolygon(dreieck, QPen(farbe, m_strich.widthF()), gefuellt ? QBrush(farbe) : QBrush(m_flaeche))->setZValue(2);
     }
 
     /// Eine Raute am Punkt `an`, auf der Linie nach `nach` (der Besitzer einer Komposition).
@@ -344,11 +390,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
 
     Zeichner z(*scene(), palette());
     const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
-    const auto farbe = [&](std::size_t g) {
-        if (farben[g] == kKeine) return QColor();
-        const std::string_view f = rahmenFarbe(farben[g]);
-        return QColor(QString::fromLatin1(f.data(), static_cast<qsizetype>(f.size())));
-    };
+    const auto farbe = [&](std::size_t g) { return farbeVon(farben[g]); };
     for (std::size_t g = 0; g < a.gruppen.size(); ++g)
     {
         // der Titel einer Bedingung passt in seinen Rahmen — ganz steht er in der Legende und im Tooltip
@@ -360,7 +402,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
         z.rahmen(g, kurz, alsRect(a.gruppen[g]), farbe(g), titel);
     }
     for (const FlussAnordnung::Legende& l : a.legende)
-        z.legende(alsRect(l.feld), farbe(l.gruppe), gekuerzt(diagramm.gruppen()[l.gruppe].titel), alsPunkt(l.text));
+        z.legende(alsRect(l.feld), farbeVon(l.farbe), gekuerzt(l.titel), alsPunkt(l.text));
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
@@ -387,6 +429,44 @@ void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.knoten.size());
+}
+
+void Vorschau::zeige(const Aufrufgraph& graph, bool nachRechts)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.nachRechts = nachRechts;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const FlussAnordnung a = ordneAn(graph, optionen);
+
+    Zeichner z(*scene(), palette());
+    // je Datei ein Rahmen mit ihrem Pfad; nach unten hat das Band ihm Platz gelassen
+    for (std::size_t d = 0; d < a.gruppen.size() && d < graph.dateien.size(); ++d)
+    {
+        const QString pfad = QString::fromStdString(graph.dateien[d]);
+        const auto passt = static_cast<qsizetype>(titelZeichen(a.gruppen[d], optionen));
+        z.rahmen(d, pfad.size() <= passt ? pfad : pfad.left(passt - 3) + QStringLiteral("..."), alsRect(a.gruppen[d]),
+                 QColor(), pfad);
+    }
+    for (const FlussAnordnung::Legende& l : a.legende)
+        z.legende(alsRect(l.feld), farbeVon(l.farbe), gekuerzt(l.titel), alsPunkt(l.text));
+    // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
+    const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
+    for (std::size_t e = 0; e < a.kanten.size(); ++e)
+    {
+        const AufrufKante& k = graph.kanten[e];
+        QPen stift(farben[e] == kKeine ? palette().color(QPalette::Text) : farbeVon(farben[e]), 1.2);
+        if (!k.gilt) stift.setStyle(Qt::DotLine);
+        else if (k.art == AufrufKantenArt::Mehrdeutig) stift.setStyle(Qt::DashLine);
+        z.kante(a.kanten[e], gekuerzt(beschriftung(k)), a.beschriftungen[e], stift);
+    }
+    const QColor grau = palette().color(QPalette::Mid);
+    for (std::size_t i = 0; i < a.knoten.size(); ++i) z.aufrufKnoten(i, graph.knoten[i], alsRect(a.knoten[i]), grau);
+    for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
+
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.knoten.size());
+    m_rahmen = static_cast<int>(a.gruppen.size());
 }
 
 void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts)

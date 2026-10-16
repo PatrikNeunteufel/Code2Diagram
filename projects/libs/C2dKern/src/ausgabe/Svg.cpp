@@ -76,12 +76,14 @@ std::string kopf(std::string_view titel, double breite, double hoehe)
            "    .linie { fill: none; }\n"
            "    .spitze { fill: #202020; }\n"
            "    .rahmen { fill: none; stroke: #8a8a8a; stroke-width: 1.2; stroke-dasharray: 5 4; }\n"
+           "    .fremd { fill: #f2f2f2; stroke: #8a8a8a; stroke-width: 1.2; }\n"
            "    text { fill: #202020; }\n"
            "    @media (prefers-color-scheme: dark) {\n"
            "      .grund, .flaeche, .hohl, .schild { fill: #2b2b2b; }\n"
            "      .getoent { fill: #3a3a3a; }\n"
            "      .flaeche, .getoent, .linie, .spitze, .hohl { stroke: #dcdcdc; }\n"
            "      .spitze { fill: #dcdcdc; }\n"
+           "      .fremd { fill: #333333; stroke: #9a9a9a; }\n"
            "      text { fill: #dcdcdc; }\n"
            "    }\n"
            "  </style>\n"
@@ -109,15 +111,16 @@ std::string textLinks(std::string_view zeile, double x, double oben, double zeil
     return aus + ">" + xml(zeile) + "</text>\n";
 }
 
-/// Ein Dreieck an `an`, das von `von` her zeigt.
-std::string spitze(Punkt von, Punkt an, bool gefuellt, double laenge = kSpitze)
+/// Ein Dreieck an `an`, das von `von` her zeigt; `stil` steht als Attribut dabei (etwa eine Farbe).
+std::string spitze(Punkt von, Punkt an, bool gefuellt, double laenge = kSpitze, std::string_view stil = {})
 {
     const double winkel = std::atan2(an.y - von.y, an.x - von.x);
     const auto ecke = [&](double drehung) {
         return Punkt{an.x - laenge * std::cos(winkel + drehung), an.y - laenge * std::sin(winkel + drehung)};
     };
     return "  <polygon class=\"" + std::string(gefuellt ? "spitze" : "hohl") + "\" points=\"" +
-           punkte({an, ecke(kSpitzeWinkel), ecke(-kSpitzeWinkel)}) + "\"/>\n";
+           punkte({an, ecke(kSpitzeWinkel), ecke(-kSpitzeWinkel)}) + "\"" + (stil.empty() ? "" : " " + std::string(stil)) +
+           "/>\n";
 }
 
 /// Eine gefuellte Raute an `an`, auf der Linie nach `nach` (der Besitzer einer Komposition).
@@ -144,6 +147,45 @@ std::string rechteckMit(const Rechteck& r, std::string_view klasse, const std::s
 {
     std::string aus = rechteck(r, klasse);
     return aus.insert(aus.size() - 3, " " + stil);  // vor "/>\n"
+}
+
+/// Rand, Titel und ein Hauch in der Flaeche in der Farbe einer Bedingung.
+std::string flaechenStil(std::size_t farbe)
+{
+    const std::string f(rahmenFarbe(farbe));
+    return "style=\"fill:" + f + ";fill-opacity:0.08;stroke:" + f + "\"";
+}
+
+std::string textStil(std::size_t farbe)
+{
+    return "style=\"fill:" + std::string(rahmenFarbe(farbe)) + "\"";
+}
+
+/// Je Bedingung ein Farbfeld und ihr Text.
+std::string legende(const FlussAnordnung& a, const AnordnungOptionen& o)
+{
+    std::string aus;
+    for (const FlussAnordnung::Legende& l : a.legende)
+    {
+        aus += rechteckMit(l.feld, "rahmen", flaechenStil(l.farbe));
+        aus += textLinks(kuerze(l.titel, o.maxZeilenLaenge), l.text.x, l.text.y - o.zeilenHoehe / 2, o.zeilenHoehe);
+    }
+    return aus;
+}
+
+/// Ein Titel auf einem Schild oben links im Rahmen `r`.
+std::string rahmenTitel(const std::string& text, const Rechteck& r, const AnordnungOptionen& o, const std::string& stil)
+{
+    return rechteck({r.x + 5, r.y + 4, static_cast<double>(zeichen(text)) * o.zeichenBreite + 6, o.zeilenHoehe}, "schild") +
+           textLinks(text, r.x + 8, r.y + 4, o.zeilenHoehe, stil);
+}
+
+/// Die Beschriftung einer Kante auf einem Schild um `m`.
+std::string schild(const std::string& inhalt, Punkt m, const AnordnungOptionen& o)
+{
+    const double breite = static_cast<double>(zeichen(inhalt)) * o.zeichenBreite + 4;
+    return rechteck({m.x - breite / 2, m.y - kSchildHoehe / 2, breite, kSchildHoehe}, "schild") +
+           textMittig({inhalt}, m, o.zeilenHoehe);
 }
 
 std::string knoten(const Knoten& k, const Rechteck& r, const AnordnungOptionen& o)
@@ -231,15 +273,10 @@ public:
         // hinten die Rahmen, dann die Kanten, darauf die Knoten, vorn die Beschriftungen. Ein
         // Rahmen einer Bedingung traegt ihre Farbe (Rand, Titel, ein Hauch in der Flaeche).
         const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
-        const auto flaechenStil = [&](std::size_t g) {
-            const std::string f(rahmenFarbe(farben[g]));
-            return "style=\"fill:" + f + ";fill-opacity:0.08;stroke:" + f + "\"";
-        };
-        const auto textStil = [&](std::size_t g) { return "style=\"fill:" + std::string(rahmenFarbe(farben[g])) + "\""; };
         for (std::size_t g = 0; g < a.gruppen.size(); ++g)
         {
             const bool bedingung = farben[g] != kKeine;
-            aus += bedingung ? rechteckMit(a.gruppen[g], "rahmen", flaechenStil(g)) : rechteck(a.gruppen[g], "rahmen");
+            aus += bedingung ? rechteckMit(a.gruppen[g], "rahmen", flaechenStil(farben[g])) : rechteck(a.gruppen[g], "rahmen");
         }
         // die Titel nach den Kanten, auf einem Schild: eine Kante, die in den Rahmen laeuft, geht hinter ihm durch
         std::string titel;
@@ -249,17 +286,10 @@ public:
             // der Titel einer Bedingung passt in seinen Rahmen — ganz steht er in der Legende
             const std::string text =
                 kuerze(diagramm.gruppen()[g].titel, farben[g] != kKeine ? titelZeichen(r, o) : optionen.maxZeilenLaenge);
-            titel += rechteck({r.x + 5, r.y + 4, static_cast<double>(zeichen(text)) * o.zeichenBreite + 6, o.zeilenHoehe},
-                              "schild");
-            titel += textLinks(text, r.x + 8, r.y + 4, o.zeilenHoehe,
-                               farben[g] != kKeine ? "font-style=\"italic\" " + textStil(g) : "font-style=\"italic\"");
+            titel += rahmenTitel(text, r, o,
+                                 farben[g] != kKeine ? "font-style=\"italic\" " + textStil(farben[g]) : "font-style=\"italic\"");
         }
-        for (const FlussAnordnung::Legende& l : a.legende)
-        {
-            aus += rechteckMit(l.feld, "rahmen", flaechenStil(l.gruppe));
-            aus += textLinks(kuerze(diagramm.gruppen()[l.gruppe].titel, optionen.maxZeilenLaenge), l.text.x,
-                             l.text.y - o.zeilenHoehe / 2, o.zeilenHoehe);
-        }
+        aus += legende(a, o);
         for (const Linienzug& l : a.kanten)
         {
             if (l.size() < 2) continue;
@@ -271,11 +301,7 @@ public:
         for (std::size_t e = 0; e < diagramm.kanten().size(); ++e)
         {
             const std::string& inhalt = diagramm.kanten()[e].beschriftung;
-            if (inhalt.empty()) continue;
-            const Punkt m = a.beschriftungen[e];
-            const double breite = static_cast<double>(zeichen(inhalt)) * o.zeichenBreite + 4;
-            aus += rechteck({m.x - breite / 2, m.y - kSchildHoehe / 2, breite, kSchildHoehe}, "schild");
-            aus += textMittig({inhalt}, m, o.zeilenHoehe);
+            if (!inhalt.empty()) aus += schild(inhalt, a.beschriftungen[e], o);
         }
         return aus + "</svg>\n";
     }
@@ -337,11 +363,64 @@ public:
         for (std::size_t e = 0; e < diagramm.uebergaenge.size(); ++e)
         {
             const std::string inhalt = kuerze(diagramm.uebergaenge[e].bedingung, optionen.maxZeilenLaenge);
-            if (inhalt.empty()) continue;
-            const Punkt m = a.beschriftungen[e];
-            const double breite = static_cast<double>(zeichen(inhalt)) * o.zeichenBreite + 4;
-            aus += rechteck({m.x - breite / 2, m.y - kSchildHoehe / 2, breite, kSchildHoehe}, "schild");
-            aus += textMittig({inhalt}, m, o.zeilenHoehe);
+            if (!inhalt.empty()) aus += schild(inhalt, a.beschriftungen[e], o);
+        }
+        return aus + "</svg>\n";
+    }
+
+    [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const FlussAnordnung a = ordneAn(graph, o);
+        std::string aus = kopf(graph.titel, a.breite, a.hoehe);
+
+        // hinten die Rahmen der Dateien, dann die Kanten, darauf Titel und Knoten, vorn die Beschriftungen
+        for (const Rechteck& r : a.gruppen) aus += rechteck(r, "rahmen");
+        aus += legende(a, o);
+        const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
+        for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        {
+            const Linienzug& l = a.kanten[e];
+            if (l.size() < 2) continue;
+            // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
+            const AufrufKante& k = graph.kanten[e];
+            std::string strich;
+            if (!k.gilt) strich = "stroke-dasharray:2 3;";
+            else if (k.art == AufrufKantenArt::Mehrdeutig) strich = "stroke-dasharray:6 4;";
+            std::string farbe;
+            if (farben[e] != kKeine) farbe = std::string(rahmenFarbe(farben[e]));
+            std::string stil = strich + (farbe.empty() ? "" : "stroke:" + farbe + ";");
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" +
+                   (stil.empty() ? "" : " style=\"" + stil + "\"") + "/>\n";
+            aus += spitze(l[l.size() - 2], l.back(), true, kSpitze,
+                          farbe.empty() ? std::string() : "style=\"fill:" + farbe + ";stroke:" + farbe + "\"");
+        }
+        for (std::size_t g = 0; g < a.gruppen.size() && g < graph.dateien.size(); ++g)
+            aus += rahmenTitel(kuerze(graph.dateien[g], titelZeichen(a.gruppen[g], o)), a.gruppen[g], o, "font-style=\"italic\"");
+        for (std::size_t i = 0; i < a.knoten.size(); ++i)
+        {
+            const AufrufKnoten& k = graph.knoten[i];
+            const Rechteck& r = a.knoten[i];
+            const std::string text = kuerze(knotenText(k), optionen.maxZeilenLaenge);
+            if (k.art != AufrufKnotenArt::Funktion)
+            {
+                // fremd grau, ein Makro dazu gestrichelt
+                aus += k.art == AufrufKnotenArt::Makro ? rechteckMit(r, "fremd", "style=\"stroke-dasharray:4 3\"")
+                                                       : rechteck(r, "fremd");
+                aus += textMittig({text}, r.mitte(), o.zeilenHoehe, "font-style=\"italic\"");
+                continue;
+            }
+            // eine Funktion wie ein Aufruf im Ablauf; der Ausgangspunkt getoent und kraeftig umrandet
+            aus += k.wurzel ? rechteckMit(r, "getoent", "style=\"stroke-width:2.4\"") : rechteck(r, "flaeche");
+            aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + 8, r.y}, {r.x + 8, r.y + r.hoehe}}) + "\"/>\n";
+            aus += "  <polyline class=\"linie\" points=\"" +
+                   punkte({{r.x + r.breite - 8, r.y}, {r.x + r.breite - 8, r.y + r.hoehe}}) + "\"/>\n";
+            aus += textMittig({text}, r.mitte(), o.zeilenHoehe);
+        }
+        for (std::size_t e = 0; e < graph.kanten.size(); ++e)
+        {
+            const std::string inhalt = kuerze(beschriftung(graph.kanten[e]), optionen.maxZeilenLaenge);
+            if (!inhalt.empty()) aus += schild(inhalt, a.beschriftungen[e], o);
         }
         return aus + "</svg>\n";
     }

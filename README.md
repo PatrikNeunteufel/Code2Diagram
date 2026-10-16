@@ -45,12 +45,12 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros | — |
 | `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`) | lexer, modell |
-| `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
+| `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
-| `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg | sprache, modell |
+| `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint | sprache, modell, das Modell des Aufrufgraphen |
 
 Die Trennlinien sind der Punkt: ein Format kennt keine Sprache, ein Leser kennt kein Diagramm,
-das Projekt kennt kein Diagramm.
+kein Diagramm kennt das Projekt.
 
 - **Neue Sprache:** Ordner `src/sprache/<name>/` mit ihrer Tabelle und einer Klasse von
   `Sprache`, in `src/sprache/Sprache.cpp` in die Liste eintragen. Fenster und `c2d` finden sie von
@@ -197,7 +197,26 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   gleiche Wege werden eins, ihre Bedingungen mit `||`. Wo dieselbe Variable — oder dasselbe Glied
   auf anderem Weg (`eeprom.st` statt `p->st`) — anderswo in der Datei einen Zustand bekommt,
   kommt ein Übergang **von außen** (gefüllter Punkt, beschriftet `in init(): …`). Beispiel:
-  `beispiele/automat.c`. Darunter zwei Ansichten: **Preview** zeichnet das Diagramm,
+  `beispiele/automat.c`.
+- **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
+  Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
+  **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
+  den Graphen ab der gezeigten (oder der gerufenen) Funktion über das ganze Projekt; er bleibt als
+  *Call graph from f()* in der Auswahl. Daneben in der Leiste: die Richtung (**Calls** — was sie
+  ruft, **Callers** — wer sie ruft, **Both**), die Tiefe (Vorgabe 2, *all* = alle Stufen) und
+  **Hide external calls**. Jede Funktion ist ein Knoten, je rufendem Paar eine Kante; eine
+  Rekursion ist eine Schlaufe oder eine Kante zurück. Was ein Aufruf meint, entscheidet das Projekt
+  wie beim Sprung; meint er mehrere, führt zu jeder eine **gestrichelte** Kante `?`, und die
+  Statuszeile nennt die Kandidaten. Ein Aufruf ohne Funktion im Projekt (Bibliothek, SDK) ist ein
+  grauer Knoten außerhalb der Rahmen, ein Makro mit Parametern dazu gestrichelt. Berührt der Graph
+  mehrere Dateien, steht jede in einem Rahmen mit ihrem Pfad. Eine Funktion an der Grenze der
+  Tiefe, die weiter ruft, trägt ` …`; Rechtsklick *Expand one level* klappt sie auf (*Collapse*
+  zu). Doppelklick auf eine Funktion zeigt ihren Ablauf, Back führt in den Graphen zurück. Mit
+  **Show #if variants** ist eine Kante aus einem Zweig, der nicht gilt, **gepunktet** und trägt
+  dessen Bedingung; mit **Frame #if regions** hat eine Kante aus einem bedingten Bereich dessen
+  Farbe, mit Legende. Ein Graph mit vielen Gerufenen wird nach unten sehr breit — nach rechts
+  (*Left-right*) liest er sich besser.
+- Darunter zwei Ansichten: **Preview** zeichnet das Diagramm,
   **Text** zeigt es im gewählten Format. File > Save diagram as… legt den Text ab.
 - **In der Vorschau** (Strg + Mausrad vergrößert, Ziehen verschiebt):
   - Ein Knoten, der eine Funktion ruft, die es im Projekt gibt, ist farbig umrandet.
@@ -227,7 +246,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -238,6 +257,11 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   zeichnet die Datentypen aller Dateien
 - `--automat Bus_State` zeichnet den Zustandsautomaten über diese Variable (ganz oder ihr
   letztes Glied); `--liste` nennt die erkannten als `automaton …`
+- `--aufrufgraph main` zeichnet den Aufrufgraph ab `main` (wie `--funktion`: im Projekt
+  eindeutig, sonst `--datei`; der Name darf gleich folgen, wenn das Ziel davor steht, sonst
+  `--aufrufgraph --funktion main`); ohne Funktion den der Datei (im Projekt mit `--datei`).
+  `--tiefe n` (Vorgabe 2, 0 = alle), `--aufrufer` (wer ruft), `--beide`, `--ohne-fremde`.
+  Mehrdeutige Aufrufe nennt die Fehlerausgabe mit Datei und Zeile
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
@@ -353,7 +377,14 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   außen zählt nur die eigene Datei.
 - **draw.io legt die Kanten selbst:** die Datei trägt die Orte der Knoten aus der Anordnung,
   die Wege der Kanten nicht (`orthogonalEdgeStyle`).
-- **Im Projekt:** kein Aufrufgraph über das Projekt; die Datentypen zeigt das Fenster je Datei
+- **Der Aufrufgraph** erkennt Aufrufe am Namen vor `(`, wie der Sprung: ein Funktionszeiger
+  (`p->rueckruf(x)`) wird ein fremder Knoten mit dem Namen des Glieds, nicht die Funktion, auf
+  die er zeigt; ein Aufruf im Rumpf eines Makros ist nicht zu sehen (Makros werden nicht
+  ersetzt), das Makro selbst schon; `Motor m(3);` gilt als Aufruf von `m`. Überladungen trennt nur
+  ihr Ort. Nach unten wird ein Graph mit vielen Gerufenen sehr breit (LLC, `main` aller Stufen:
+  166 Knoten auf 43 000 px). Rahmen je Datei stehen in Bändern nebeneinander; eine Kante, die über
+  mehrere Schichten nach links führt, biegt gleich unter ihrer Quelle ab.
+- **Im Projekt:** die Datentypen zeigt das Fenster je Datei
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.

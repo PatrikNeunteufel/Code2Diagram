@@ -63,6 +63,7 @@ enum class GruppenArt
 {
     Einbettung,  ///< der eingebettete Ablauf einer gerufenen Funktion (betteEin)
     Bedingung,   ///< was nur unter einer Bedingung der Uebersetzung steht; titel = die Bedingung
+    Datei,       ///< die Funktionen einer Datei im Aufrufgraph (ordneAn); titel = ihr Pfad
 };
 
 /// Ein umrahmter Teil: der eingebettete Ablauf einer gerufenen Funktion, oder

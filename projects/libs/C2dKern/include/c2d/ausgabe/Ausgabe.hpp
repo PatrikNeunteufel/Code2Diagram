@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
@@ -48,6 +49,7 @@ public:
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Zustandsdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Aufrufgraph& graph, const Optionen& optionen) const = 0;
 };
 
 /// Alle Formate; das erste ist die Vorgabe.
@@ -60,7 +62,7 @@ public:
 /// diagramm/Anordnung.hpp — das eigene Format, die Vorgabe.
 [[nodiscard]] const Format& svg();
 
-/// Mermaid: `flowchart` und `classDiagram`.
+/// Mermaid: `flowchart` (auch der Aufrufgraph), `classDiagram` und `stateDiagram-v2`.
 [[nodiscard]] const Format& mermaid();
 
 /// Graphviz DOT: `digraph`, Datentypen als `record`.

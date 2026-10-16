@@ -189,6 +189,63 @@ public:
         }
         return aus + "}\n";
     }
+
+    [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
+    {
+        std::string aus = kopf(graph.titel, optionen);
+        // eine Funktion mit doppeltem Rand, Fremd grau, ein Makro dazu gestrichelt; mit Rahmen je Datei ein cluster
+        const auto schreibeKnoten = [&](std::size_t id, std::string_view einzug) {
+            const AufrufKnoten& k = graph.knoten[id];
+            aus += std::string(einzug) + "n" + std::to_string(id) + " [";
+            switch (k.art)
+            {
+                case AufrufKnotenArt::Funktion:
+                    aus += k.wurzel ? "shape=box, peripheries=2, style=\"filled,bold\", fillcolor=\"#ececec\""
+                                    : "shape=box, peripheries=2";
+                    break;
+                case AufrufKnotenArt::Fremd:
+                    aus += "shape=box, style=filled, fillcolor=\"#f2f2f2\", color=\"#8a8a8a\", fontname=\"Helvetica-Oblique\"";
+                    break;
+                case AufrufKnotenArt::Makro:
+                    aus += "shape=box, style=\"filled,dashed\", fillcolor=\"#f2f2f2\", color=\"#8a8a8a\", "
+                           "fontname=\"Helvetica-Oblique\"";
+                    break;
+            }
+            aus += ", label=\"" + maskiere(kuerze(knotenText(k), optionen.maxZeilenLaenge)) + "\"];\n";
+        };
+        if (graph.mitRahmen())
+            for (std::size_t d = 0; d < graph.dateien.size(); ++d)
+            {
+                aus += "    subgraph cluster_" + std::to_string(d) + " {\n        style=dashed; label=\"" +
+                       maskiere(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)) + "\";\n";
+                for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+                    if (graph.knoten[id].art == AufrufKnotenArt::Funktion && graph.knoten[id].datei == d)
+                        schreibeKnoten(id, "        ");
+                aus += "    }\n";
+            }
+        for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+            if (!graph.mitRahmen() || graph.knoten[id].art != AufrufKnotenArt::Funktion) schreibeKnoten(id, "    ");
+        // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
+        const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
+        for (std::size_t e = 0; e < graph.kanten.size(); ++e)
+        {
+            const AufrufKante& k = graph.kanten[e];
+            std::vector<std::string> attribute;
+            if (!k.gilt) attribute.emplace_back("style=dotted");
+            else if (k.art == AufrufKantenArt::Mehrdeutig) attribute.emplace_back("style=dashed");
+            if (farben[e] != kKeine)
+            {
+                const std::string f(rahmenFarbe(farben[e]));
+                attribute.push_back("color=\"" + f + "\"");
+            }
+            if (const std::string text = beschriftung(k); !text.empty())
+                attribute.push_back("label=\"" + maskiere(kuerze(text, optionen.maxZeilenLaenge)) + "\"");
+            aus += "    n" + std::to_string(k.von) + " -> n" + std::to_string(k.nach);
+            for (std::size_t i = 0; i < attribute.size(); ++i) aus += (i == 0 ? " [" : ", ") + attribute[i];
+            aus += attribute.empty() ? ";\n" : "];\n";
+        }
+        return aus + "}\n";
+    }
 };
 
 }  // namespace

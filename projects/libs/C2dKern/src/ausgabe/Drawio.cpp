@@ -118,6 +118,23 @@ std::string_view stereotyp(KastenArt art)
     return {};
 }
 
+/// Die Legende: je Bedingung ein Farbfeld und ihr Text.
+std::string legende(const FlussAnordnung& a, const Optionen& optionen)
+{
+    std::string aus;
+    for (std::size_t i = 0; i < a.legende.size(); ++i)
+    {
+        const FlussAnordnung::Legende& l = a.legende[i];
+        const std::string f(rahmenFarbe(l.farbe));
+        aus += ecke("l" + std::to_string(i), "", "rounded=0;fillColor=" + f + ";strokeColor=" + f + ";", "1", l.feld);
+        const double breite =
+            static_cast<double>(kuerze(l.titel, optionen.maxZeilenLaenge).size()) * anordnung(optionen).zeichenBreite + 8;
+        aus += ecke("lt" + std::to_string(i), html(kuerze(l.titel, optionen.maxZeilenLaenge)),
+                    "text;align=left;verticalAlign=middle;html=1;" + std::string(kSchrift), "1",
+                    {l.text.x, l.text.y - 9, breite, 18});
+    }
+    return aus;
+}
 
 class Drawio final : public Format
 {
@@ -162,19 +179,7 @@ public:
                         stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern(gruppe.eltern),
                         in(gruppe.eltern, a.gruppen[g]));
         }
-        // die Legende: je Bedingung ein Farbfeld und ihr Text
-        for (std::size_t i = 0; i < a.legende.size(); ++i)
-        {
-            const FlussAnordnung::Legende& l = a.legende[i];
-            const std::string f(rahmenFarbe(farben[l.gruppe]));
-            aus += ecke("l" + std::to_string(i), "", "rounded=0;fillColor=" + f + ";strokeColor=" + f + ";", "1", l.feld);
-            const std::string& titel = diagramm.gruppen()[l.gruppe].titel;
-            const double breite =
-                static_cast<double>(kuerze(titel, optionen.maxZeilenLaenge).size()) * anordnung(optionen).zeichenBreite + 8;
-            aus += ecke("lt" + std::to_string(i), html(kuerze(titel, optionen.maxZeilenLaenge)),
-                        "text;align=left;verticalAlign=middle;html=1;" + std::string(kSchrift), "1",
-                        {l.text.x, l.text.y - 9, breite, 18});
-        }
+        aus += legende(a, optionen);
         for (std::size_t id = 0; id < diagramm.knoten().size(); ++id)
         {
             const Knoten& k = diagramm.knoten()[id];
@@ -265,6 +270,61 @@ public:
             aus += kante("e" + std::to_string(e), html(kuerze(u.bedingung, optionen.maxZeilenLaenge)),
                          "edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;" + std::string(kSchrift),
                          "s" + std::to_string(u.von), "s" + std::to_string(u.nach));
+        }
+        return aus + std::string(kFuss);
+    }
+
+    [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
+    {
+        const FlussAnordnung a = ordneAn(graph, anordnung(optionen));
+        std::string aus = kopf(graph.titel, a.breite, a.hoehe);
+
+        // je Datei ein Behaelter; eine Funktion darin mit ihrem Ort relativ zu ihm
+        const auto inDatei = [&](const AufrufKnoten& k) {
+            return graph.mitRahmen() && k.art == AufrufKnotenArt::Funktion && k.datei < a.gruppen.size();
+        };
+        for (std::size_t d = 0; d < a.gruppen.size() && d < graph.dateien.size(); ++d)
+            aus += ecke("d" + std::to_string(d), html(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)),
+                        "swimlane;startSize=22;fontStyle=2;collapsible=0;container=1;dashed=1;fillColor=none;whiteSpace=wrap;"
+                        "html=1;" + std::string(kSchrift),
+                        "1", a.gruppen[d]);
+        aus += legende(a, optionen);
+        for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+        {
+            const AufrufKnoten& k = graph.knoten[id];
+            std::string stil;
+            switch (k.art)
+            {
+                case AufrufKnotenArt::Funktion:
+                    stil = k.wurzel ? "shape=process;fillColor=#ececec;strokeWidth=2;" : "shape=process;";
+                    break;
+                case AufrufKnotenArt::Fremd: stil = "rounded=0;fillColor=#f2f2f2;strokeColor=#8a8a8a;fontStyle=2;"; break;
+                case AufrufKnotenArt::Makro:
+                    stil = "rounded=0;fillColor=#f2f2f2;strokeColor=#8a8a8a;fontStyle=2;dashed=1;";
+                    break;
+            }
+            Rechteck ort = a.knoten[id];
+            std::string eltern = "1";
+            if (inDatei(k))
+            {
+                ort.x -= a.gruppen[k.datei].x;
+                ort.y -= a.gruppen[k.datei].y;
+                eltern = "d" + std::to_string(k.datei);
+            }
+            aus += ecke("n" + std::to_string(id), html(kuerze(knotenText(k), optionen.maxZeilenLaenge)),
+                        stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern, ort);
+        }
+        // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
+        const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
+        for (std::size_t e = 0; e < graph.kanten.size(); ++e)
+        {
+            const AufrufKante& k = graph.kanten[e];
+            std::string stil = "edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;";
+            if (!k.gilt) stil += "dashed=1;dashPattern=1 3;";
+            else if (k.art == AufrufKantenArt::Mehrdeutig) stil += "dashed=1;";
+            if (farben[e] != kKeine) stil += "strokeColor=" + std::string(rahmenFarbe(farben[e])) + ";";
+            aus += kante("e" + std::to_string(e), html(kuerze(beschriftung(k), optionen.maxZeilenLaenge)),
+                         stil + std::string(kSchrift), "n" + std::to_string(k.von), "n" + std::to_string(k.nach));
         }
         return aus + std::string(kFuss);
     }

@@ -277,6 +277,58 @@ public:
         }
         return aus;
     }
+
+    [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
+    {
+        std::string aus = kommentar(graph.titel);
+        aus += "flowchart ";
+        aus += optionen.richtung;
+        aus += '\n';
+        // eine Funktion als Unterprogramm, Fremd und Makro als Rechteck; mit Rahmen je Datei ein subgraph
+        const auto schreibeKnoten = [&](std::size_t id, std::string_view einzug) {
+            const AufrufKnoten& k = graph.knoten[id];
+            const bool funktion = k.art == AufrufKnotenArt::Funktion;
+            aus += std::string(einzug) + "n" + std::to_string(id) + (funktion ? "[[\"" : "[\"") +
+                   maskiere(kuerze(knotenText(k), optionen.maxZeilenLaenge)) + (funktion ? "\"]]\n" : "\"]\n");
+        };
+        if (graph.mitRahmen())
+            for (std::size_t d = 0; d < graph.dateien.size(); ++d)
+            {
+                aus += "    subgraph d" + std::to_string(d) + "[\"" + maskiere(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)) +
+                       "\"]\n";
+                for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+                    if (graph.knoten[id].art == AufrufKnotenArt::Funktion && graph.knoten[id].datei == d)
+                        schreibeKnoten(id, "        ");
+                aus += "    end\n";
+            }
+        for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+            if (!graph.mitRahmen() || graph.knoten[id].art != AufrufKnotenArt::Funktion) schreibeKnoten(id, "    ");
+        // mehrdeutig und aus einem Zweig, der nicht gilt: gestrichelt — die Beschriftung sagt, welches
+        for (const AufrufKante& k : graph.kanten)
+        {
+            const bool gestrichelt = !k.gilt || k.art == AufrufKantenArt::Mehrdeutig;
+            aus += "    n" + std::to_string(k.von) + (gestrichelt ? " -.->" : " -->");
+            if (const std::string text = beschriftung(k); !text.empty())
+                aus += "|\"" + maskiere(kuerze(text, optionen.maxZeilenLaenge)) + "\"|";
+            aus += " n" + std::to_string(k.nach) + '\n';
+        }
+        // eine Bedingung, die gilt, in ihrer Farbe
+        const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
+        for (std::size_t e = 0; e < farben.size(); ++e)
+            if (farben[e] != kKeine)
+                aus += "    linkStyle " + std::to_string(e) + " stroke:" + std::string(rahmenFarbe(farben[e])) + '\n';
+        aus += "    classDef fremd fill:#f2f2f2,stroke:#8a8a8a,font-style:italic\n"
+               "    classDef makro fill:#f2f2f2,stroke:#8a8a8a,stroke-dasharray:4 3,font-style:italic\n"
+               "    classDef wurzel fill:#ececec,stroke-width:2.4px\n";
+        for (std::size_t id = 0; id < graph.knoten.size(); ++id)
+        {
+            const AufrufKnoten& k = graph.knoten[id];
+            if (k.art == AufrufKnotenArt::Fremd) aus += "    class n" + std::to_string(id) + " fremd\n";
+            else if (k.art == AufrufKnotenArt::Makro) aus += "    class n" + std::to_string(id) + " makro\n";
+            else if (k.wurzel) aus += "    class n" + std::to_string(id) + " wurzel\n";
+        }
+        return aus;
+    }
 };
 
 }  // namespace

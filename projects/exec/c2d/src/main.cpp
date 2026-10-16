@@ -2,6 +2,7 @@
 //
 // Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
 //                             [--struktur] [-D NAME[=wert] | -D !NAME | -U NAME]...
+//                             [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh]
 //
@@ -17,6 +18,12 @@
 //   --struktur     das Diagramm der Datentypen (im Projekt: aller Dateien, mit --datei: einer)
 //   --automat      das Zustandsdiagramm des Automaten mit dieser Variable (auch nur ihr
 //                  letztes Glied: Bus_State); --liste nennt die erkannten
+//   --aufrufgraph  der Aufrufgraph ab dieser Funktion (wie --funktion; steht das Ziel
+//                  davor, darf ihr Name gleich folgen); ohne Funktion der Graph der Datei
+//                  (im Projekt: --datei)
+//   --tiefe n      so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
+//   --aufrufer     wer die Funktion ruft, statt was sie ruft; --beide: beides
+//   --ohne-fremde  Aufrufe ohne Funktion im Projekt (Bibliothek, Makro) weglassen
 //   -D NAME[=wert] gilt beim Auswerten von #if/#ifdef als definiert (ohne Wert: 1); mehrfach
 //                  erlaubt; geht der Projektdatei und den Koepfen vor (nicht der Datei selbst)
 //   -U NAME        gilt als nicht definiert, auch wo Projektdatei oder ein Kopf ihn
@@ -35,6 +42,7 @@
 
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
@@ -69,6 +77,7 @@ int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
                  "                         [--struktur] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
+                 "                         [--aufrufgraph [<function>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
                  "formats:";
@@ -125,7 +134,8 @@ int main(int argc, char* argv[])
     c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
     std::string richtung = "TD";
-    bool zeigeListe = false, struktur = false, roh = false;
+    bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false;
+    c2d::projekt::AufrufgraphOptionen graph;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -138,6 +148,21 @@ int main(int argc, char* argv[])
         else if (a == "--funktion") funktion = wert();
         else if (a == "--automat") automat = wert();
         else if (a == "--einbetten") einbetten.push_back(wert());
+        else if (a == "--aufrufgraph")
+        {
+            aufrufgraph = true;
+            // der Name der Funktion darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') funktion = argv[++i];
+        }
+        else if (a == "--tiefe")
+        {
+            const std::string t = wert();
+            if (t.empty() || !std::all_of(t.begin(), t.end(), [](char c) { return c >= '0' && c <= '9'; })) return aufruf();
+            graph.tiefe = std::stoi(t);
+        }
+        else if (a == "--aufrufer") graph.richtung = c2d::projekt::AufrufRichtung::Aufrufer;
+        else if (a == "--beide") graph.richtung = c2d::projekt::AufrufRichtung::Beide;
+        else if (a == "--ohne-fremde") graph.ohneFremde = true;
         else if (a == "--alle-zweige") lesen.alleZweige = true;
         else if (a == "--varianten") lesen.varianten = true;
         else if (a == "--rahmen") lesen.bereiche = true;
@@ -250,8 +275,18 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    // --aufrufgraph: ab einer Funktion, oder der Graph einer Datei
+    if (aufrufgraph && funktion.empty())
+    {
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: --aufrufgraph without a function needs --datei\n";
+            return 1;
+        }
+    }
+
     std::optional<Fundstelle> gewaehlt;
-    if (!struktur)
+    if (!struktur && !(aufrufgraph && funktion.empty()))
     {
         std::vector<Fundstelle> treffer;
         for (std::size_t d = 0; d < p.dateien.size(); ++d)
@@ -278,6 +313,21 @@ int main(int argc, char* argv[])
             return 1;
         }
         if (!treffer.empty()) gewaehlt = treffer.front();
+    }
+    if (aufrufgraph)
+    {
+        const c2d::projekt::AufrufgraphErgebnis e = gewaehlt ? c2d::projekt::aufrufgraphAb(p, *gewaehlt, graph)
+                                                             : c2d::projekt::aufrufgraphDerDatei(p, gewaehlteDatei, graph);
+        for (const c2d::projekt::Projektmeldung& m : e.meldungen)
+            std::cerr << vorn(m.pfad) << ':' << m.meldung.ort.zeile << ": " << m.meldung.text << '\n';
+        if (e.ausgelassen != 0) std::cerr << "c2d: " << e.ausgelassen << " external call(s) left out\n";
+        if (e.graph.knoten.empty())
+        {
+            std::cerr << "c2d: no function with a body in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
+            return 1;
+        }
+        std::cout << format->schreibe(e.graph, optionen);
+        return 0;
     }
     if (gewaehlt)
     {

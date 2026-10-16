@@ -22,7 +22,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().isEmpty());
 
         fenster.zeigeBeispiel();
-        CHECK(fenster.diagramme() == QStringList{"dauer_ms", "ampel_takt", "types"});
+        CHECK(fenster.diagramme() == QStringList{"dauer_ms", "ampel_takt", "types", "calls"});
         CHECK(fenster.meldungen() == 0);
         CHECK(fenster.quelltext().contains("ampel_takt"));
         // die erste Funktion ist gewaehlt, das erste Format ist SVG
@@ -65,7 +65,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.vorschauFormen() == 2);  // Phase, Ampel
 
         fenster.zeige("namespace n { struct A { int x; int f() { return g(); } int g() { return x; } }; }", "a.hpp");
-        CHECK(fenster.diagramme() == QStringList{"n::A::f", "n::A::g", "types"});
+        CHECK(fenster.diagramme() == QStringList{"n::A::f", "n::A::g", "types", "calls"});
         CHECK(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText().startsWith("%% f\nflowchart TD\n    n0([\"n::A::f()\"])"));
         CHECK(fenster.waehleFormat("drawio"));
@@ -115,22 +115,22 @@ TEST_SUITE("Hauptfenster")
                              "void immer(void) {\n#if STUFE > 1\n  laut();\n#endif\n  leise();\n}\n";
         Hauptfenster fenster;
         fenster.zeige(quelle, "v.c");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls"});
         CHECK(fenster.unbekannteNamen() == QStringList{"BOARD_A", "STUFE"});
         CHECK(fenster.waehleDiagramm("immer"));
         CHECK_FALSE(fenster.diagrammText().contains("laut"));
 
         fenster.setzeDefinitionen("BOARD_A, STUFE=2");
-        CHECK(fenster.diagramme() == QStringList{"a", "immer"});
+        CHECK(fenster.diagramme() == QStringList{"a", "immer", "calls"});
         CHECK(fenster.unbekannteNamen().isEmpty());
         CHECK(fenster.diagramm() == "immer");  // das gewaehlte Diagramm bleibt
         CHECK(fenster.diagrammText().contains("laut"));
 
         fenster.setzeAlleZweige(true);
-        CHECK(fenster.diagramme() == QStringList{"a", "b", "immer"});
+        CHECK(fenster.diagramme() == QStringList{"a", "b", "immer", "calls"});
         fenster.setzeAlleZweige(false);
         fenster.setzeDefinitionen("");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls"});
     }
 
     TEST_CASE("Das Feld Configuration: Haken und Knoepfe schreiben ins Feld Defines, gelesen wird neu")
@@ -226,12 +226,12 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.oeffne(pfad, &fehler));
         CHECK(fehler.isEmpty());
         CHECK(fenster.windowTitle().startsWith("probe.c"));
-        CHECK(fenster.diagramme() == QStringList{"f", "g", "types"});
+        CHECK(fenster.diagramme() == QStringList{"f", "g", "types", "calls"});
         CHECK(fenster.meldungen() == 1);  // das fehlende Semikolon in g
 
         CHECK_FALSE(fenster.oeffne(QDir(ordner.path()).filePath("fehlt.c"), &fehler));
         CHECK(fehler.contains("fehlt.c"));
-        CHECK(fenster.diagramme().size() == 3);
+        CHECK(fenster.diagramme().size() == 4);
     }
 
     TEST_CASE("Ein Ordner als Projekt: Dateien, Spruenge ueber Dateien, Mehrdeutiges, Projektdatei")
@@ -267,12 +267,12 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.dateien() == QStringList{"antrieb/motor.c", "antrieb/regler.c", "inc/config.h", "main.c", "sim/regler_sim.c"});
         CHECK(fenster.uebergangeneOrdner() == QStringList{"alt"});
         CHECK(fenster.datei() == "antrieb/motor.c");  // die erste mit einer Funktion
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei"});  // MOTOREN aus dem Abschnitt
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei", "calls"});  // MOTOREN aus dem Abschnitt
         CHECK(fenster.windowTitle().contains("antrieb/motor.c"));
 
         REQUIRE(fenster.waehleDatei("main.c"));
         CHECK_FALSE(fenster.waehleDatei("alt/x.c"));
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose", "calls"});
         CHECK(fenster.waehleDiagramm("main"));
         CHECK(fenster.diagrammText().contains("diagnose()"));  // MIT_DIAGNOSE aus inc/config.h
 
@@ -320,7 +320,7 @@ TEST_SUITE("Hauptfenster")
         REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
         fenster.setzeDefinitionen("MOTOREN=1");
         CHECK(fenster.datei() == "antrieb/motor.c");
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "calls"});
         fenster.setzeDefinitionen("");
 
         // die Projektdatei: was nicht passt, wird nicht geschrieben
@@ -378,13 +378,79 @@ TEST_SUITE("Hauptfenster")
         fenster.zeige("void takt(void) { switch (z) { case A: z = B; break; case B: z = C; break; case C: z = A; break; } }\n"
                       "void reset(void) { z = A; }\n",
                       "a.c");
-        CHECK(fenster.diagramme() == QStringList{"takt", "reset", "automat:z"});
+        CHECK(fenster.diagramme() == QStringList{"takt", "reset", "automat:z", "calls"});
         REQUIRE(fenster.waehleDiagramm("automat:z"));
         CHECK(fenster.vorschauFormen() == 4);  // A, B, C und der Punkt von aussen
         CHECK(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText().startsWith("%% z in takt()\nstateDiagram-v2\n"));
         CHECK(fenster.diagrammText().contains("[*] --> s0 : in reset()"));
         CHECK(fenster.aufrufer().isEmpty());  // ein Automat ist keine Funktion
+    }
+
+    TEST_CASE("Der Aufrufgraph: ab einer Funktion und der Datei, Tiefe, Aufklappen, Doppelklick-Weg und zurueck")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            const QString pfad = wurzel.filePath(relativ);
+            REQUIRE(QDir().mkpath(QFileInfo(pfad).absolutePath()));
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("main.c", "int main(void) { motor_starte(); regle(); memcpy(0, 0, 0); return 0; }\n");
+        lege("antrieb/motor.c", "void takt(void) { }\nvoid motor_starte(void) { takt(); }\nvoid regle(void) { }\n");
+        lege("sim/sim.c", "void regle(void) { }\n");
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDatei("main.c"));
+        CHECK(fenster.aufrufgraphKnoten().isEmpty());  // noch keiner gezeigt
+        CHECK_FALSE(fenster.zeigeAufrufgraph("gibt_es_nicht"));
+
+        fenster.setzeTiefe(1);
+        REQUIRE(fenster.zeigeAufrufgraph("main"));
+        CHECK(fenster.diagramm() == "calls:main");
+        CHECK(fenster.diagramme().contains("calls:main"));
+        // motor_starte ruft weiter: an der Grenze markiert; regle zweimal, memcpy fremd
+        CHECK(fenster.aufrufgraphKnoten() ==
+              QStringList{"main", "motor_starte …", "regle", "regle", "memcpy"});
+        CHECK(fenster.vorschauFormen() == 5);
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().startsWith("%% calls from main()\nflowchart TD\n"));
+        CHECK(fenster.diagrammText().contains("-.->|\"?\"|"));
+
+        // aufklappen: takt erscheint
+        CHECK(fenster.klappeAuf("motor_starte"));
+        CHECK(fenster.aufrufgraphKnoten().contains("takt"));
+        CHECK(fenster.aufrufgraphKnoten().contains("motor_starte"));
+        // ohne Fremde, alle Stufen
+        fenster.setzeOhneFremde(true);
+        fenster.setzeTiefe(0);
+        CHECK_FALSE(fenster.aufrufgraphKnoten().contains("memcpy"));
+        CHECK(fenster.tiefe() == 0);
+        // nach oben: wer ruft regle (die beiden sind mehrdeutig gerufen)
+        REQUIRE(fenster.setzeAufrufRichtung("callers"));
+        CHECK_FALSE(fenster.setzeAufrufRichtung("seitwaerts"));
+        CHECK(fenster.diagrammText().startsWith("%% callers of main()"));
+        REQUIRE(fenster.setzeAufrufRichtung("calls"));
+
+        // vom Graph in den Ablauf, und zurueck in den Graph
+        REQUIRE(fenster.waehleDiagramm("main"));
+        REQUIRE(fenster.springe("motor_starte"));
+        CHECK(fenster.diagramm() == "motor_starte");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "main");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "calls:main");  // der Graph wird wieder angelegt
+        CHECK(fenster.datei() == "main.c");
+
+        // der Graph der Datei
+        REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
+        REQUIRE(fenster.zeigeAufrufgraph());
+        CHECK(fenster.diagramm() == "calls");
+        CHECK(fenster.aufrufgraphKnoten() == QStringList{"takt", "motor_starte", "regle"});
     }
 
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")

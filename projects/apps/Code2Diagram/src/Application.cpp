@@ -201,6 +201,52 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return fenster.zurueck() ? st::ok() : st::fehler(QStringLiteral("No diagram to go back to"));
                      });
 
+    anbindung.aktion(QStringLiteral("aufrufgraph_zeigen"),
+                     QStringLiteral("Shows the call graph from a function of the chosen file, or of the file"),
+                     QStringLiteral("name=<function | empty = the file>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.zeigeAufrufgraph(name))
+                             return st::fehler(QStringLiteral("No function '%1' with a body in %2").arg(name, fenster.datei()));
+                         return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
+                     });
+
+    anbindung.aktion(QStringLiteral("aufrufgraph_einstellen"),
+                     QStringLiteral("Call graph: direction, depth and whether external calls are shown"),
+                     QStringLiteral("richtung=<calls | callers | both> tiefe=<0 = all, 1, 2, ...> fremde=<ja | nein>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString richtung = st::argument(argumente, QStringLiteral("richtung"));
+                         const QString tiefe = st::argument(argumente, QStringLiteral("tiefe"));
+                         const QString fremde = st::argument(argumente, QStringLiteral("fremde"));
+                         if (!richtung.isEmpty() && !fenster.setzeAufrufRichtung(richtung))
+                             return st::ungueltig(QStringLiteral("richtung is calls, callers or both"));
+                         if (!tiefe.isEmpty())
+                         {
+                             bool zahl = false;
+                             const int t = tiefe.toInt(&zahl);
+                             if (!zahl || t < 0) return st::ungueltig(QStringLiteral("tiefe is 0, 1, 2, ..."));
+                             fenster.setzeTiefe(t);
+                         }
+                         if (!fremde.isEmpty())
+                         {
+                             if (fremde != QLatin1String("ja") && fremde != QLatin1String("nein"))
+                                 return st::ungueltig(QStringLiteral("fremde is ja or nein"));
+                             fenster.setzeOhneFremde(fremde == QLatin1String("nein"));
+                         }
+                         return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
+                     });
+
+    anbindung.aktion(QStringLiteral("aufklappen"),
+                     QStringLiteral("Call graph: expands a function at the edge by one level"),
+                     QStringLiteral("name=<function, as in the graph>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.klappeAuf(name))
+                             return st::fehler(QStringLiteral("No function '%1' in the call graph: %2")
+                                                   .arg(name, fenster.aufrufgraphKnoten().join(QStringLiteral(", "))));
+                         return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
+                     });
+
     anbindung.aktion(QStringLiteral("format_waehlen"), QStringLiteral("Selects the output format"),
                      QStringLiteral("name=<svg | mermaid | dot | drawio>"),
                      [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
@@ -267,7 +313,8 @@ bool Application::init(int argc, char* argv[])
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
-    bool alleZweige = false, varianten = false, rahmen = false, zurueck = false;
+    QString tiefe, aufrufRichtung;
+    bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
     {
         const QString& a = argumente[i];
@@ -284,6 +331,10 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--alle-zweige")) alleZweige = true;
         else if (a == QLatin1String("--varianten")) varianten = true;
         else if (a == QLatin1String("--rahmen")) rahmen = true;
+        else if (a == QLatin1String("--tiefe")) tiefe = wert();
+        else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
+        else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
+        else if (a == QLatin1String("--ohne-fremde")) ohneFremde = true;
         else if (a == QLatin1String("-D")) definitionen << wert();
         else if (a.startsWith(QLatin1String("-D"))) definitionen << a.mid(2);
         else if (!a.startsWith(QLatin1Char('-')) && datei.isEmpty()) datei = a;
@@ -294,6 +345,10 @@ bool Application::init(int argc, char* argv[])
     fenster.setzeAlleZweige(alleZweige);
     fenster.setzeVarianten(varianten);
     fenster.setzeBereiche(rahmen);
+    // fuer den Aufrufgraph (--diagramm calls oder calls:<Funktion>)
+    if (!tiefe.isEmpty()) fenster.setzeTiefe(tiefe.toInt());
+    if (!aufrufRichtung.isEmpty()) fenster.setzeAufrufRichtung(aufrufRichtung);
+    fenster.setzeOhneFremde(ohneFremde);
     if (!datei.isEmpty())
     {
         QString fehler;

@@ -156,6 +156,61 @@ std::vector<std::string> aufrufeVon(const Funktion& funktion)
     return aus;
 }
 
+namespace
+{
+
+/// Wie sammle(), mit der Bedingung, unter der eine Anweisung steht.
+void sammleStellen(const Anweisung& a, const std::string& bedingung, bool gilt, std::vector<Aufrufstelle>& aus)
+{
+    const auto dazu = [&](std::string_view text) {
+        for (std::string& name : aufrufeIn(text))
+        {
+            const bool schon = std::any_of(aus.begin(), aus.end(), [&](const Aufrufstelle& s) {
+                return s.name == name && s.bedingung == bedingung && s.gilt == gilt;
+            });
+            if (!schon) aus.push_back({std::move(name), a.zeile, bedingung, gilt});
+        }
+    };
+    switch (a.art)
+    {
+        case AnweisungArt::Varianten:
+        {
+            // ein Zweig, der gilt, aendert nichts; einer, der nicht gilt, steht unter seiner vollen Bedingung
+            std::vector<std::string> bedingungen;
+            for (const AnweisungPtr& k : a.kinder) bedingungen.push_back(k->text);
+            for (std::size_t i = 0; i < a.kinder.size(); ++i)
+            {
+                const Anweisung& zweig = *a.kinder[i];
+                const std::string wann = zweig.gilt ? bedingung : volleBedingung(bedingungen, i);
+                for (const AnweisungPtr& k : zweig.kinder) sammleStellen(*k, wann, gilt && zweig.gilt, aus);
+            }
+            return;
+        }
+        case AnweisungArt::Bedingt:
+            for (const AnweisungPtr& k : a.kinder) sammleStellen(*k, a.text, gilt, aus);
+            return;
+        case AnweisungArt::Fall:
+        case AnweisungArt::Marke:
+        case AnweisungArt::Sprung:
+        case AnweisungArt::Direktive:
+        case AnweisungArt::Zweig: break;
+        default: dazu(a.text); break;
+    }
+    dazu(a.init);
+    dazu(a.schritt);
+    for (const AnweisungPtr& k : a.kinder) sammleStellen(*k, bedingung, gilt, aus);
+    if (a.sonst) sammleStellen(*a.sonst, bedingung, gilt, aus);
+}
+
+}  // namespace
+
+std::vector<Aufrufstelle> aufrufstellenVon(const Funktion& funktion)
+{
+    std::vector<Aufrufstelle> aus;
+    if (funktion.rumpf) sammleStellen(*funktion.rumpf, {}, true, aus);
+    return aus;
+}
+
 bool Funktion::heisst(std::string_view aufruf) const
 {
     if (aufruf.find("::") == std::string_view::npos) return name == aufruf;

@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
@@ -33,6 +34,9 @@ public:
     void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts, const std::vector<bool>& verweis = {});
     void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts);
     void zeige(const c2d::diagramm::Zustandsdiagramm& diagramm, bool nachRechts);
+    /// Ein Knoten des Aufrufgraphen ist fuer Doppelklick, Kontextmenue und markiere()
+    /// wie ein Knoten des Flussdiagramms: seine Stelle in Aufrufgraph::knoten.
+    void zeige(const c2d::diagramm::Aufrufgraph& graph, bool nachRechts);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.
@@ -42,7 +46,7 @@ public:
     /// Die ganze Szene als Bild, Massstab 1, auf dem Grund der Vorschau.
     [[nodiscard]] QImage alsBild() const;
 
-    /// Einen Knoten des Flussdiagramms hervorheben (ein Ring) und ins Bild ruecken;
+    /// Einen Knoten des Flussdiagramms (des Aufrufgraphen) hervorheben (ein Ring) und ins Bild ruecken;
     /// kKeine nimmt die Marke weg. false = so einen Knoten gibt es nicht.
     bool markiere(c2d::diagramm::KnotenId knoten);
     /// Der hervorgehobene Knoten; kKeine = keiner.

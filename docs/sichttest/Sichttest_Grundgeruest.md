@@ -19,8 +19,8 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
 - [ ] **A2 Die Statuszeile nennt die Lage:** `ampel.c, read as C: 2 function(s), 2 data type(s)`
       — ohne Meldungen.
 - [ ] **A3 Der Teiler:** Die Grenze zwischen beiden Seiten lässt sich ziehen; beide folgen.
-- [ ] **A4 Die Auswahl Diagram:** Sie bietet `dauer_ms()`, `ampel_takt()` und
-      `Data types (2)`; gewählt ist `dauer_ms()`.
+- [ ] **A4 Die Auswahl Diagram:** Sie bietet `dauer_ms()`, `ampel_takt()`,
+      `Data types (2)` und `Call graph of this file`; gewählt ist `dauer_ms()`.
 
 ## B. Ablauf einer Funktion
 
@@ -330,3 +330,68 @@ Projektdatei setzt `MIT_LOG`, den Include-Pfad `inc`, für `antrieb` `MOTOREN=2`
       öffnen: zwei Automaten, `ptr_Handler->Bus_State in I2C_PROCESS()` (11 Zustände und der Punkt
       von außen aus `CHECK_TIMEOUT()`) und `Scan_State in I2CBusScan()`. Die Beschriftungen stehen
       nebeneinander, nicht übereinander.
+
+## L. Aufrufgraph
+
+Am Beispielprojekt `beispiele/projekt`. `main()` in `main.c` ruft `pruefe()` (die eigene,
+`static`), `motor_starte()` (in `antrieb/motor.c`), `regle()` (zwei Dateien definieren es) und —
+unter `#ifdef MIT_DIAGNOSE`, das `inc/config.h` definiert — `protokolliere()` (in `log/log.c`), das
+unter `#ifdef MIT_LOG` die fremde `schreibe()` ruft.
+
+- [ ] **L0 Vorbereiten:** Das Projekt öffnen, `main.c` wählen, Vorschau, Richtung Top-down.
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: zweige_waehlen name=auswerten` `aktion: aufrufgraph_einstellen richtung=calls tiefe=2 fremde=ja` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **L1 Die Leiste:** Oben neben **Back** und **Called from** stehen **Call graph from here**,
+      die Richtung **Calls**, **Depth: 2** und **Hide external calls** (frei). In Diagram steht als
+      letzter Eintrag `Call graph of this file`.
+- [ ] **L2 Ab main:** Diagram `main()`, dann **Call graph from here**. In Diagram steht jetzt
+      `Call graph from main()`. *Zu prüfen:* Stimmt der Graph mit dem Code links überein?
+      *So:* Jede Datei steht in einem gestrichelten Rahmen mit ihrem Pfad als Titel, ganz zu
+      lesen: `main.c` (darin `main`, kräftig umrandet und getönt, und `pruefe`),
+      `antrieb/motor.c` (`motor_starte`, darunter dessen eigenes `pruefe`), `antrieb/regler.c` und
+      `sim/regler_sim.c` (je `regle`), `log/log.c` (`protokolliere`). Rechts außerhalb aller Rahmen
+      `schreibe`, grau und kursiv. Pfeile von `main` zu `pruefe`, `motor_starte`, beiden `regle`
+      und `protokolliere`; von `motor_starte` zu seinem `pruefe`; von `protokolliere` zu
+      `schreibe`. *Richtig ist:* Die beiden Pfeile zu `regle` sind gestrichelt und tragen `?`, die
+      übrigen durchgezogen. Kein Rahmen überdeckt einen anderen oder einen fremden Knoten.
+      `aktion: diagramm_waehlen name=main` `aktion: aufrufgraph_zeigen name=main`
+- [ ] **L3 Die Statuszeile:** Sie endet mit `call graph: 8 node(s), 5 file(s), 1 ambiguous call(s),
+      first main.c:20: call graph: 'regle' in main() is ambiguous - it may mean
+      antrieb/regler.c:4, sim/regler_sim.c:5`.
+- [ ] **L4 Tiefe 1:** **Depth** auf 1. `motor_starte …` und `protokolliere …` tragen drei Punkte —
+      sie rufen weiter, gezeigt ist es nicht; `pruefe` unter `motor_starte` und `schreibe` sind
+      verschwunden. Bei *all* (0) ist alles wieder da.
+      `aktion: aufrufgraph_einstellen tiefe=1`
+- [ ] **L5 Aufklappen:** Rechtsklick auf `motor_starte …` > *Expand one level*: sein `pruefe`
+      erscheint, die Punkte sind weg. Rechtsklick auf `motor_starte` > *Collapse*: wie in L4. Das
+      Menü bietet daneben *Show the flow of motor_starte() in antrieb/motor.c*, *Call graph from
+      motor_starte() in antrieb/motor.c*, *Show line 12 in the source (antrieb/motor.c)* und
+      *Back to …*.
+      `aktion: aufklappen name=motor_starte`
+- [ ] **L6 Fremde ausblenden:** Depth wieder 2, **Hide external calls** anhaken: `schreibe`
+      verschwindet, die Statuszeile nennt `1 external call(s) hidden`. Wieder abhaken.
+      `aktion: aufrufgraph_einstellen tiefe=2 fremde=nein` `aktion: aufrufgraph_einstellen fremde=ja`
+- [ ] **L7 Doppelklick und zurück:** Doppelklick auf `motor_starte`: sein Ablauf, in
+      `antrieb/motor.c`. **Back**: wieder der Graph ab `main`, um `motor_starte` ein Ring.
+- [ ] **L8 Wer ruft:** Richtung **Callers**: der Titel (Ansicht Text, Format mermaid) heißt
+      `callers of main()`, im Bild nur `main` — niemand ruft es. In `antrieb/motor.c` bei
+      `motor_starte()` **Call graph from here**: `main` → `motor_starte`. Richtung **Both**:
+      dazu `pruefe` unter `motor_starte`. Zurück auf **Calls**.
+      `aktion: aufrufgraph_einstellen richtung=callers` `aktion: datei_waehlen pfad=antrieb/motor.c` `aktion: aufrufgraph_zeigen name=motor_starte` `aktion: aufrufgraph_einstellen richtung=both` `aktion: aufrufgraph_einstellen richtung=calls`
+- [ ] **L9 Der Graph der Datei:** In `main.c` Diagram `Call graph of this file`: `pruefe` und
+      `main` im Rahmen `main.c`, `motor_starte …` und `protokolliere …` mit drei Punkten in ihren
+      Rahmen, die zwei `regle` gestrichelt mit `?`. Kein `schreibe` — was draußen weiter ruft,
+      ist nicht gezeigt.
+      `aktion: datei_waehlen pfad=main.c` `aktion: aufrufgraph_zeigen`
+- [ ] **L10 Varianten:** Show #if variants anhaken und `!MIT_DIAGNOSE` in Defines (Enter),
+      zurück zum Graph ab `main`. Der Pfeil zu `protokolliere` ist **gepunktet** und trägt
+      `defined(MIT_DIAGNOSE)` — er gilt mit diesen Definitionen nicht. Defines wieder leeren:
+      der Pfeil ist durchgezogen, ohne Beschriftung.
+      `aktion: zweige_waehlen name=varianten` `aktion: definitionen_setzen wert=!MIT_DIAGNOSE` `aktion: aufrufgraph_zeigen name=main` `aktion: definitionen_setzen wert=`
+- [ ] **L11 Rahmen:** Frame #if regions anhaken. Der Pfeil zu `protokolliere` ist blau, der von
+      `protokolliere` zu `schreibe` orange; rechts oben eine Legende mit `defined(MIT_DIAGNOSE)`
+      (blau) und `defined(MIT_LOG)` (orange).
+      `aktion: zweige_waehlen name=rahmen`
+- [ ] **L12 Nach rechts und als Text:** Richtung Left-right: die Rahmen liegen untereinander, jeder
+      Titel ganz zu lesen, `schreibe` ganz unten. Format mermaid, Ansicht Text: `flowchart LR`, je
+      Datei ein `subgraph`, `-.->|"?"|` zu `regle`; in mermaid.live dasselbe Bild.
+      `aktion: zweige_waehlen name=auswerten` `aktion: format_waehlen name=mermaid` `aktion: ansicht_waehlen name=text`
