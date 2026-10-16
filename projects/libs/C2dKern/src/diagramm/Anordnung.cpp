@@ -23,6 +23,7 @@ constexpr double kAbstandNachbar = 34;  // zwischen zwei Knoten einer Schicht
 constexpr double kAbstandStuetze = 16;  // neben einem Stuetzpunkt
 constexpr double kStuetzBreite = 8;     // ein Stuetzpunkt ohne Beschriftung
 constexpr double kUnterLuecke = 11;     // eine Beschriftung steht so weit unter der Luecke, in der ihre Kante abbiegt
+constexpr double kSchildLuft = 8;       // nach rechts: zwischen dem Ende einer Beschriftung und dem Knoten dahinter
 constexpr double kRueckAbstand = 26;    // einer Kante zurueck vom aeussersten Knoten
 constexpr double kRueckStaffel = 14;    // zwischen zwei Kanten zurueck
 constexpr double kSpurAbstand = 8;      // eine Kante zurueck, die unten aus- oder oben eintritt: so nah an der Zeile
@@ -47,6 +48,7 @@ struct Schichtung
     /// je Kante ueber mehrere Schichten: die Mitten ihrer Stuetzpunkte, je Schicht dazwischen einer
     std::vector<std::vector<Punkt>> stuetzen;
     std::vector<double> zeileOben;  ///< je Schicht: ihre Oberkante
+    std::vector<double> luecke;     ///< je Schicht: wo darueber die Kanten abbiegen
 };
 
 /// Ordnet n Knoten der Groessen `groesse` in Schichten an, von oben nach unten.
@@ -61,9 +63,14 @@ struct Schichtung
 /// Rand, unter der, in der er endet, fuer seinen Rand — so biegen die Kanten
 /// ausserhalb der Rahmen ab, und ihre Beschriftungen stehen nicht auf dem Titel.
 /// `zeileOben` ist die Oberkante dieses Platzes, nicht die der Knoten.
+///
+/// `schildLaenge[e]`: wie weit die Beschriftung von Kante e in Richtung des Ablaufs
+/// reicht (0: kaum — nach unten ist sie eine Zeile hoch). Sie steht unter der Luecke,
+/// in der ihre Kante abbiegt; zwischen der und der naechsten Schicht bleibt ihr Platz.
 Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten,
                     const std::vector<double>& stuetzBreite = {},
-                    const std::vector<std::vector<std::size_t>>& gruppenVon = {})
+                    const std::vector<std::vector<std::size_t>>& gruppenVon = {},
+                    const std::vector<double>& schildLaenge = {})
 {
     const std::size_t n = groesse.size();
     Schichtung s;
@@ -262,13 +269,26 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
             nachher[r] = std::max(nachher[r], static_cast<double>(enden) * kGruppenRand);
         }
     }
+    // je Schicht: wie weit ueber ihr die Kanten abbiegen — so weit, dass die Beschriftungen
+    // darunter (Kanten aus der Schicht davor) vor ihr enden
+    std::vector<double> unterLuecke(schicht.size(), kAbstandSchicht / 2);
+    for (std::size_t e = 0; e < kanten.size() && e < schildLaenge.size(); ++e)
+    {
+        const auto [a, b] = kanten[e];
+        if (schildLaenge[e] <= 0 || s.rang[b] <= s.rang[a]) continue;
+        const auto r = static_cast<std::size_t>(s.rang[a]) + 1;
+        if (r < unterLuecke.size()) unterLuecke[r] = std::max(unterLuecke[r], kUnterLuecke + schildLaenge[e] + kSchildLuft);
+    }
     const auto setze = [&] {
         s.zeileOben.clear();
+        s.luecke.clear();
         double y = 0;
         for (std::size_t r = 0; r < schicht.size(); ++r)
         {
             const auto& reihe = schicht[r];
+            if (r > 0) y += unterLuecke[r] - kAbstandSchicht / 2;  // die Luecke davor reicht weiter
             s.zeileOben.push_back(y);
+            s.luecke.push_back(y - unterLuecke[r]);
             y += vorher[r];
             double hoehe = 0;
             for (const std::size_t v : reihe) hoehe = std::max(hoehe, masse[v].y);
@@ -319,6 +339,7 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         r.y += kRand;
     }
     for (double& oberkante : s.zeileOben) oberkante += kRand;
+    for (double& biege : s.luecke) biege += kRand;
     s.orte.assign(orte.begin(), orte.begin() + static_cast<std::ptrdiff_t>(n));
     for (std::size_t e = 0; e < kanten.size(); ++e)
         for (const std::size_t d : stuetzIds[e]) s.stuetzen[e].push_back(orte[d].mitte());
@@ -410,13 +431,16 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
         groesse.push_back(drehen ? Punkt{g.y, g.x} : g);
     }
     // Der erste Stuetzpunkt einer langen Kante haelt ihrer Beschriftung den Platz frei.
+    // Nach rechts steht sie laengs der Kante: dann braucht sie Platz in der Luecke.
     std::vector<Paar> paare;
     std::vector<double> stuetzBreite;
+    std::vector<double> schildLaenge;
     for (const Kante& k : kanten)
     {
         paare.emplace_back(k.von, k.nach);
         const double breite = static_cast<double>(k.beschriftung.size()) * optionen.zeichenBreite + 10;
         stuetzBreite.push_back(k.beschriftung.empty() ? 0 : drehen ? optionen.zeilenHoehe + 6 : breite);
+        schildLaenge.push_back(k.beschriftung.empty() || !drehen ? 0 : breite);
     }
     // Platz fuer Titel und Rand der Rahmen — nach unten gerechnet; nach rechts steht der Titel
     // oben quer zur Richtung und braucht keinen.
@@ -424,7 +448,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
     for (std::size_t v = 0; v < gruppenVon.size(); ++v)
         for (std::size_t g = knoten[v].gruppe; g < diagramm.gruppen().size(); g = diagramm.gruppen()[g].eltern)
             gruppenVon[v].push_back(g);
-    const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon);
+    const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon, schildLaenge);
     a.knoten = s.orte;
 
     const auto entlang = [](Punkt von, Punkt nach, double weit) {
@@ -450,7 +474,7 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
             // wechselt nur in der Luecke ueber einer Schicht — dort, wo nichts steht.
             const Punkt p{von.mitte().x, von.y + von.hoehe};
             const Punkt q{nach.mitte().x, nach.y};
-            const auto luecke = [&](int r) { return s.zeileOben[static_cast<std::size_t>(r)] - kAbstandSchicht / 2; };
+            const auto luecke = [&](int r) { return s.luecke[static_cast<std::size_t>(r)]; };
             linie.push_back(p);
             double x = p.x;
             const auto biege = [&](double ziel, int r) {
@@ -467,11 +491,13 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
             // Die Beschriftung steht dort, wo die Kante ihren eigenen Weg geht: gleich unter
             // der Luecke, in der Kanten aus derselben Quelle sich trennen — biegt sie dort
             // ab, auf ihrer eigenen Senkrechten, sonst auf der Senkrechten unter der Quelle.
+            // Nach rechts beginnt sie dort (sie steht laengs), nach unten steht sie mittig.
             const double ersteLuecke = luecke(rangVon + 1);
+            const double weiter = kUnterLuecke + schildLaenge[e] / 2;
             if (linie.size() > 2 && linie[1].y <= ersteLuecke + 1)
-                ort = entlang(linie[2], linie[3], kUnterLuecke);
+                ort = entlang(linie[2], linie[3], weiter);
             else
-                ort = entlang(linie[0], linie[1], ersteLuecke + kUnterLuecke - p.y);
+                ort = entlang(linie[0], linie[1], ersteLuecke + weiter - p.y);
         }
         else
         {
@@ -513,8 +539,8 @@ FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& o
             {
                 const Punkt p{von.mitte().x, von.y + von.hoehe};
                 const std::size_t darunter = static_cast<std::size_t>(rangVon) + 1;
-                const double spur = darunter < s.zeileOben.size() ? s.zeileOben[darunter] - kAbstandSchicht + kSpurAbstand
-                                                                  : p.y + kSpurAbstand;
+                const double spur = darunter < s.luecke.size() ? s.luecke[darunter] - kAbstandSchicht / 2 + kSpurAbstand
+                                                               : p.y + kSpurAbstand;
                 linie = {p, {p.x, spur}, {aussen, spur}};
             }
             if (selbst || rechtsFrei(kanten[e].nach))

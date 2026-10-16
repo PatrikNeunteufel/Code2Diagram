@@ -26,18 +26,25 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
 
 - [ ] **B0 Vorbereiten:** Das Beispiel zeigen und `ampel_takt` wählen.
       `aktion: beispiel_zeigen` `aktion: diagramm_waehlen name=ampel_takt` `aktion: format_waehlen name=mermaid`
-- [ ] **B1 Der Text ergibt das richtige Bild:** Diagram > Copy diagram text, in mermaid.live
-      einfügen. Zu sehen: der Start mit `ampel_takt(Ampel *ampel, uint16_t vergangen_ms)`, eine
-      Raute `ampel->stoerung`, deren `yes` in einen Kasten mit zwei Zeilen führt
-      (`ampel->phase = GELB`, `return`), eine zweite Raute `ampel->rest_ms > vergangen_ms`,
-      ein Kasten mit den zwei letzten Zuweisungen, und ein Ende, in das alle drei Wege münden.
-      Kein Zeichen ist verstümmelt (`->` und `>` stehen als Zeichen da, nicht als `#gt;`).
-- [ ] **B2 Ein switch:** `dauer_ms()` wählen und den Text in mermaid.live ansehen. Eine Raute
+- [ ] **B1 Der Ablauf stimmt mit dem Code überein:** *Zu prüfen:* Gibt das Flussdiagramm von
+      `ampel_takt` den Quelltext links richtig wieder — Reihenfolge, Verzweigungen, Wege?
+      *So:* Diagram > Copy diagram text, in mermaid.live einfügen und das Bild dort mit dem
+      Quelltext vergleichen (die Vorschau im Fenster zeigt dasselbe, sie ist Thema von E).
+      *Richtig ist:* von oben nach unten der Start `ampel_takt(Ampel *ampel, uint16_t vergangen_ms)`;
+      die Raute `ampel->stoerung` — `yes` führt in einen Kasten mit zwei Zeilen
+      (`ampel->phase = GELB`, `return`), `no` zur zweiten Raute `ampel->rest_ms > vergangen_ms`;
+      deren `yes` in einen Kasten (`ampel->rest_ms -= vergangen_ms`, `return`), `no` in einen
+      Kasten mit den zwei letzten Zuweisungen; alle drei Kästen münden ins Ende. Kein Zeichen ist
+      verstümmelt (`->` und `>` stehen als Zeichen da, nicht als `#gt;`).
+- [ ] **B2 Ein switch:** *Zu prüfen:* Ein `switch` wird eine Raute mit einer Kante je Fall.
+      *So:* `dauer_ms()` wählen, Text wie in B1 in mermaid.live. *Richtig ist:* eine Raute
       `phase` mit vier Kanten: `ROT`, `GRUEN`, `ROT_GELB, GELB` (zwei Fälle, eine Kante) und
       `otherwise` zum `return 0`.
       `aktion: diagramm_waehlen name=dauer_ms`
-- [ ] **B3 Die Richtung:** Auf `Left-right` stellen — die erste Zeile des Diagramms heisst
-      jetzt `flowchart LR`, das Bild in mermaid.live wächst nach rechts.
+- [ ] **B3 Die Richtung:** *Zu prüfen:* `Left-right` dreht das Diagramm. *So:* oben auf
+      `Left-right` stellen. *Richtig ist:* die erste Zeile des Texts heisst `flowchart LR`, das
+      Bild in mermaid.live wächst nach rechts; in der Vorschau stehen die Beschriftungen der
+      Kanten frei zwischen Raute und Kasten, auf keinem Kasten.
 
 ## C. Datentypen
 
@@ -77,9 +84,11 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
       Reihe (`return 1`, `drucke(summe(n))`), `return 0` und das Ende. Jede Kante trägt eine
       Pfeilspitze, keine Schrift ist abgeschnitten, nichts überdeckt sich.
 - [ ] **E2 Wer weiterführt, ist hervorgehoben:** `drucke(summe(n))` ist farbig umrandet und hat
-      doppelte Seiten (ein Aufruf); die anderen Kästen nicht.
+      doppelte Seiten (ein Aufruf); die anderen Kästen nicht — auch `int n = lies();` nicht:
+      hervorgehoben ist nur ein Aufruf, dessen Funktion es in der Datei (im Projekt) gibt.
 - [ ] **E3 Vergrößern und Verschieben:** Strg + Mausrad vergrößert und verkleinert um den
-      Zeiger; mit gedrückter Maustaste lässt sich das Bild ziehen.
+      Zeiger; mit gedrückter Maustaste lässt sich das Bild ziehen, sobald es größer ist als die
+      Fläche (passt es ganz hinein, bewegt es sich nicht — so gewollt).
 - [ ] **E4 Sprung zur gerufenen Funktion:** Doppelklick auf `drucke(summe(n))` — die Auswahl
       Diagram steht auf `summe()`, die Vorschau zeigt deren Ablauf mit der Schleife (`i < n`,
       eine Kante führt rechts außen zurück zur Raute). Diagram > Back (oder Alt + Pfeil links)

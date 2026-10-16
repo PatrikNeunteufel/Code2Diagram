@@ -340,12 +340,21 @@ void waehle(int art)
                 }
             for (const Punkt& p : a.beschriftungen) CHECK(liegtIn({p.x - 30, p.y - 7, 60, 14}, {0, 0, a.breite, a.hoehe}));
 
-            // die Schilder der Faelle stossen nicht aneinander (geschaetzt wie in der Vorschau)
-            if (nachRechts) continue;
+            // kein Schild liegt auf einem Knoten (geschaetzt wie in der Vorschau) — auch nach rechts,
+            // wo es laengs der Kante steht (Sichttest B3: `ROT_GELB, GELB` lag auf `return 1000`)
             const auto schild = [&](std::size_t e) {
                 const double breite = static_cast<double>(d.kanten()[e].beschriftung.size()) * 7.2 + 4;
                 return Rechteck{a.beschriftungen[e].x - breite / 2, a.beschriftungen[e].y - 7, breite, 14};
             };
+            for (std::size_t e = 0; e < a.kanten.size(); ++e)
+            {
+                if (d.kanten()[e].beschriftung.empty()) continue;
+                CAPTURE(d.kanten()[e].beschriftung);
+                for (const Rechteck& r : a.knoten) CHECK_FALSE(ueberlappen(schild(e), r));
+            }
+
+            // die Schilder der Faelle stossen nicht aneinander
+            if (nachRechts) continue;
             for (std::size_t e = 0; e < a.kanten.size(); ++e)
                 for (std::size_t f = e + 1; f < a.kanten.size(); ++f)
                     if (!d.kanten()[e].beschriftung.empty() && !d.kanten()[f].beschriftung.empty())
