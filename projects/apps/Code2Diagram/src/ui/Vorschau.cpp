@@ -7,6 +7,7 @@
 
 #include "c2d/diagramm/Anordnung.hpp"
 
+#include <QApplication>
 #include <QContextMenuEvent>
 #include <QFontMetricsF>
 #include <QFontDatabase>
@@ -144,7 +145,7 @@ public:
         QGraphicsPathItem* stueck = m_szene.addPath(form, verweis ? m_verweis : m_strich, rand ? m_getoent : m_flaeche);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
         stueck->setZValue(2);
-        if (verweis) stueck->setToolTip(QStringLiteral("Double-click: go to the function or type it names. Right-click: more."));
+        if (verweis) stueck->setToolTip(QStringLiteral("Click: show in the source. Double-click: go to the function or type it names. Right-click: more."));
 
         QStringList zeilen;
         for (const std::string& z : k.zeilen) zeilen << gekuerzt(z);
@@ -194,8 +195,8 @@ public:
         QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
         stueck->setZValue(2);
-        stueck->setToolTip(funktion ? QStringLiteral("Double-click: show its flow. Right-click: more.")
-                                    : k.art == AufrufKnotenArt::Makro ? QStringLiteral("A macro of the project")
+        stueck->setToolTip(funktion ? QStringLiteral("Click: show in the source. Double-click: show its flow. Right-click: more.")
+                                    : k.art == AufrufKnotenArt::Makro ? QStringLiteral("A macro of the project. Click: show in the source.")
                                                                        : QStringLiteral("No body in the project"));
         text(gekuerzt(knotenText(k)), r, false, !funktion)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
     }
@@ -330,25 +331,24 @@ public:
         }
 
         double y = r.top() + kopf + 5;
-        const auto zeile = [&](char sicht, const std::string& inhalt, bool kursiv) {
-            const QString vorn = sicht == '\0' ? QString() : QString(QLatin1Char(sicht)) + QLatin1Char(' ');
-            textLinks(vorn + gekuerzt(inhalt), QPointF(r.left() + 8, y), kursiv);
-            y += zeilenHoehe;
+        // ein unsichtbares Feld ueber die ganze Zeile: ein Klick trifft das Glied, auch neben dem Text
+        const auto feldUeber = [&](std::size_t eintrag) {
+            QGraphicsRectItem* feld = m_szene.addRect(QRectF(r.left() + 1, y, r.width() - 2, zeilenHoehe), Qt::NoPen, Qt::NoBrush);
+            feld->setZValue(2.5);
+            merke(feld, eintrag);
+            return feld;
         };
         for (std::size_t e = 0; e < k.eintraege.size(); ++e)
         {
             const Eintrag& eintrag = k.eintraege[e];
             const QString vorn = eintrag.sicht == '\0' ? QString() : QString(QLatin1Char(eintrag.sicht)) + QLatin1Char(' ');
             const QString inhalt = vorn + gekuerzt(eintrag.text());
-            // ein unsichtbares Feld ueber die ganze Zeile: ein Klick trifft das Glied, auch neben dem Text
-            QGraphicsRectItem* feld = m_szene.addRect(QRectF(r.left() + 1, y, r.width() - 2, zeilenHoehe), Qt::NoPen, Qt::NoBrush);
-            feld->setZValue(2.5);
-            merke(feld, e);
+            QGraphicsRectItem* feld = feldUeber(e);
             if (e < links.size() && !links[e].empty())
             {
                 QGraphicsTextItem* stueck = linkZeile(inhalt, links[e], QPointF(r.left() + 8, y));
                 merke(stueck, e);
-                feld->setToolTip(QStringLiteral("Double-click or right-click: go to the type"));
+                feld->setToolTip(QStringLiteral("Click: show in the source. Double-click or right-click: go to the type."));
             }
             else
                 merke(textLinks(inhalt, QPointF(r.left() + 8, y)), e);
@@ -358,7 +358,17 @@ public:
         y += 3;
         m_szene.addLine(r.left(), y, r.right(), y, m_strich)->setZValue(2);
         y += 5;
-        for (const Methode& m : k.methoden) zeile(m.sicht, m.text(), m.abstrakt);  // abstrakt: kursiv, wie in UML
+        // die Methoden zaehlen hinter den Feldern weiter
+        for (std::size_t m = 0; m < k.methoden.size(); ++m)
+        {
+            const Methode& methode = k.methoden[m];
+            const QString vorn = methode.sicht == '\0' ? QString() : QString(QLatin1Char(methode.sicht)) + QLatin1Char(' ');
+            feldUeber(k.eintraege.size() + m);
+            // abstrakt: kursiv, wie in UML
+            merke(textLinks(vorn + gekuerzt(methode.text()), QPointF(r.left() + 8, y), methode.abstrakt),
+                  k.eintraege.size() + m);
+            y += zeilenHoehe;
+        }
     }
 
     /// Eine Zeile, in der die Namen `links` (ganze Woerter) als Link hervorgehoben sind.
@@ -619,8 +629,38 @@ void Vorschau::kastenBei(const QPoint& ort, std::size_t& kasten, std::size_t& ei
     }
 }
 
+void Vorschau::mousePressEvent(QMouseEvent* ereignis)
+{
+    m_klickMoeglich = ereignis->button() == Qt::LeftButton;
+    m_gedrueckt = ereignis->pos();
+    QGraphicsView::mousePressEvent(ereignis);  // beginnt das Ziehen
+}
+
+void Vorschau::mouseReleaseEvent(QMouseEvent* ereignis)
+{
+    QGraphicsView::mouseReleaseEvent(ereignis);
+    // ein Klick nur, wenn die Maus kaum wanderte — sonst wurde das Bild gezogen
+    const bool klick = m_klickMoeglich && ereignis->button() == Qt::LeftButton &&
+                       (ereignis->pos() - m_gedrueckt).manhattanLength() < QApplication::startDragDistance();
+    m_klickMoeglich = false;
+    if (!klick) return;
+    if (m_struktur)
+    {
+        std::size_t kasten = kKeine;
+        std::size_t eintrag = kKeine;
+        kastenBei(ereignis->pos(), kasten, eintrag);
+        if (kasten != kKeine && beiKlickKasten) beiKlickKasten(kasten, eintrag);
+        return;
+    }
+    KnotenId knoten = kKeine;
+    std::size_t gruppe = kKeine;
+    trefferBei(ereignis->pos(), knoten, gruppe);
+    if (knoten != kKeine && beiKlick) beiKlick(knoten);
+}
+
 void Vorschau::mouseDoubleClickEvent(QMouseEvent* ereignis)
 {
+    m_klickMoeglich = false;  // das Loslassen danach ist kein zweiter Klick
     if (m_struktur)
     {
         std::size_t kasten = kKeine;

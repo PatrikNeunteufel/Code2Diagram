@@ -461,6 +461,79 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.aufrufgraphKnoten() == QStringList{"takt", "motor_starte", "regle"});
     }
 
+    TEST_CASE("Ein Klick zeigt die Stelle im Quelltext: im Ablauf, im Aufrufgraph, bei den Datentypen")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            const QString pfad = wurzel.filePath(relativ);
+            REQUIRE(QDir().mkpath(QFileInfo(pfad).absolutePath()));
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("main.c",
+             "#define QUADRAT(x) ((x) * (x))\n"  // 1
+             "int main(void)\n"                  // 2
+             "{\n"                               // 3
+             "    motor_starte();\n"             // 4
+             "    memcpy(0, 0, 0);\n"            // 5
+             "    return QUADRAT(2);\n"          // 6
+             "}\n");
+        lege("motor.c",
+             "void takt(void) { }\n"          // 1
+             "\n"                             // 2
+             "void motor_starte(void)\n"      // 3
+             "{\n"                            // 4
+             "    takt();\n"                  // 5
+             "}\n");
+        lege("motor.cpp",
+             "class Motor {\n"        // 1
+             "public:\n"              // 2
+             "    void starte();\n"   // 3
+             "private:\n"             // 4
+             "    int m_takt = 0;\n"  // 5
+             "};\n");
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDatei("main.c"));
+        CHECK(fenster.gezeigteStelle().isEmpty());
+
+        // im Ablauf: die Zeile der Anweisung, auch fuer einen Aufruf (der Doppelklick fuehrt zur Funktion)
+        REQUIRE(fenster.waehleDiagramm("main"));
+        CHECK(fenster.klicke("memcpy(0, 0, 0)"));
+        CHECK(fenster.gezeigteStelle() == "main.c:5");
+        CHECK(fenster.klicke("motor_starte()"));
+        CHECK(fenster.gezeigteStelle() == "main.c:4");
+        CHECK_FALSE(fenster.klicke("gibt_es_nicht()"));
+        CHECK(fenster.gezeigteStelle() == "main.c:4");  // bleibt
+
+        // im Aufrufgraph: die Zeile der Funktion, auch in einer anderen Datei; ein Makro, wo es steht
+        fenster.setzeTiefe(0);
+        REQUIRE(fenster.zeigeAufrufgraph("main"));
+        CHECK(fenster.klicke("takt"));
+        CHECK(fenster.gezeigteStelle() == "motor.c:1");
+        CHECK(fenster.klicke("motor_starte"));
+        CHECK(fenster.gezeigteStelle() == "motor.c:3");
+        CHECK(fenster.klicke("QUADRAT"));
+        CHECK(fenster.gezeigteStelle() == "main.c:1");
+        CHECK_FALSE(fenster.klicke("memcpy"));  // fremd: keine Stelle im Projekt
+        CHECK(fenster.gezeigteStelle() == "main.c:1");
+
+        // bei den Datentypen: der Kopf, ein Feld, eine Methode
+        REQUIRE(fenster.waehleDatei("motor.cpp"));
+        REQUIRE(fenster.waehleDiagramm(Hauptfenster::kDatentypen));
+        CHECK(fenster.klicke("Motor::m_takt"));
+        CHECK(fenster.gezeigteStelle() == "motor.cpp:5");
+        CHECK(fenster.klicke("Motor::starte"));
+        CHECK(fenster.gezeigteStelle() == "motor.cpp:3");
+        CHECK(fenster.klicke("Motor"));
+        CHECK(fenster.gezeigteStelle() == "motor.cpp:1");
+        CHECK_FALSE(fenster.klicke("Motor::gibt_es_nicht"));
+    }
+
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
     {
         QTemporaryDir ordner;

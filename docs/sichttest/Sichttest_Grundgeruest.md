@@ -114,8 +114,9 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
       embedding: quadrat(int x)* — nur er verschwindet. Diagram > Remove all embeddings: das
       Bild ist wieder das aus E1.
       `aktion: ansicht_waehlen name=preview`
-- [ ] **E9 Zeile im Quelltext:** Doppelklick auf `return 1` hinterlegt links die Zeile mit
-      `return 1;` und holt sie in die Mitte.
+- [ ] **E9 Zeile im Quelltext:** Ein Klick auf `return 1` hinterlegt links die Zeile mit
+      `return 1;` und holt sie in die Mitte. Ein Doppelklick darauf tut nichts weiter (kein Ziel).
+      `aktion: klicken name=return 1`
 - [ ] **E10 Nach rechts:** Richtung `Left-right` — der Ablauf wächst nach rechts, der Start
       steht links; nichts überdeckt sich.
 
@@ -421,8 +422,8 @@ Am Beispiel `beispiele/typen`: `inc/typen.h` definiert `t_PID`, `t_MODUS`, `Regl
       `t_MODUS`, `Regler`, `Fern`; gewählt ist `t_PID`. Bei einer Funktion in Diagram ist es weg.
 - [ ] **M2 Ein Typ mit Nachbarn:** `Regler` wählen: drei Kästen — `Regler`, darunter `t_PID`
       (Raute, `pid`) und `t_MODUS` (Pfeil, `modus`); `Fern` fehlt. Im Kasten `Regler` sind
-      `t_PID`, `t_MODUS` und `Motor` blau unterstrichen; Tooltip auf der Zeile *Double-click or
-      right-click: go to the type*.
+      `t_PID`, `t_MODUS` und `Motor` blau unterstrichen; Tooltip auf der Zeile *Click: show in the
+      source. Double-click or right-click: go to the type.*
       `aktion: typ_waehlen name=Regler`
 - [ ] **M3 In eine andere Datei:** Doppelklick auf `Motor` in `struct Motor *motor`: Datei
       `inc/motor.h`, Data types, zweites Feld `Motor`. **Back**: wieder `Regler` in `inc/typen.h`.
@@ -441,3 +442,30 @@ Am Beispiel `beispiele/typen`: `inc/typen.h` definiert `t_PID`, `t_MODUS`, `Regl
 - [ ] **M7 Ohne Einbindung:** `sim/sim.c`, Diagram `simuliere()`: `t_PID` im Startknoten führt zum
       eigenen `t_PID` in `sim/sim.c` (die eigene Datei zuerst).
       `aktion: datei_waehlen pfad=sim/sim.c` `aktion: typ_zeigen name=t_PID`
+
+## N. Klick zeigt die Stelle, Doppelklick führt hin
+
+Ein Klick (ohne zu ziehen) zeigt in jeder Ansicht die Stelle im Quelltext; ein Doppelklick führt nur
+zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiele/typen`.
+
+- [ ] **N0 Vorbereiten:** Das Projekt öffnen, `main.c`, Diagram `main()`, Vorschau.
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **N1 Ein Aufruf im Ablauf:** Ein Klick auf `motor_starte(2)` hinterlegt links Zeile 18
+      (`motor_starte(2);`) — es geht **nicht** zur Funktion. Erst der Doppelklick zeigt den Ablauf
+      von `motor_starte` in `antrieb/motor.c`; links steht dann diese Datei. Back.
+      `aktion: klicken name=motor_starte(2)`
+- [ ] **N2 Ziehen ist kein Klick:** Das Bild vergrößern (Strg + Mausrad), mit gedrückter Taste auf
+      einem Knoten ziehen: das Bild wandert, der Quelltext springt nicht.
+- [ ] **N3 Im Aufrufgraph:** **Call graph from here**. Ein Klick auf `motor_starte` zeigt links
+      `antrieb/motor.c`, Zeile 12 hinterlegt; ein Klick auf `main` wieder `main.c`, Zeile 14. Ein
+      Klick auf einen grauen (fremden) Knoten: die Statuszeile sagt `… no body in the project`.
+      Doppelklick auf `motor_starte`: sein Ablauf, wie bisher. Back.
+      `aktion: aufrufgraph_zeigen name=main` `aktion: klicken name=motor_starte` `aktion: klicken name=main`
+- [ ] **N4 Bei den Datentypen:** `beispiele/typen` öffnen, `inc/typen.h`, Data types, `Regler`.
+      Ein Klick auf den Kopf von `Regler` hinterlegt Zeile 12, auf `struct Motor *motor` Zeile 15,
+      auf den Kopf von `t_PID` Zeile 5. Erst der Doppelklick auf `Motor` in `struct Motor *motor`
+      führt nach `inc/motor.h`.
+      `aktion: ordner_oeffnen pfad=beispiele/typen` `aktion: datei_waehlen pfad=inc/typen.h` `aktion: typ_waehlen name=Regler` `aktion: klicken name=Regler` `aktion: klicken name=Regler::motor` `aktion: klicken name=t_PID`
+- [ ] **N5 Methoden:** `beispiele/motor.cpp`, Data types, `antrieb::Motor`: ein Klick auf eine
+      Methode (etwa `bool starte()`) hinterlegt ihre Deklaration in der Klasse.
+      `aktion: datei_oeffnen pfad=beispiele/motor.cpp` `aktion: typ_waehlen name=antrieb::Motor` `aktion: klicken name=antrieb::Motor::starte`

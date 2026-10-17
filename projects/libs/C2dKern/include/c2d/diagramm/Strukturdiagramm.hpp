@@ -28,6 +28,7 @@ struct Eintrag
     std::string name;
     std::string zusatz;  ///< `[8]`, `: 3` oder `= 4`
     char sicht = '\0';   ///< `+` oeffentlich, `#` geschuetzt, `-` privat; '\0' = keine Angabe
+    int zeile = 0;       ///< im Quelltext; 0 = keine
 
     /// Der Eintrag in einer Zeile, gesetzt wie in modell::deklaration (ohne die Sichtbarkeit).
     [[nodiscard]] std::string text() const;
@@ -40,6 +41,7 @@ struct Methode
     char sicht = '\0';
     bool abstrakt = false;
     bool statisch = false;
+    int zeile = 0;  ///< im Quelltext; 0 = keine
 
     /// `rueckgabe signatur` (ohne die Sichtbarkeit).
     [[nodiscard]] std::string text() const;
@@ -51,6 +53,7 @@ struct Kasten
     std::string name;  ///< mit Bereich, etwa `antrieb::Motor`
     std::vector<Eintrag> eintraege;
     std::vector<Methode> methoden;
+    int zeile = 0;  ///< die Zeile des Typs im Quelltext; 0 = keine
 };
 
 enum class BeziehungArt

@@ -247,7 +247,11 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   - **Rechtsklick** auf so einen Knoten: *Embed …() here* setzt den Ablauf der gerufenen Funktion
     umrahmt hinter den Aufruf — auch verschachtelt, in einer Einbettung weiter. Rechtsklick in
     einen Rahmen: *Remove embedding*. Diagram > Remove all embeddings nimmt alle heraus.
-  - Doppelklick auf einen anderen Knoten zeigt seine Zeile im Quelltext.
+  - **Ein Klick** (ohne zu ziehen) zeigt in jeder Ansicht die Stelle im Quelltext: im Ablauf die
+    Zeile der Anweisung — auch bei einem Aufruf —, im Aufrufgraph die Zeile der Funktion (ein Makro
+    dort, wo das Projekt es definiert; ein fremder Aufruf hat keine), bei den Datentypen die Zeile
+    des Typs, des Felds oder der Methode. Der **Doppelklick** führt nur zu dem, was genannt ist;
+    wo es nichts gibt, tut er nichts weiter.
   - Was eingebettet ist, steht auch im Text: als `subgraph` (Mermaid), `cluster` (DOT),
     Behälter (draw.io).
 - `--bild` legt das Fenster als PNG ab und endet — ohne Datei mit dem eingebauten Beispiel.

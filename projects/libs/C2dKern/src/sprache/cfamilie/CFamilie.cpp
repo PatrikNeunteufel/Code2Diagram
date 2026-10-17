@@ -530,7 +530,7 @@ private:
             einheit().variablen.push_back({std::move(d.typ), std::move(d.name), std::move(d.zusatz), zeile});
         else
             einheit().typen[r.typ].felder.push_back(
-                {std::move(d.typ), std::move(d.name), std::move(d.zusatz), r.sicht});
+                {std::move(d.typ), std::move(d.name), std::move(d.zusatz), r.sicht, zeile});
     }
 
     /// Hinter einer Deklaration: das `;` nehmen — oder sagen, was stattdessen dasteht.
@@ -666,7 +666,8 @@ private:
             while (s.first < s.second && m_t[s.first].art == TokenArt::Direktive) ++s.first;
             if (s.first >= s.second || m_t[s.first].art != TokenArt::Bezeichner) continue;
             einheit().typen[index].felder.push_back(
-                {{}, std::string(m_t[s.first].text), textVon(s.first + 1, s.second), Sichtbarkeit::Keine});
+                {{}, std::string(m_t[s.first].text), textVon(s.first + 1, s.second), Sichtbarkeit::Keine,
+                 m_t[s.first].ort.zeile});
         }
         m_p = zu;
     }

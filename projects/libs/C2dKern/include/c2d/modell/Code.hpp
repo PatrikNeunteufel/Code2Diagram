@@ -176,6 +176,7 @@ struct Feld
     std::string name;    ///< leer = namenloses Glied (anonyme Struktur)
     std::string zusatz;  ///< `[8]`, `: 3` oder `= 4`
     Sichtbarkeit sicht = Sichtbarkeit::Keine;
+    int zeile = 0;
 };
 
 /// Eine Funktion, die zu einem Typ gehoert. Hat sie einen Rumpf, steht sie

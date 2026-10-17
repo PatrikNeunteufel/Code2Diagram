@@ -12,6 +12,9 @@
  * steht ueber dem Quelltext der Baum der Dateien; zur Wahl stehen die
  * Diagramme der gewaehlten Datei.
  *
+ * In jeder Ansicht zeigt ein Klick auf einen Knoten, Kasten oder ein Glied
+ * seine Stelle im Quelltext; der Doppelklick fuehrt nur zu dem, was genannt ist.
+ *
  * Im gezeichneten Flussdiagramm fuehrt ein Knoten, der eine Funktion ruft,
  * weiter — auch in eine andere Datei des Projekts: Doppelklick zeigt ihr
  * Diagramm (Back fuehrt zurueck), das Kontextmenue bettet ihren Ablauf
@@ -179,6 +182,14 @@ public:
     /// Der Text des hervorgehobenen Knotens (Zeilen durch `\n`); leer = keiner.
     [[nodiscard]] QString markiert() const;
 
+    /// Wie ein Klick in die Vorschau: die Stelle im Quelltext zeigen. `name`: im Ablauf eine Zeile
+    /// eines Knotens, im Aufrufgraph der Name einer Funktion (oder eines Makros), bei den Datentypen
+    /// ein Typ (der Kopf seines Kastens) oder `Typ::glied` (ein Feld oder eine Methode).
+    /// false = nichts dieses Namens, oder es hat keine Stelle.
+    bool klicke(const QString& name);
+    /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`; leer = keine.
+    [[nodiscard]] QString gezeigteStelle() const;
+
     /// Wer die gezeigte Funktion ruft, im ganzen Projekt: je Aufrufer `funktion() - pfad:zeile`.
     [[nodiscard]] QStringList aufrufer() const;
     /// Zum Aufrufer Nummer `wahl` (ab 0, wie aufrufer()); dort ist der Knoten
@@ -291,7 +302,12 @@ private:
     void bearbeiteProjektdatei();
     void zeigeProjektMeldungen();
     /// Eine Zeile einer Datei im Quelltext zeigen (die Datei wird dafuer geladen).
-    void zeigeZeile(std::size_t datei, int zeile);
+    /// false = keine solche Datei oder Zeile.
+    bool zeigeZeile(std::size_t datei, int zeile);
+    /// Ein Klick auf einen Knoten (Ablauf oder Aufrufgraph): seine Stelle im Quelltext.
+    bool zeigeStelle(c2d::diagramm::KnotenId knoten);
+    /// Ein Klick auf einen Kasten oder ein Glied (wie Vorschau::beiKlickKasten): seine Stelle.
+    bool zeigeStelle(std::size_t kasten, std::size_t eintrag);
     void kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort);
     void baumMenue(const QPoint& ort);
     /// Aus welcher Datei ein Knoten stammt: die seiner Einbettung, sonst die gewaehlte.
@@ -359,6 +375,7 @@ private:
     QString m_typ;                             ///< der Typ im zweiten Feld; `*` = alle
     std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
     std::size_t m_quelleZeigt = c2d::projekt::kKeine;  ///< die Datei im Quelltext
+    int m_quelleZeile = 0;  ///< die hervorgehobene Zeile darin; 0 = keine
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl

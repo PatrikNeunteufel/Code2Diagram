@@ -56,16 +56,23 @@ public:
     /// Der hervorgehobene Knoten; kKeine = keiner.
     [[nodiscard]] c2d::diagramm::KnotenId markiert() const { return m_markiert; }
 
-    /// Doppelklick auf einen Knoten des Flussdiagramms.
+    /// Klick (ohne zu ziehen) auf einen Knoten des Flussdiagramms: seine Stelle im Quelltext.
+    std::function<void(c2d::diagramm::KnotenId knoten)> beiKlick;
+    /// Doppelklick auf einen Knoten des Flussdiagramms: was er nennt. Ihm geht ein Klick voraus.
     std::function<void(c2d::diagramm::KnotenId knoten)> beiDoppelklick;
     /// Rechtsklick: der Knoten und die innerste Gruppe unter dem Zeiger (je kKeine = keine), der Ort am Bildschirm.
     std::function<void(c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort)> beiKontext;
-    /// Im Strukturdiagramm: Doppelklick auf einen Kasten; `eintrag` = das Glied darin, kKeine = der Kopf.
+    /// Im Strukturdiagramm: Klick auf einen Kasten; `eintrag` = das Glied darin (erst die Felder,
+    /// dann die Methoden), kKeine = der Kopf.
+    std::function<void(std::size_t kasten, std::size_t eintrag)> beiKlickKasten;
+    /// Im Strukturdiagramm: Doppelklick auf einen Kasten (Kasten und Glied wie oben).
     std::function<void(std::size_t kasten, std::size_t eintrag)> beiDoppelklickKasten;
     /// Im Strukturdiagramm: Rechtsklick (Kasten und Glied wie oben; kasten kKeine = daneben).
     std::function<void(std::size_t kasten, std::size_t eintrag, const QPoint& ort)> beiKontextKasten;
 
 protected:
+    void mousePressEvent(QMouseEvent* ereignis) override;
+    void mouseReleaseEvent(QMouseEvent* ereignis) override;
     void mouseDoubleClickEvent(QMouseEvent* ereignis) override;
     void contextMenuEvent(QContextMenuEvent* ereignis) override;
     void wheelEvent(QWheelEvent* ereignis) override;
@@ -77,6 +84,9 @@ private:
     void kastenBei(const QPoint& ort, std::size_t& kasten, std::size_t& eintrag) const;
 
     bool m_struktur = false;  ///< zeigt ein Strukturdiagramm
+
+    QPoint m_gedrueckt;              ///< wo die linke Taste zuletzt gedrueckt wurde
+    bool m_klickMoeglich = false;    ///< gedrueckt und seither kaum bewegt
 
     int m_formen = 0;
     int m_rahmen = 0;

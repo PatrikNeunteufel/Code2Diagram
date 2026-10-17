@@ -279,6 +279,9 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         zeichne();
         aktualisiereLeiste();
     });
+    // ein Klick zeigt die Stelle im Quelltext, ein Doppelklick fuehrt zu dem, was genannt ist
+    m_vorschau->beiKlick = [this](c2d::diagramm::KnotenId knoten) { zeigeStelle(knoten); };
+    m_vorschau->beiKlickKasten = [this](std::size_t kasten, std::size_t eintrag) { zeigeStelle(kasten, eintrag); };
     m_vorschau->beiDoppelklickKasten = [this](std::size_t kasten, std::size_t eintrag) { kastenDoppelklick(kasten, eintrag); };
     m_vorschau->beiKontextKasten = [this](std::size_t kasten, std::size_t eintrag, const QPoint& ort) {
         kastenMenue(kasten, eintrag, ort);
@@ -310,11 +313,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
                 gehe(ziele.front(), knoten);
             return;
         }
-        if (ziele.empty() && typZiele == 0)
-        {
-            zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
-            return;
-        }
+        if (ziele.empty() && typZiele == 0) return;  // die Zeile hat schon der Klick gezeigt
         // mehr als ein Ziel: nicht still eines waehlen — erst die Funktionen, dann die Typen
         statusBar()->showMessage(QStringLiteral("%1 functions and types qualify").arg(ziele.size() + typZiele), 5000);
         QMenu wahl(this);
@@ -650,6 +649,7 @@ void Hauptfenster::liesEin()
     // was vorher galt, verweist nicht mehr sicher in dieses Projekt
     m_datei = kKeine;
     m_quelleZeigt = kKeine;
+    m_quelleZeile = 0;
     m_gezeigt.clear();
     m_verlauf.clear();
     m_aufrufgraph = {};
@@ -731,6 +731,7 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         // ein Ordner ohne Quelldateien
         m_datei = kKeine;
         m_quelleZeigt = kKeine;
+        m_quelleZeile = 0;
         m_quelle->clear();
         {
             const QSignalBlocker ruhe(m_auswahl);
@@ -747,6 +748,7 @@ void Hauptfenster::zeigeDatei(std::size_t index)
     m_quelle->setPlainText(QString::fromUtf8(d.text));
     m_quelle->setExtraSelections({});
     m_quelleZeigt = index;
+    m_quelleZeile = 0;
 
     {
         const QSignalBlocker ruhe(m_auswahl);
@@ -1970,17 +1972,18 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
     if (!menue.isEmpty()) menue.exec(ort);
 }
 
-void Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
+bool Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
 {
-    if (datei >= m_projekt.dateien.size()) return;
+    if (datei >= m_projekt.dateien.size() || zeile <= 0) return false;
     if (datei != m_quelleZeigt)
     {
-        // eine Zeile aus einer eingebetteten Funktion einer anderen Datei: deren Text zeigen
+        // eine Zeile einer anderen Datei (eingebettet, im Aufrufgraph, ein Makro): deren Text zeigen
         m_quelle->setPlainText(QString::fromUtf8(m_projekt.dateien[datei].text));
         m_quelleZeigt = datei;
+        m_quelleZeile = 0;
     }
     const QTextBlock block = m_quelle->document()->findBlockByNumber(zeile - 1);
-    if (zeile <= 0 || !block.isValid()) return;
+    if (!block.isValid()) return false;
     QTextCursor zeiger(block);
     m_quelle->setTextCursor(zeiger);
     m_quelle->centerCursor();
@@ -1990,6 +1993,80 @@ void Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
     marke.format.setBackground(palette().color(QPalette::Highlight).lighter(160));
     marke.format.setProperty(QTextFormat::FullWidthSelection, true);
     m_quelle->setExtraSelections({marke});
+    m_quelleZeile = zeile;
+    return true;
+}
+
+bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
+{
+    if (!istAufrufgraph())
+        return knoten < m_fluss.knoten().size() && zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
+    if (knoten >= m_aufrufgraph.graph.knoten.size()) return false;
+    const c2d::diagramm::AufrufKnoten& k = m_aufrufgraph.graph.knoten[knoten];
+    const QString name = ausStd(k.name);
+    if (k.art == c2d::diagramm::AufrufKnotenArt::Funktion) return zeigeZeile(m_aufrufgraph.stellen[knoten].datei, k.zeile);
+    if (k.art == c2d::diagramm::AufrufKnotenArt::Fremd)
+    {
+        statusBar()->showMessage(QStringLiteral("%1: no body in the project").arg(name), 4000);
+        return false;
+    }
+    // ein Makro: wo das Projekt es mit Parametern definiert; mehrmals (etwa je #if-Zweig): das erste, mit Meldung
+    std::vector<std::pair<std::size_t, int>> wo;
+    for (std::size_t d = 0; d < m_projekt.dateien.size(); ++d)
+        for (const c2d::modell::Makro& m : m_projekt.dateien[d].ergebnis.einheit.makros)
+            if (m.name == k.name && m.text.starts_with('(')) wo.emplace_back(d, m.zeile);
+    if (wo.empty()) return false;
+    if (wo.size() > 1)
+        statusBar()->showMessage(QStringLiteral("%1 is defined %2 times - showing the first").arg(name).arg(wo.size()), 5000);
+    return zeigeZeile(wo.front().first, wo.front().second);
+}
+
+bool Hauptfenster::zeigeStelle(std::size_t kasten, std::size_t eintrag)
+{
+    if (kasten >= m_struktur.kaesten.size()) return false;
+    // die Kaesten stehen alle in der gewaehlten Datei
+    const c2d::diagramm::Kasten& k = m_struktur.kaesten[kasten];
+    if (eintrag == kKeine) return zeigeZeile(m_datei, k.zeile);
+    if (eintrag < k.eintraege.size()) return zeigeZeile(m_datei, k.eintraege[eintrag].zeile);
+    eintrag -= k.eintraege.size();
+    return eintrag < k.methoden.size() && zeigeZeile(m_datei, k.methoden[eintrag].zeile);
+}
+
+bool Hauptfenster::klicke(const QString& name)
+{
+    const std::string n = name.toStdString();
+    if (m_gezeigt == QLatin1String(kDatentypen))
+    {
+        // `Typ` = der Kopf, `Typ::glied` = ein Feld oder eine Methode; der Typ selbst kann `::` tragen
+        for (std::size_t k = 0; k < m_struktur.kaesten.size(); ++k)
+        {
+            const c2d::diagramm::Kasten& kasten = m_struktur.kaesten[k];
+            if (n == kasten.name) return zeigeStelle(k, kKeine);
+            if (!n.starts_with(kasten.name + "::")) continue;
+            const std::string glied = n.substr(kasten.name.size() + 2);
+            for (std::size_t e = 0; e < kasten.eintraege.size(); ++e)
+                if (kasten.eintraege[e].name == glied) return zeigeStelle(k, e);
+            for (std::size_t m = 0; m < kasten.methoden.size(); ++m)
+                if (kasten.methoden[m].signatur.starts_with(glied + "(")) return zeigeStelle(k, kasten.eintraege.size() + m);
+        }
+        return false;
+    }
+    if (istAufrufgraph())
+    {
+        for (std::size_t k = 0; k < m_aufrufgraph.graph.knoten.size(); ++k)
+            if (m_aufrufgraph.graph.knoten[k].name == n) return zeigeStelle(k);
+        return false;
+    }
+    for (c2d::diagramm::KnotenId k = 0; k < m_fluss.knoten().size(); ++k)
+        for (const std::string& z : m_fluss.knoten()[k].zeilen)
+            if (z == n) return zeigeStelle(k);
+    return false;
+}
+
+QString Hauptfenster::gezeigteStelle() const
+{
+    if (m_quelleZeigt >= m_projekt.dateien.size() || m_quelleZeile <= 0) return {};
+    return QStringLiteral("%1:%2").arg(ausStd(m_projekt.dateien[m_quelleZeigt].pfad)).arg(m_quelleZeile);
 }
 
 void Hauptfenster::speichereUnter()

@@ -283,6 +283,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 / %2").arg(fenster.datei(), fenster.typ()));
                      });
 
+    anbindung.aktion(QStringLiteral("klicken"),
+                     QStringLiteral("Like a click in the preview: shows the place in the source"),
+                     QStringLiteral("name=<a line of a flow node | a function of the call graph | Type | Type::member>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         if (!fenster.klicke(name))
+                             return st::fehler(QStringLiteral("Nothing called '%1' with a place in %2").arg(name, fenster.diagramm()));
+                         return st::ok(fenster.gezeigteStelle());
+                     });
+
     anbindung.aktion(QStringLiteral("zuletzt_oeffnen"),
                      QStringLiteral("File > Open recent: opens entry number wahl (0 = the newest)"),
                      QStringLiteral("wahl=<0, 1, ...>"),

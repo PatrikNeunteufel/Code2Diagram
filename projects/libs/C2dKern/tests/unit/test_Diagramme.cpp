@@ -262,4 +262,50 @@ TEST_SUITE("Strukturdiagramm")
         CHECK(bild(d.beziehungen[4]) == "Liste>Knoten:kopf");           // ueber den typedef Knoten_t
         CHECK(bild(d.beziehungen[5]) == "Liste*Punkt:mitte");           // ueber den typedef Punkt_t
     }
+
+    TEST_CASE("Kaesten, Glieder und Methoden tragen ihre Zeile im Quelltext (ein Klick zeigt sie)")
+    {
+        const c2d::sprache::Ergebnis c = c2d::sprache::c().lies(
+            "enum Farbe {\n"     // 1
+            "    ROT,\n"         // 2
+            "    GRUEN = 4\n"    // 3
+            "};\n"               // 4
+            "struct Punkt {\n"   // 5
+            "    int x,\n"       // 6
+            "        y;\n"       // 7  ein Deklarator gilt, wo seine Deklaration beginnt
+            "    struct {\n"     // 8
+            "        int a;\n"   // 9
+            "    } innen;\n"     // 10
+            "};\n",
+            "t.c");
+        const Strukturdiagramm d = strukturVon(c.einheit);
+        REQUIRE(d.kaesten.size() == 3);
+        CHECK(d.kaesten[0].zeile == 1);
+        REQUIRE(d.kaesten[0].eintraege.size() == 2);
+        CHECK(d.kaesten[0].eintraege[0].zeile == 2);
+        CHECK(d.kaesten[0].eintraege[1].zeile == 3);
+        CHECK(d.kaesten[1].zeile == 5);
+        REQUIRE(d.kaesten[1].eintraege.size() == 3);
+        CHECK(d.kaesten[1].eintraege[0].zeile == 6);
+        CHECK(d.kaesten[1].eintraege[1].zeile == 6);
+        CHECK(d.kaesten[1].eintraege[2].zeile == 10);  // das Glied steht hinter der `}`
+        REQUIRE(d.kaesten[2].eintraege.size() == 1);
+        CHECK(d.kaesten[2].eintraege[0].zeile == 9);
+
+        const c2d::sprache::Ergebnis cpp = c2d::sprache::cpp().lies(
+            "class Motor {\n"      // 1
+            "public:\n"            // 2
+            "    void starte();\n"  // 3
+            "private:\n"           // 4
+            "    int m_takt = 0;\n"  // 5
+            "};\n",
+            "t.cpp");
+        const Strukturdiagramm k = strukturVon(cpp.einheit);
+        REQUIRE(k.kaesten.size() == 1);
+        CHECK(k.kaesten[0].zeile == 1);
+        REQUIRE(k.kaesten[0].methoden.size() == 1);
+        CHECK(k.kaesten[0].methoden[0].zeile == 3);
+        REQUIRE(k.kaesten[0].eintraege.size() == 1);
+        CHECK(k.kaesten[0].eintraege[0].zeile == 5);
+    }
 }

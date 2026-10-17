@@ -434,10 +434,11 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         Kasten kasten;
         kasten.art = kastenArt(typ.art);
         kasten.name = typ.vollerName();
+        kasten.zeile = typ.zeile;
         for (const modell::Feld& feld : typ.felder)
-            kasten.eintraege.push_back({feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht)});
+            kasten.eintraege.push_back({feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht), feld.zeile});
         for (const modell::Methode& m : typ.methoden)
-            kasten.methoden.push_back({m.rueckgabe, m.signatur(), zeichen(m.sicht), m.abstrakt, m.statisch});
+            kasten.methoden.push_back({m.rueckgabe, m.signatur(), zeichen(m.sicht), m.abstrakt, m.statisch, m.zeile});
         kastenVon.emplace(typ.name, diagramm.kaesten.size());
         diagramm.kaesten.push_back(std::move(kasten));
     }
