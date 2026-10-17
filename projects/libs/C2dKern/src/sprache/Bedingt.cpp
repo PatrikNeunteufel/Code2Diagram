@@ -12,7 +12,7 @@
 #include <optional>
 #include <set>
 
-namespace c2d::sprache::cfamilie
+namespace c2d::sprache
 {
 
 namespace
@@ -82,6 +82,8 @@ struct Umfeld
     const Makros& makros;
     std::vector<std::string>& gefragt;  ///< Namen, die nicht definiert waren
     std::vector<Schalter>* schalter = nullptr;  ///< wonach gefragt wird; nullptr = nicht festhalten
+    /// C#: ein Name ist wahr, wenn er definiert ist (Symbole tragen keinen Wert).
+    bool symbole = false;
 };
 
 /// Rechnet einen Ausdruck aus #if aus: ganze Zahlen, wie der Praeprozessor.
@@ -202,6 +204,7 @@ private:
             if (klammer && !nimm(")")) m_gut = false;
             return istDefiniert(gefragt) ? 1 : 0;
         }
+        if (m_u.symbole) return istDefiniert(n) ? 1 : 0;
         const auto makro = m_u.makros.find(n);
         if (m_u.schalter != nullptr && !istOp("("))
         {
@@ -343,7 +346,7 @@ std::string bedingungstext(std::string_view wort, std::span<const Token> rest)
 class Zerleger
 {
 public:
-    explicit Zerleger(std::span<const Token> rest)
+    Zerleger(std::span<const Token> rest, bool symbole) : m_symbole(symbole)
     {
         for (const Token& t : rest)
             if (t.art != TokenArt::Ende && t.art != TokenArt::Kommentar) m_t.push_back(&t);
@@ -490,6 +493,12 @@ private:
             v.wert = wahr ? "1" : "0";
             return v;
         }
+        if (n == 1 && istName(m_t[a]) && m_symbole)
+        {
+            v.art = V::Art::Definiert;  // C#: `X` heisst „X ist definiert“
+            v.name = m_t[a]->text;
+            return v;
+        }
         if (n == 1 && istName(m_t[a]))
         {
             v.art = V::Art::Vergleich;
@@ -534,10 +543,11 @@ private:
 
     std::vector<const Token*> m_t;
     std::size_t m_i = 0;
+    bool m_symbole;
 };
 
 /// Die Bedingung eines Zweigs als Baum; `#ifdef`, `#ifndef` und `#else` ohne Zerlegen.
-modell::Vorbedingung baumVon(std::string_view wort, std::span<const Token> rest)
+modell::Vorbedingung baumVon(std::string_view wort, std::span<const Token> rest, bool symbole)
 {
     using V = modell::Vorbedingung;
     V v;
@@ -557,7 +567,7 @@ modell::Vorbedingung baumVon(std::string_view wort, std::span<const Token> rest)
         nicht.teile.push_back(std::move(v));
         return nicht;
     }
-    return Zerleger(rest).ganz();
+    return Zerleger(rest, symbole).ganz();
 }
 
 // ---------------------------------------------------------------------------
@@ -579,14 +589,15 @@ struct Stand
 };
 
 /// Ergibt die Bedingung mit diesen Makros wahr? nullopt = laesst sich nicht ausrechnen.
-std::optional<bool> rechneNach(const Bedingung& b, const Makros& makros, const lexer::Sprachtabelle& tabelle)
+std::optional<bool> rechneNach(const Bedingung& b, const Makros& makros, const lexer::Sprachtabelle& tabelle,
+                               bool symbole)
 {
     if (b.wort == "else") return true;
     const std::string_view erster = b.token.size() > 1 ? b.token[0].text : std::string_view();
     if (b.wort == "ifdef" || b.wort == "elifdef") return makros.find(erster) != makros.end();
     if (b.wort == "ifndef" || b.wort == "elifndef") return makros.find(erster) == makros.end();
     std::vector<std::string> egal;
-    const Umfeld umfeld{tabelle, makros, egal};
+    const Umfeld umfeld{tabelle, makros, egal, nullptr, symbole};
     long long wert = 0;
     if (!Rechner(b.token, umfeld, 0).rechne(wert)) return std::nullopt;
     return wert != 0;
@@ -665,7 +676,8 @@ void wende(Makros& makros, const Forderung& f)
 /// Fuer eine Bedingung mit genau einem Namen (`X >= 2`, `X < 3 || X > 7`): die erste
 /// Forderung, unter der sie nachgerechnet `soll` ergibt — X entfernen, die Zahlen der
 /// Bedingung, je eins daneben, 1. nullopt = keine, oder mehr als ein Name.
-std::optional<Forderung> probiere(const Bedingung& b, bool soll, const Makros& makros, const lexer::Sprachtabelle& tabelle)
+std::optional<Forderung> probiere(const Bedingung& b, bool soll, const Makros& makros, const lexer::Sprachtabelle& tabelle,
+                                  bool symbole)
 {
     std::string_view name;
     std::vector<std::string> kandidaten;
@@ -697,7 +709,7 @@ std::optional<Forderung> probiere(const Bedingung& b, bool soll, const Makros& m
     {
         Makros probe = makros;
         wende(probe, f);
-        if (const std::optional<bool> ist = rechneNach(b, probe, tabelle); ist && *ist == soll) return f;
+        if (const std::optional<bool> ist = rechneNach(b, probe, tabelle, symbole); ist && *ist == soll) return f;
     }
     return std::nullopt;
 }
@@ -707,7 +719,8 @@ std::optional<Forderung> probiere(const Bedingung& b, bool soll, const Makros& m
 /// fuer ihn "wahr" — nachgerechnet, bis alles stimmt (hoechstens vier Runden; stimmt
 /// es dann nicht, widersprechen sich die Bedingungen: nullopt).
 std::optional<std::vector<Forderung>> waehle(const std::vector<Weiche>& weichen, const std::vector<Stand>& staende,
-                                             std::size_t w, std::size_t zweig, const lexer::Sprachtabelle& tabelle)
+                                             std::size_t w, std::size_t zweig, const lexer::Sprachtabelle& tabelle,
+                                             bool symbole)
 {
     const Weiche& weiche = weichen[w];
     std::vector<Forderung> f;
@@ -728,10 +741,10 @@ std::optional<std::vector<Forderung>> waehle(const std::vector<Weiche>& weichen,
             const Bedingung& b = stand.bedingungen[i];
             if (b.wort == "else") continue;
             const bool soll = i == zweig;
-            if (const std::optional<bool> ist = rechneNach(b, makros, tabelle); ist && *ist == soll) continue;
+            if (const std::optional<bool> ist = rechneNach(b, makros, tabelle, symbole); ist && *ist == soll) continue;
             stimmt = false;
             std::optional<Forderung> neu = forderungFuer(b, soll);
-            if (!neu) neu = probiere(b, soll, makros, tabelle);
+            if (!neu) neu = probiere(b, soll, makros, tabelle, symbole);
             if (!neu) return std::nullopt;
             // was die Datei oder die Sprache definiert, aendert keine Definition von aussen
             if (const auto alt = stand.makros.find(neu->name);
@@ -850,7 +863,8 @@ std::map<std::size_t, Pruefung> pruefeVarianten(std::span<const Token> token,
 std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& tabelle,
                              const std::vector<Definition>& definitionen, bool cpp,
                              std::vector<quelle::Meldung>& meldungen, std::vector<std::string>& unbekannt,
-                             Varianten* varianten, std::vector<Schalter>* schalter, std::vector<Weiche>* weichen)
+                             Varianten* varianten, std::vector<Schalter>* schalter, std::vector<Weiche>* weichen,
+                             bool symbole)
 {
     std::vector<quelle::Meldung> egal;  // was der Lexer meldet, meldet er beim Lesen noch einmal
     const std::vector<Token> token = lexer::zerlege(text, tabelle, egal);
@@ -869,7 +883,7 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
     }
     std::set<std::string, std::less<>> jeDefiniert;  // irgendwo in der Datei, auch in einem Zweig, der nicht gilt
     std::vector<std::string> gefragt;
-    const Umfeld umfeld{tabelle, makros, gefragt, schalter};
+    const Umfeld umfeld{tabelle, makros, gefragt, schalter, symbole};
     std::vector<Stand> staende;  // je Weiche, zum Nachrechnen
 
     // Ein Waechter: `#ifndef K`, und die naechste Direktive ist `#define K`.
@@ -988,7 +1002,7 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                         break;
                     }
                 neu.zweige.push_back(bedingungstext(wort, rest));
-                neu.baeume.push_back(baumVon(wort, rest));
+                neu.baeume.push_back(baumVon(wort, rest, symbole));
                 neu.zweigZeilen.push_back(t.ort.zeile);
                 if (wahr) neu.geltend = 0;
                 weiche = weichen->size();
@@ -1019,7 +1033,7 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                 {
                     Weiche& w = (*weichen)[e.weiche];
                     w.zweige.push_back(bedingungstext(wort, rest));
-                    w.baeume.push_back(baumVon(wort, rest));
+                    w.baeume.push_back(baumVon(wort, rest, symbole));
                     w.zweigZeilen.push_back(t.ort.zeile);
                     if (e.gilt) w.geltend = w.zweige.size() - 1;
                     staende[e.weiche].bedingungen.push_back({wort, std::vector<Token>(rest.begin(), rest.end())});
@@ -1106,9 +1120,10 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
         {
             Weiche& weiche = (*weichen)[w];
             const std::size_t zweige = weiche.zweige.size() + (weiche.zweige.back() == "else" ? 0 : 1);
-            for (std::size_t z = 0; z < zweige; ++z) weiche.wahl.push_back(waehle(*weichen, staende, w, z, tabelle));
+            for (std::size_t z = 0; z < zweige; ++z)
+                weiche.wahl.push_back(waehle(*weichen, staende, w, z, tabelle, symbole));
         }
     return aus;
 }
 
-}  // namespace c2d::sprache::cfamilie
+}  // namespace c2d::sprache

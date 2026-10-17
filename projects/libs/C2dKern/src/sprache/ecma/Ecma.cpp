@@ -613,7 +613,8 @@ private:
             const std::size_t vorher = aus.size();
             liesAnweisung(ort, aus);
             // was in der Anweisung definiert wurde, gehoert ihr (eine Steuerung: ihrem Kopf)
-            if (aus.size() > vorher) aus[vorher]->innere = std::move(m_innere);
+            if (aus.size() > vorher)
+                aus[vorher]->innere.insert(aus[vorher]->innere.end(), m_innere.begin(), m_innere.end());
             m_innere.clear();
             if (m_p == davor)
             {
@@ -1036,7 +1037,7 @@ private:
         const bool innen = ort.ebene == Ebene::Funktion;
         if (innen) aus.push_back(neu(AnweisungArt::Einfach, t, "function " + modell::signatur(f.name, f.parameter)));
         const std::size_t platz = neueFunktion(std::move(f), ort);
-        if (innen) m_innere.push_back(m_aus.einheit.funktionen[platz].vollerName());
+        if (innen) aus.back()->innere.push_back(m_aus.einheit.funktionen[platz].vollerName());  // vor dem Rumpf
         m_p = liesRumpfVon(platz, m_p, ort);
     }
 

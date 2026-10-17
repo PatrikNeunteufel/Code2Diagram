@@ -161,6 +161,9 @@ function verbinde(knopf) {
         const modell::Anweisung& on = *funktion(e, "verbinde").rumpf->kinder[0];
         CHECK(on.innere == std::vector<std::string>{"verbinde::<anonymous:10>"});
         const diagramm::Flussdiagramm d = diagramm::flussVon(funktion(e, "verbinde"));
+        // eine Funktion im Rumpf: die Anweisung `function …` kennt sie
+        const sprache::Ergebnis g = js("function a() {\n  function b() { c() }\n  b()\n}\n");
+        CHECK(funktion(g, "a").rumpf->kinder[0]->innere == std::vector<std::string>{"a::b"});
         CHECK(std::any_of(d.knoten().begin(), d.knoten().end(), [](const diagramm::Knoten& k) {
             return k.innere == std::vector<std::string>{"verbinde::<anonymous:10>"};
         }));

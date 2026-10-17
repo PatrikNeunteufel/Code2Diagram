@@ -942,6 +942,6 @@ TEST_SUITE("Hauptfenster")
         CHECK(Hauptfenster::dateiFilter() ==
               "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;"
               "Python files (*.py *.pyi *.pyw);;JavaScript files (*.js *.mjs *.cjs);;TypeScript files (*.ts *.mts *.cts);;"
-              "All files (*)");
+              "C# files (*.cs);;All files (*)");
     }
 }

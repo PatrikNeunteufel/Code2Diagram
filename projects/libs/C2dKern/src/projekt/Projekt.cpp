@@ -155,6 +155,12 @@ public:
                     uebergehe(weg, "always skipped");
                     continue;
                 }
+                std::error_code unity;
+                if (erzeugtVonUnity(name) && fs::is_regular_file(ordner / "ProjectSettings" / "ProjectVersion.txt", unity))
+                {
+                    uebergehe(weg, "made by Unity");
+                    continue;
+                }
                 const auto muster = std::find_if(m_p.einstellungen.uebergehen.begin(), m_p.einstellungen.uebergehen.end(),
                                                  [&](const std::string& m) { return passt(m, weg); });
                 if (muster != m_p.einstellungen.uebergehen.end())
@@ -195,9 +201,9 @@ public:
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
         std::vector<std::vector<sprache::Definition>> ausKoepfen(m_p.dateien.size());
-        // (Koepfe bindet nur `#include` ein; ein import in Python loest das Projekt noch nicht auf)
+        // (Koepfe bindet nur `#include` ein; import und using loest das Projekt noch nicht auf)
         for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
-            if (m_p.dateien[i].sprache->hatPraeprozessor()) ausKoepfen[i] = sammleKoepfe(i, m_p.dateien[i].koepfe);
+            if (m_p.dateien[i].sprache->bindetKoepfeEin()) ausKoepfen[i] = sammleKoepfe(i, m_p.dateien[i].koepfe);
         for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
         {
             if (ausKoepfen[i].empty()) continue;

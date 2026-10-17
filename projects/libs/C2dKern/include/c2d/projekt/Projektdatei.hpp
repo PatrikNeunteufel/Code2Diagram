@@ -83,6 +83,10 @@ struct Projektdatei
 /// Wird ein Ordner dieses Namens immer uebergangen?
 [[nodiscard]] bool wirdImmerUebergangen(std::string_view name);
 
+/// Erzeugt Unity einen Ordner dieses Namens (`Library`, `Temp`, `Logs`, `UserSettings`)? Er wird
+/// uebergangen, wo daneben `ProjectSettings/ProjectVersion.txt` liegt (ein Unity-Projekt).
+[[nodiscard]] bool erzeugtVonUnity(std::string_view name);
+
 /// Was eine `.gitignore` zum Einrichten von `uebergehen` beitraegt.
 struct Vorschlag
 {

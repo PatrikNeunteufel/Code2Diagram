@@ -116,6 +116,11 @@ public:
     /// Varianten, Rahmen, `#if`-Konfiguration und keine Namen, nach denen gefragt wird.
     [[nodiscard]] virtual bool hatPraeprozessor() const { return false; }
 
+    /// Sind ihre Einbindungen Dateien, deren `#define` gelten (`#include` der C-Familie)? Sonst
+    /// nennen sie Module oder Namensraeume (Python `import`, C# `using`) und das Projekt sucht
+    /// keine Koepfe.
+    [[nodiscard]] virtual bool bindetKoepfeEin() const { return false; }
+
     /// Liest den Text. Was der Leser nicht versteht, uebergeht er mit einer
     /// Meldung — das Ergebnis ist immer brauchbar, nie leer wegen eines Fehlers.
     [[nodiscard]] virtual Ergebnis lies(std::string_view text, std::string_view einheitName,
@@ -164,5 +169,13 @@ public:
 /// interface (TypArt::Schnittstelle), type (Objekttyp: Struktur, sonst Alias), enum, namespace,
 /// declare, Sichtbarkeit, abstract, implements, Felder aus `constructor(private x: T)`.
 [[nodiscard]] const Sprache& typescript();
+
+/// C# 12 (`.cs`): Namensraeume (auch file-scoped), class, struct, record, interface, enum, delegate;
+/// Felder, Eigenschaften (`{ get; set; }`, Accessoren mit Rumpf als Funktionen `Name.get`),
+/// Indexer, Ereignisse, Methoden, Konstruktoren, Operatoren, lokale Funktionen, Lambdas mit
+/// Block-Rumpf; if, while, do, for, foreach, switch (auch als Ausdruck auf oberster Ebene: eine
+/// Auswahl ohne Durchfallen), try/catch/when/finally, using/lock/fixed, yield; Anweisungen auf
+/// oberster Ebene als `<Main>$`. `#if` wird ausgewertet wie in der C-Familie (ohne Varianten).
+[[nodiscard]] const Sprache& csharp();
 
 }  // namespace c2d::sprache

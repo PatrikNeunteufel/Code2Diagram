@@ -194,7 +194,7 @@ private:
             case AnweisungArt::Wurf:
             {
                 std::string text = a.text;
-                if (a.art == AnweisungArt::Ruecksprung) text = a.text.empty() ? "return" : "return " + a.text;
+                if (a.art == AnweisungArt::Ruecksprung) text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "return" : "return " + a.text;
                 if (a.art == AnweisungArt::Wurf) text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "throw" : "throw " + a.text;
                 if (!a.frage.empty())
                 {

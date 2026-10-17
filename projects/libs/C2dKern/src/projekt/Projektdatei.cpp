@@ -18,7 +18,10 @@ using quelle::Meldung;
 using quelle::Schwere;
 
 /// Ordnernamen, die nie Quelltext des Projekts tragen: Bau-Ausgaben und Abhaengigkeiten.
-constexpr std::string_view kImmer[] = {"out", "build", "node_modules"};
+constexpr std::string_view kImmer[] = {"out", "build", "node_modules", "bin", "obj"};
+
+/// Was Unity neben `ProjectSettings/` erzeugt: Pakete im Cache, Zwischenstaende, Protokolle.
+constexpr std::string_view kUnity[] = {"Library", "Temp", "Logs", "UserSettings"};
 
 std::vector<std::string_view> teile(std::string_view weg)
 {
@@ -304,6 +307,11 @@ std::span<const std::string_view> immerUebergangen()
 bool wirdImmerUebergangen(std::string_view name)
 {
     return name.starts_with('.') || std::find(std::begin(kImmer), std::end(kImmer), name) != std::end(kImmer);
+}
+
+bool erzeugtVonUnity(std::string_view name)
+{
+    return std::find(std::begin(kUnity), std::end(kUnity), name) != std::end(kUnity);
 }
 
 Vorschlag ausGitignore(std::string_view text)

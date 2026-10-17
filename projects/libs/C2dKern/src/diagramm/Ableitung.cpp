@@ -416,7 +416,8 @@ private:
 
             case AnweisungArt::Ruecksprung:
                 m_rueck.back()->emplace_back(
-                    knoten(KnotenArt::Anweisung, a.text.empty() ? "return" : "return " + a.text, a.zeile, eingang, a.innere),
+                    knoten(KnotenArt::Anweisung, !a.kopf.empty() ? a.kopf : a.text.empty() ? "return" : "return " + a.text,
+                           a.zeile, eingang, a.innere),
                     std::string());
                 return {};
 
@@ -668,7 +669,8 @@ public:
                 auswahl(a, ziel);
                 break;
             case AnweisungArt::Ruecksprung:
-                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "return" : "return " + a.text, a.zeile));
+                ziel.push_back(block(BlockArt::Aussprung,
+                                     kopfVon(a, a.text.empty() ? "return" : "return " + a.text), a.zeile));
                 ziel.back().innere = a.innere;
                 break;
             case AnweisungArt::Wurf:

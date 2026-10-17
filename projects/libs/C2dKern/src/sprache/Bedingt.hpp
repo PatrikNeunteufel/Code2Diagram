@@ -1,6 +1,6 @@
 /**
  * @file Bedingt.hpp
- * @brief Bedingte Uebersetzung der C-Familie auswerten: #if, #ifdef, #elif, #else, #endif
+ * @brief Bedingte Uebersetzung auswerten: #if, #ifdef, #elif, #else, #endif (C-Familie, C#)
  *
  * Die Stufe vor dem Leser: sie entscheidet je Zweig, ob er gilt, und liefert
  * den Text so zurueck, dass der Leser nur sieht, was gilt. Die Laenge und die
@@ -24,7 +24,7 @@
 #include <cstddef>
 #include <utility>
 
-namespace c2d::sprache::cfamilie
+namespace c2d::sprache
 {
 
 /// Ein #if im Rumpf einer Funktion, das als Varianten stehen bleibt.
@@ -71,11 +71,12 @@ struct Varianten
 /// @param unbekannt     Namen, nach denen gefragt wurde und die die Datei nirgends definiert
 /// @param schalter      wenn gegeben: wonach die Bedingungen fragen (Ergebnis::schalter)
 /// @param weichen       wenn gegeben: die Ketten #if/#elif/#else und was ihre Zweige waehlt (Ergebnis::weichen)
+/// @param symbole       C#: ein Name in einer Bedingung ist wahr, wenn er definiert ist (ohne Wert)
 [[nodiscard]] std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& tabelle,
                                            const std::vector<Definition>& definitionen, bool cpp,
                                            std::vector<quelle::Meldung>& meldungen,
                                            std::vector<std::string>& unbekannt, Varianten* varianten = nullptr,
                                            std::vector<Schalter>* schalter = nullptr,
-                                           std::vector<Weiche>* weichen = nullptr);
+                                           std::vector<Weiche>* weichen = nullptr, bool symbole = false);
 
-}  // namespace c2d::sprache::cfamilie
+}  // namespace c2d::sprache

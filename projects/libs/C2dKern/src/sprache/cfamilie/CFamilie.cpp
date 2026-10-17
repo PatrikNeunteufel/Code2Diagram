@@ -5,8 +5,8 @@
 #include "CFamilie.hpp"
 
 #include "../Leser.hpp"
+#include "../Bedingt.hpp"
 #include "../Logik.hpp"
-#include "Bedingt.hpp"
 
 #include <algorithm>
 #include <map>

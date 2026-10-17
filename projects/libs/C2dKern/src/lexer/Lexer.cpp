@@ -41,7 +41,8 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
                            std::vector<quelle::Meldung>& meldungen, LexerOptionen optionen)
 {
     std::vector<Token> aus;
-    std::size_t i = 0;
+    // ein BOM am Anfang ist keine Zeichen des Texts (sonst stuende eine Direktive in Zeile 1 nicht vorn)
+    std::size_t i = text.starts_with("\xEF\xBB\xBF") ? 3 : 0;
     int zeile = 1;
     int spalte = 1;
     bool zeilenanfang = true;
@@ -92,7 +93,7 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
     // Zeilenende und Einrueckung (Sprachtabelle::zeilenEnde, einrueckung)
     std::string klammern;        // die offenen ( [ {, innen zuletzt
     bool zeileOffen = false;     // die laufende logische Zeile hat schon Inhalt
-    std::size_t zeilenBeginn = 0;  // wo die laufende physische Zeile beginnt
+    std::size_t zeilenBeginn = i;  // wo die laufende physische Zeile beginnt
     std::vector<int> stufen{0};  // die offenen Einrueckungen, aussen zuerst
     const auto leeresToken = [&](TokenArt art, const quelle::Position& ort) {
         aus.push_back({art, text.substr(ort.versatz, 0), ort, true});
@@ -276,6 +277,83 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         gib(TokenArt::Zeichenkette, ort);
     };
 
+    /// C#: i auf `@` oder `$` vor einer Zeichenkette — sie bis zu ihrem Ende; false = keine.
+    const auto liesCsharp = [&](const quelle::Position& ort) {
+        std::size_t k = i;
+        bool woertlich = false;
+        bool eingebettet = false;
+        while (k < text.size() && (text[k] == '@' || text[k] == '$'))
+        {
+            woertlich = woertlich || text[k] == '@';
+            eingebettet = eingebettet || text[k] == '$';
+            ++k;
+        }
+        if (k == i || k >= text.size() || text[k] != '"') return false;
+        vor(k - i);
+        // `$"""…"""`; `@""…` ist woertlich und beginnt mit einem `"` als Inhalt
+        if (!woertlich && sprache.dreifachZeichenketten && text.substr(i, 3) == "\"\"\"")
+        {
+            liesLiteral(ort, true);
+            return true;
+        }
+        vor(1);
+        int tiefe = 0;  // in einem eingebetteten Ausdruck: offene { }
+        bool zu = false;
+        while (i < text.size())
+        {
+            const char z = text[i];
+            if (tiefe == 0)
+            {
+                if (!woertlich && z == '\\' && i + 1 < text.size())
+                {
+                    vor(2);
+                    continue;
+                }
+                if (!woertlich && z == '\n') break;
+                if (z == '"')
+                {
+                    if (woertlich && text.substr(i + 1, 1) == "\"")
+                    {
+                        vor(2);
+                        continue;
+                    }
+                    vor(1);
+                    zu = true;
+                    break;
+                }
+                if (eingebettet && z == '{')
+                {
+                    if (text.substr(i + 1, 1) == "{")
+                    {
+                        vor(2);
+                        continue;
+                    }
+                    tiefe = 1;
+                }
+                vor(1);
+                continue;
+            }
+            if (z == '{') ++tiefe;
+            else if (z == '}') --tiefe;
+            else if (z == '@' && text.substr(i + 1, 1) == "\"")
+            {
+                // eine woertliche Zeichenkette im Ausdruck: `""` ist ein `"`, kein Escape
+                vor(2);
+                while (i < text.size() && !(text[i] == '"' && text.substr(i + 1, 1) != "\""))
+                    vor(text[i] == '"' ? 2 : 1);
+            }
+            else if (z == '"')
+            {
+                vor(1);
+                while (i < text.size() && text[i] != '"' && text[i] != '\n') vor(text[i] == '\\' ? 2 : 1);
+            }
+            vor(1);
+        }
+        if (!zu) melde(quelle::Schwere::Fehler, ort, "literal is not closed");
+        gib(TokenArt::Zeichenkette, ort);
+        return true;
+    };
+
     // Namen: Buchstaben, Ziffern, `_`, dazu die namensZeichen der Sprache
     const auto namenStart = [&](char z) {
         return istBezeichnerStart(z) || sprache.namensZeichen.find(z) != std::string_view::npos;
@@ -412,6 +490,15 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             continue;
         }
 
+        if (sprache.csharpZeichenketten && (c == '@' || c == '$') && liesCsharp(ort)) continue;
+        // C#: `@name` ist ein Name, auch wenn er ein Schluesselwort ist (`@interface`)
+        if (sprache.csharpZeichenketten && c == '@' && i + 1 < text.size() && namenStart(text[i + 1]))
+        {
+            vor(1);
+            while (i < text.size() && namenTeil(text[i])) vor(1);
+            gib(TokenArt::Bezeichner, ort);
+            continue;
+        }
         if (sprache.vorlagenZeichenketten && c == '`')
         {
             liesVorlage(ort);

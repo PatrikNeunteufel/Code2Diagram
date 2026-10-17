@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++, Python, JavaScript, TypeScript | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: C#, Java, Kotlin) |
+| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C# | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: Java, Kotlin) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -42,9 +42,9 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | Schicht (`projects/libs/C2dKern/…/c2d/`) | Inhalt | kennt |
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
-| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`) | quelle |
+| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#; ein BOM am Anfang wird übergangen) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), Python hat seinen eigenen (`python/`). Für alle gleich: die Basis `Leser` und die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`), gesteuert von den `Ausdrucksregeln` der Sprache | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), Python und C# haben je einen eigenen (`python/`, `csharp/`). Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -177,6 +177,28 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   Alias, `enum` und `const enum`, `namespace a.b` (Bereich `a::b`), `declare`, `abstract`,
   Sichtbarkeit, Felder aus `constructor(private x: T)`.
   Beispiele: `beispiele/lager.ts`, `beispiele/knopf.js`.
+
+**C#** (`.cs`, C# 12):
+
+- Namensräume (auch `namespace A.B;` für die ganze Datei), `using` als Einbindung; `class`, `struct`,
+  `record` (Eigenschaften aus `record P(int X)`), `interface`, `enum`, `delegate` (als Alias)
+- Glieder: Felder, Eigenschaften als Feld mit `{ get; set; }` (Accessoren mit Rumpf werden Funktionen
+  `Menge.get`, `Menge.set`), Indexer `this[…]`, Ereignisse, Methoden, Konstruktoren, Destruktoren,
+  Operatoren, ausdrücklich umgesetzte Glieder (`IEnumerable<T>.GetEnumerator`); `A` und `A<T>` sind
+  verschiedene Typen (die Glieder tragen `A<T>::` im Bereich)
+- Basen: eine Klasse nennt ihre Basisklasse vorn, alles danach sind Schnittstellen (gestrichelt);
+  steht die vordere als `interface` in derselben Datei, ist auch sie eine Schnittstelle. Bei einem
+  `struct` sind alle Schnittstellen.
+- Anweisungen: `if`, `while`, `do`, `for`, `foreach`, `switch` mit Mustern, `try`/`catch (…) when (…)`/
+  `finally`, `using (…)`, `lock (…)`, `fixed (…)`, `yield return`/`yield break`, `goto`, lokale
+  Funktionen, Lambdas mit Block-Rumpf (`<lambda:Zeile>`); ein `switch`-Ausdruck auf oberster Ebene
+  eines `return`, einer Zuweisung oder Deklaration ist eine Auswahl ohne Durchfallen, je Arm die
+  Anweisung (`return "eins"`, `var s = "eins"`, `throw …`); Anweisungen auf oberster Ebene sind
+  `<Main>$`
+- Zeichenketten `@"…"`, `$"…{x}…"`, `$@"…"`, dreifache Anführungszeichen (roh), Namen `@class`
+- `#if`/`#elif`/`#else`/`#define`/`#undef` wie in der C-Familie ausgewertet — ein Name ist wahr, wenn
+  er definiert ist; Defines, Projektdatei, Feld Configuration und die `#if`-Diagramme gelten.
+  `#region`, `#pragma`, `#nullable` werden übergangen. Beispiel: `beispiele/lager.cs`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -606,6 +628,12 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   verlassen im Ablauf die innerste Schleife (Hinweis). Rückgabetypen, Vorgabewerte, Dekoratoren und
   Typ-Parameter stehen nicht im Diagramm. Ein Regex-Literal in einer Anweisung kann wie ein Aufruf
   aussehen (`/f(x)/` nennt `f`).
+- **C#:** „Show #if variants“ und „Frame #if regions“ gelten noch nicht (Hinweis, es wird
+  ausgewertet). Überladene Methoden (gleicher Name, andere Parameter) sind mehrdeutig wie in C++.
+  `using` wird im Projekt nicht aufgelöst. Attribute, Typ-Parameter, `where`, Vorgabewerte stehen
+  nicht im Diagramm. Ein `switch`-Ausdruck tiefer in einem Ausdruck bleibt Text; `goto case` wird im
+  Ablauf nicht verfolgt (Hinweis). Mit „All #if branches“ zerfällt Code, dessen Zweige ungleich
+  geklammert sind.
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

@@ -1276,7 +1276,9 @@ void Hauptfenster::baumMenue(const QPoint& ort)
                 melde(liesOrdnerWieder(pfad, &fehler), fehler);
             });
         else if (c2d::projekt::wirdImmerUebergangen(letzterName(pfad).toStdString()))
-            menue.addAction(QStringLiteral("Always skipped (starts with '.', or out, build, node_modules)"))->setEnabled(false);
+            menue.addAction(QStringLiteral("Always skipped (starts with '.', or out, build, node_modules, bin, obj; "
+                                           "in a Unity project Library, Temp, Logs, UserSettings)"))
+                ->setEnabled(false);
         else
             menue.addAction(QStringLiteral("Skipped by a pattern - see Project > Edit project file..."))->setEnabled(false);
     }

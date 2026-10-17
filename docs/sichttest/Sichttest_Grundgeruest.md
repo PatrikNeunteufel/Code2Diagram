@@ -769,3 +769,30 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **W5 Zuordnung:** `Lager::get zustand()`: Tabellensymbol am Kopf `true` (switch), die Zuordnung mit
       drei Zeilen `gesamt === 0`, `gesamt < this.grenze`, `default`.
       `aktion: diagramm_waehlen name=Lager::get zustand`
+
+## X. C#
+
+- [ ] **X0 Vorbereiten:** `beispiele/lager.cs` öffnen, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/lager.cs` `aktion: ansicht_waehlen name=preview`
+- [ ] **X1 Gelesen:** Statuszeile `lager.cs, read as C#` ohne Meldungen. Diagram bietet unter anderem
+      `…Lager::Anzahl.get()`, `…Lager::Lege()`, `…Lager::Zustand.get()`, `…Lager::Lade()`,
+      `…Lager::Lade::<lambda:99>()`, `Data types (4)`, `#if configuration (1)`. File > Open source file…
+      bietet `C# files (*.cs)`.
+- [ ] **X2 #if:** Configuration zeigt `PROTOKOLL` angehakt und gesperrt (die Datei definiert ihn in Zeile 2).
+      `Lade()`: im `catch (FormatException fehler) when (…)` steht `Console.Error.WriteLine(…)` vor `throw`.
+      Defines `!PROTOKOLL` hilft nicht (die Datei definiert ihn); `#define PROTOKOLL` auskommentieren und
+      neu laden: die Zeile fehlt.
+      `aktion: diagramm_waehlen name=Beispiel::Lagerhaltung::Lager::Lade`
+- [ ] **X3 Ablauf:** `Lade()`: `try` mit zwei `catch`-Kanten (die zweite mit `when`), `using (…)` als Knoten
+      vor der Schleife, `finally` (`Console.WriteLine($"geladen: {pfad}")`) auf allen Wegen, danach `return`
+      und `throw` ins Ende. Doppelklick auf `lager.Geaendert += (sender, e) => {…}` zeigt `<lambda:99>`.
+- [ ] **X4 switch-Ausdruck:** `Zustand.get()` als Nassi-Shneiderman: `foreach (var menge in _posten.Values)`,
+      darunter eine Fallunterscheidung `gesamt` mit den Spalten `0`, `< 100 when gesamt < Grenze`, `default`,
+      je ein `return`. Das Tabellensymbol öffnet die Zuordnung `… gesamt switch` mit drei Zeilen.
+      `aktion: diagramm_waehlen name=Beispiel::Lagerhaltung::Lager::Zustand.get` `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **X5 Datentypen:** Typ `Lager`: `- Dictionary<string, int> _posten = new()`, `+ int Grenze { get; init; } = 100`,
+      `+ int Anzahl { get; }`, `+ event EventHandler? Geaendert`, `+ Zustand Zustand { get; }`; Methoden mit
+      Rückgabetyp; darüber `«interface» IAblage` mit gestrichelter Kante, darunter `Zustand` («enumeration»).
+      `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=types:Beispiel::Lagerhaltung::Lager`
+- [ ] **X6 Unity-Projekt:** File > Open folder… `../Fundgrube`: im Baum fehlen `Library`, `Logs`, `UserSettings`;
+      Project-Meldungen nennen sie `folder skipped (made by Unity)`.

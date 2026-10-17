@@ -102,6 +102,10 @@ struct Sprachtabelle
     std::span<const std::string_view> woerterVorRegex{};
     /// Zeichen, die ausser Buchstaben, Ziffern und `_` in Namen stehen duerfen (JavaScript: `$`).
     std::string_view namensZeichen{};
+    /// C#: `@"…"` (woertlich: kein Escape, `""` ist ein `"`, ueber Zeilen), `$"…{x}…"` (eingebettete
+    /// Ausdruecke, `{{` ist eine `{`), beide zusammen (`$@"`, `@$"`) und `$` vor dreifachen
+    /// Anfuehrungszeichen: je ein Token.
+    bool csharpZeichenketten = false;
 };
 
 struct LexerOptionen
