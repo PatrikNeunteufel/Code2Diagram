@@ -474,6 +474,14 @@ zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiel
       Methode (etwa `bool starte()`) hinterlegt ihre Deklaration in der Klasse.
       `aktion: datei_oeffnen pfad=beispiele/motor.cpp` `aktion: typ_waehlen name=antrieb::Motor` `aktion: klicken name=antrieb::Motor::starte`
 
+- [ ] **N6 Umgekehrt:** Ordner `beispiele/projekt`, `main.c`, Diagram `main()`. Rechtsklick im
+      Quelltext auf Zeile 20 (`regle(100);`): das Menü hat *Copy*, *Select All* und darunter
+      *Show in diagram*. Gewählt: um `regle(100)` ein Ring, die Zeile links hinterlegt. Rechtsklick
+      auf Zeile 11 (`return TAKT_MS > 0;`, in `pruefe`), *Show in diagram*: Diagram steht auf
+      `pruefe()`, der Knoten umringt; **Back** zurück zu `main()`. Rechtsklick auf Zeile 6 (ein
+      Prototyp): die Statuszeile sagt `Line 6 belongs to no function and no type`.
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main` `aktion: im_diagramm_zeigen zeile=20` `aktion: im_diagramm_zeigen zeile=11`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

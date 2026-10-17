@@ -369,15 +369,33 @@ void waehle(int art)
 
     TEST_CASE("Flussdiagramm: eine Kante zurueck laeuft durch keinen Knoten, der rechts neben ihrer Quelle steht")
     {
-        // wie beispiele/projekt/main.c: das Ende steht in der Schicht des letzten Schritts der Schleife
-        const Flussdiagramm d = fluss("haupt", "int haupt(void) { if (!pruefe()) return 1; motor_starte(2);"
-                                               " while (1) { regle(100); protokolliere(1); } return 0; }");
+        // wie beispiele/projekt/main.c: das Ende steht in der Schicht des letzten Schritts der Schleife.
+        // Dafuer braucht die Schleife einen Weg hinaus: `while (1)` hat keinen (immer wahr) — so steht
+        // `return 0` unerreicht unten; geprueft wird beides.
+        for (const char* bedingung : {"laeuft", "1"})
         for (const bool nachRechts : {false, true})
         {
+            CAPTURE(bedingung);
             CAPTURE(nachRechts);
+            const Flussdiagramm d = fluss("haupt", std::string("int haupt(void) { if (!pruefe()) return 1; motor_starte(2);"
+                                                               " while (") + bedingung + ") { regle(100); protokolliere(1); } return 0; }");
             AnordnungOptionen optionen;
             optionen.nachRechts = nachRechts;
             const FlussAnordnung a = ordneAn(d, optionen);
+            if (std::string_view(bedingung) == "laeuft" && !nachRechts)
+            {
+                // die Lage, um die es geht, muss es geben: das Ende auf der Hoehe des letzten Schritts
+                KnotenId ende = kKeine, letzter = kKeine;
+                for (KnotenId k = 0; k < d.knoten().size(); ++k)
+                {
+                    if (d.knoten()[k].art == KnotenArt::Ende) ende = k;
+                    if (d.knoten()[k].zeilen.back() == "protokolliere(1)") letzter = k;
+                }
+                REQUIRE(ende != kKeine);
+                REQUIRE(letzter != kKeine);
+                CHECK(a.knoten[ende].y < a.knoten[letzter].y + a.knoten[letzter].hoehe);
+                CHECK(a.knoten[letzter].y < a.knoten[ende].y + a.knoten[ende].hoehe);
+            }
             for (std::size_t e = 0; e < a.kanten.size(); ++e)
             {
                 CAPTURE(e);

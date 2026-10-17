@@ -54,6 +54,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <memory>
+#include <tuple>
 
 namespace c2d::ui
 {
@@ -164,6 +166,16 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_quelle = neuesTextfeld(links);
     m_quelle->setObjectName(QStringLiteral("quelle"));
     m_quelle->setPlaceholderText(QStringLiteral("Open a source file or a folder (File > Open...)"));
+    // Rechtsklick: das uebliche Menue, darunter der Weg ins Diagramm
+    m_quelle->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_quelle, &QWidget::customContextMenuRequested, this, [this](const QPoint& ort) {
+        const std::unique_ptr<QMenu> menue(m_quelle->createStandardContextMenu(ort));
+        const int zeile = m_quelle->cursorForPosition(ort).blockNumber() + 1;
+        menue->addSeparator();
+        menue->addAction(QStringLiteral("Show in diagram"), this, [this, zeile] { zeigeImDiagramm(zeile); })
+            ->setEnabled(!m_quelle->toPlainText().isEmpty());
+        menue->exec(m_quelle->mapToGlobal(ort));
+    });
     m_definitionen = new QLineEdit(links);
     m_definitionen->setObjectName(QStringLiteral("definitionen"));
     m_definitionen->setPlaceholderText(QStringLiteral("NAME NAME=value !NAME ... (for #if / #ifdef)"));
@@ -1563,6 +1575,10 @@ bool Hauptfenster::zurueck()
 QString Hauptfenster::markiert() const
 {
     const c2d::diagramm::KnotenId k = m_vorschau->markiert();
+    if (istAufrufgraph())
+        return k < m_aufrufgraph.graph.knoten.size() ? ausStd(m_aufrufgraph.graph.knoten[k].name) : QString();
+    if (m_gezeigt == QLatin1String(kDatentypen))
+        return k < m_struktur.kaesten.size() ? ausStd(m_struktur.kaesten[k].name) : QString();
     if (k >= m_fluss.knoten().size()) return {};
     QStringList zeilen;
     for (const std::string& z : m_fluss.knoten()[k].zeilen) zeilen << QString::fromStdString(z);
@@ -2132,6 +2148,79 @@ bool Hauptfenster::klicke(const QString& name)
     for (c2d::diagramm::KnotenId k = 0; k < m_fluss.knoten().size(); ++k)
         for (const std::string& z : m_fluss.knoten()[k].zeilen)
             if (z == n) return zeigeStelle(k);
+    return false;
+}
+
+bool Hauptfenster::zeigeImDiagramm(int zeile)
+{
+    const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
+    if (datei >= m_projekt.dateien.size() || zeile <= 0) return false;
+    const c2d::modell::Einheit& einheit = m_projekt.dateien[datei].ergebnis.einheit;
+
+    // die Funktion, in deren Rumpf die Zeile steht
+    std::size_t funktion = kKeine;
+    for (std::size_t i = 0; i < einheit.funktionen.size(); ++i)
+    {
+        const c2d::modell::Funktion& f = einheit.funktionen[i];
+        if (f.rumpf && f.zeile <= zeile && zeile <= f.bisZeile) funktion = i;
+    }
+    if (funktion != kKeine)
+    {
+        const Fundstelle stelle{datei, funktion};
+        const c2d::modell::Funktion& f = einheit.funktionen[funktion];
+        if (istAufrufgraph())
+            for (std::size_t k = 0; k < m_aufrufgraph.stellen.size(); ++k)
+                if (m_aufrufgraph.stellen[k] == stelle)
+                {
+                    m_vorschau->markiere(k);
+                    zeigeZeile(datei, zeile);
+                    return true;
+                }
+        // im gezeigten Ablauf — auch eingebettet: Knoten aus dieser Datei, in den Zeilen der Funktion
+        const auto inDerFunktion = [&] {
+            std::vector<bool> zaehlt(m_fluss.knoten().size(), false);
+            bool eine = false;
+            if (istAufrufgraph() || m_gezeigt == QLatin1String(kDatentypen)) return std::pair{zaehlt, eine};
+            for (c2d::diagramm::KnotenId k = 0; k < zaehlt.size(); ++k)
+            {
+                const int z = m_fluss.knoten()[k].quellZeile;
+                zaehlt[k] = dateiVon(k) == datei && z >= f.zeile && z <= f.bisZeile;
+                eine = eine || zaehlt[k];
+            }
+            return std::pair{zaehlt, eine};
+        };
+        auto [zaehlt, gezeigt] = inDerFunktion();
+        if (!gezeigt)
+        {
+            gehe(stelle, kKeine);
+            std::tie(zaehlt, gezeigt) = inDerFunktion();
+        }
+        const c2d::diagramm::KnotenId k = c2d::diagramm::knotenZurZeile(m_fluss, zeile, zaehlt);
+        if (k != kKeine) m_vorschau->markiere(k);
+        zeigeZeile(datei, zeile);
+        return k != kKeine;
+    }
+
+    // ein Typ: von seiner Zeile bis eine nach dem letzten Glied (die `}`); der innerste
+    std::size_t typ = kKeine;
+    for (std::size_t i = 0; i < einheit.typen.size(); ++i)
+    {
+        const c2d::modell::Typ& t = einheit.typen[i];
+        int bis = t.zeile;
+        for (const c2d::modell::Feld& g : t.felder) bis = std::max(bis, g.zeile);
+        for (const c2d::modell::Methode& m : t.methoden) bis = std::max(bis, m.zeile);
+        if (t.zeile > 0 && t.zeile <= zeile && zeile <= bis + 1 &&
+            (typ == kKeine || t.zeile >= einheit.typen[typ].zeile))
+            typ = i;
+    }
+    if (typ != kKeine)
+    {
+        geheZuTyp({datei, typ});
+        m_vorschau->markiere(0);  // der Typ ist der erste Kasten seiner Ansicht
+        zeigeZeile(datei, zeile);
+        return true;
+    }
+    statusBar()->showMessage(QStringLiteral("Line %1 belongs to no function and no type").arg(zeile), 4000);
     return false;
 }
 

@@ -267,6 +267,11 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
     dort, wo das Projekt es definiert; ein fremder Aufruf hat keine), bei den Datentypen die Zeile
     des Typs, des Felds oder der Methode. Der **Doppelklick** führt nur zu dem, was genannt ist;
     wo es nichts gibt, tut er nichts weiter.
+  - **Umgekehrt:** Rechtsklick im Quelltext, *Show in diagram*: die Zeile in ihrem Diagramm, mit
+    einem Ring. In einer Funktion ihr Knoten (auch eine Anweisung in einem gebündelten; eine Zeile
+    ohne eigene Anweisung, etwa `}`, zeigt die davor) — ist eine andere Funktion gezeigt, wechselt
+    das Fenster zu ihr, Back führt zurück; im Aufrufgraph die Funktion; in einem Typ Data types
+    mit ihm.
   - Was eingebettet ist, steht auch im Text: als `subgraph` (Mermaid), `cluster` (DOT),
     Behälter (draw.io).
 - `--bild` legt das Fenster als PNG ab und endet — ohne Datei mit dem eingebauten Beispiel.
@@ -278,7 +283,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
-  `klicken name=<…>`, `einstellungen_zeigen`, `thema_setzen name=<system|light|dark>`.
+  `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`, `einstellungen_zeigen`,
+  `thema_setzen name=<system|light|dark>`.
 
 ### Kommandozeile
 

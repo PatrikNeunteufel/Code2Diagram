@@ -298,6 +298,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.gezeigteStelle());
                      });
 
+    anbindung.aktion(QStringLiteral("im_diagramm_zeigen"),
+                     QStringLiteral("Like right-click in the source, Show in diagram: the node (or type) of a line"),
+                     QStringLiteral("zeile=<line in the file shown in the source>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         if (zeile <= 0) return st::ungueltig(QStringLiteral("zeile is missing"));
+                         if (!fenster.zeigeImDiagramm(zeile))
+                             return st::fehler(QStringLiteral("Line %1 belongs to no function and no type").arg(zeile));
+                         return st::ok(QStringLiteral("%1 / %2").arg(fenster.diagramm(), fenster.markiert()));
+                     });
+
     anbindung.aktion(QStringLiteral("einstellungen_zeigen"), QStringLiteral("Opens File > Settings"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
                          fenster.zeigeEinstellungen();

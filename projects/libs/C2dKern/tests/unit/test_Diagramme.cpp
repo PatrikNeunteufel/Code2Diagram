@@ -165,6 +165,23 @@ ende:
         CHECK(hatKante(d, 2, 3));
     }
 
+    TEST_CASE("Der Knoten zu einer Zeile: auch gebuendelt; sonst die Anweisung davor")
+    {
+        const Flussdiagramm roh = fluss("void f(void)\n{\n    a = 1;\n    b = 2;\n    if (a)\n        c();\n}\n");
+        const Flussdiagramm d = fasseAnweisungsfolgenZusammen(roh);
+        const KnotenId ab = knotenZurZeile(d, 4);
+        REQUIRE(ab != kKeine);
+        CHECK(d.knoten()[ab].zeilen == std::vector<std::string>{"a = 1", "b = 2"});
+        CHECK(d.knoten()[ab].weitereZeilen == std::vector<int>{4});
+        CHECK(knotenZurZeile(d, 3) == ab);
+        CHECK(d.knoten()[knotenZurZeile(d, 7)].zeilen.front() == "c()");  // die `}`
+        CHECK(knotenZurZeile(d, 1) == 0);                                  // der Start
+        // ausgeschlossen: dann nicht
+        std::vector<bool> zaehlt(d.knoten().size(), true);
+        zaehlt[ab] = false;
+        CHECK(knotenZurZeile(d, 4, zaehlt) == 0);  // davor bleibt nur der Start
+    }
+
     TEST_CASE("Kehrt eine Funktion nie zurueck, hat ihr Ablauf kein Ende; der Start sagt es")
     {
         // eine Hauptschleife; das return dahinter wird nie erreicht

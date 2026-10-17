@@ -112,6 +112,30 @@ std::string_view rahmenFarbe(std::size_t farbe)
     return kFarben[farbe % kRahmenFarben];
 }
 
+KnotenId knotenZurZeile(const Flussdiagramm& diagramm, int zeile, const std::vector<bool>& zaehlt)
+{
+    KnotenId bester = kKeine;
+    int besteZeile = 0;
+    for (KnotenId k = 0; k < diagramm.knoten().size(); ++k)
+    {
+        if (!zaehlt.empty() && (k >= zaehlt.size() || !zaehlt[k])) continue;
+        const Knoten& knoten = diagramm.knoten()[k];
+        std::vector<int> zeilen{knoten.quellZeile};
+        zeilen.insert(zeilen.end(), knoten.weitereZeilen.begin(), knoten.weitereZeilen.end());
+        for (const int z : zeilen)
+        {
+            if (z <= 0 || z > zeile) continue;
+            if (z == zeile) return k;  // dort beginnt seine Anweisung
+            if (z > besteZeile)
+            {
+                besteZeile = z;
+                bester = k;
+            }
+        }
+    }
+    return bester;
+}
+
 Flussdiagramm fasseAnweisungsfolgenZusammen(const Flussdiagramm& diagramm, std::size_t maxZeilen)
 {
     const std::vector<Knoten>& knoten = diagramm.knoten();
@@ -162,6 +186,9 @@ Flussdiagramm fasseAnweisungsfolgenZusammen(const Flussdiagramm& diagramm, std::
             }
             ziel.zeilen.insert(ziel.zeilen.end(), zeilen.begin(), zeilen.end());
             nimmAuf(ziel.aufrufe, knoten[glied].aufrufe);
+            if (knoten[glied].quellZeile > 0) ziel.weitereZeilen.push_back(knoten[glied].quellZeile);
+            ziel.weitereZeilen.insert(ziel.weitereZeilen.end(), knoten[glied].weitereZeilen.begin(),
+                                      knoten[glied].weitereZeilen.end());
             neueId[glied] = neu.knoten().size();
             aufgegangen[glied] = true;
         }

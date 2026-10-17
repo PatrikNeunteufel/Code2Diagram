@@ -181,7 +181,8 @@ public:
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
     bool zurueck();
-    /// Der Text des hervorgehobenen Knotens (Zeilen durch `\n`); leer = keiner.
+    /// Der Text des hervorgehobenen Knotens (Zeilen durch `\n`); im Aufrufgraph der Name der
+    /// Funktion, bei den Datentypen der des Typs; leer = keiner.
     [[nodiscard]] QString markiert() const;
 
     /// Wie ein Klick in die Vorschau: die Stelle im Quelltext zeigen. `name`: im Ablauf eine Zeile
@@ -191,6 +192,11 @@ public:
     bool klicke(const QString& name);
     /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`; leer = keine.
     [[nodiscard]] QString gezeigteStelle() const;
+    /// Wie Rechtsklick im Quelltext, Show in diagram: Zeile `zeile` der Datei im Quelltext. In einer
+    /// Funktion: ihr Knoten im gezeigten Ablauf (sonst erst zum Ablauf der Funktion; Back fuehrt
+    /// zurueck), im Aufrufgraph die Funktion; in einem Typ: Data types mit ihm. Hervorgehoben (Ring),
+    /// die Zeile im Quelltext auch. false = die Zeile gehoert zu keiner Funktion und keinem Typ.
+    bool zeigeImDiagramm(int zeile);
 
     /// Wer die gezeigte Funktion ruft, im ganzen Projekt: je Aufrufer `funktion() - pfad:zeile`.
     [[nodiscard]] QStringList aufrufer() const;

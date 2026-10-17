@@ -53,6 +53,8 @@ struct Knoten
     /// Kein Weg vom Start fuehrt hierher (Code hinter einer Hauptschleife): grau und
     /// gestrichelt gezeichnet, unter dem Ablauf.
     bool unerreichbar = false;
+    /// Die Zeilen der Anweisungen, die beim Buendeln dazukamen (quellZeile ist die erste).
+    std::vector<int> weitereZeilen;
 };
 
 struct Kante
@@ -129,6 +131,12 @@ inline constexpr std::size_t kRahmenFarben = 6;
 
 /// Die Farbe einer Nummer als `#rrggbb` — gut zu unterscheiden, hell wie dunkel lesbar.
 [[nodiscard]] std::string_view rahmenFarbe(std::size_t farbe);
+
+/// Der Knoten, der eine Zeile des Quelltexts zeigt: der, dessen Anweisung dort beginnt;
+/// sonst der, dessen Anweisung zuletzt davor beginnt (eine Anweisung ueber mehrere Zeilen,
+/// eine Zeile mit nur `}` oder einem Kommentar). `zaehlt[k]` false: Knoten k kommt nicht in
+/// Frage (etwa eingebettet aus einer anderen Datei); leer = alle. kKeine = keiner.
+[[nodiscard]] KnotenId knotenZurZeile(const Flussdiagramm& diagramm, int zeile, const std::vector<bool>& zaehlt = {});
 
 /// Folgen von Anweisungen zu einem Knoten buendeln: A -> B wird ein Knoten,
 /// wenn beide Anweisungen sind, in derselben Gruppe liegen, A nur nach B fuehrt

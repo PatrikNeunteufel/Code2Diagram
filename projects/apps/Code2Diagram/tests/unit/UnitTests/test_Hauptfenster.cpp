@@ -534,6 +534,65 @@ TEST_SUITE("Hauptfenster")
         CHECK_FALSE(fenster.klicke("Motor::gibt_es_nicht"));
     }
 
+    TEST_CASE("Umgekehrt: eine Zeile im Quelltext zeigt ihren Knoten, wechselt wenn noetig die Funktion")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        QFile datei(QDir(ordner.path()).filePath(QStringLiteral("a.c")));
+        REQUIRE(datei.open(QIODevice::WriteOnly));
+        datei.write("struct Punkt {\n"     // 1
+                    "    int x;\n"         // 2
+                    "};\n"                 // 3
+                    "void eins(void)\n"    // 4
+                    "{\n"                  // 5
+                    "    a = 1;\n"         // 6
+                    "    b = 2;\n"         // 7  gebuendelt mit a = 1
+                    "    if (a)\n"         // 8
+                    "        c();\n"       // 9
+                    "}\n"                  // 10
+                    "void zwei(void)\n"    // 11
+                    "{\n"                  // 12
+                    "    eins();\n"        // 13
+                    "}\n"                  // 14
+                    "int g;\n");           // 15
+        datei.close();
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDiagramm("eins"));
+        // in der gezeigten Funktion: der Knoten, auch die zweite Anweisung eines gebuendelten
+        CHECK(fenster.zeigeImDiagramm(7));
+        CHECK(fenster.markiert() == "a = 1\nb = 2");
+        CHECK(fenster.gezeigteStelle() == "a.c:7");
+        CHECK(fenster.zeigeImDiagramm(8));
+        CHECK(fenster.markiert() == "a");
+        CHECK(fenster.zeigeImDiagramm(10));  // die `}`: die Anweisung davor
+        CHECK(fenster.markiert() == "c()");
+        CHECK(fenster.diagramm() == "eins");
+
+        // in einer anderen Funktion: dorthin, Back fuehrt zurueck
+        CHECK(fenster.zeigeImDiagramm(13));
+        CHECK(fenster.diagramm() == "zwei");
+        CHECK(fenster.markiert() == "eins()");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "eins");
+
+        // im Aufrufgraph: die Funktion
+        REQUIRE(fenster.zeigeAufrufgraph("zwei"));
+        CHECK(fenster.zeigeImDiagramm(6));
+        CHECK(fenster.markiert() == "eins");
+
+        // ein Typ: Data types mit ihm
+        CHECK(fenster.zeigeImDiagramm(2));
+        CHECK(fenster.diagramm() == Hauptfenster::kDatentypen);
+        CHECK(fenster.typ() == "Punkt");
+        CHECK(fenster.markiert() == "Punkt");
+
+        // nichts dazu
+        CHECK_FALSE(fenster.zeigeImDiagramm(15));
+        CHECK_FALSE(fenster.zeigeImDiagramm(99));
+    }
+
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
     {
         QTemporaryDir ordner;
