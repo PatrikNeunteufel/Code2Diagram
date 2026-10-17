@@ -87,6 +87,27 @@ std::string kante(const std::string& id, const std::string& inhalt, const std::s
            "        </mxCell>\n";
 }
 
+/// Eine Linie ohne Spitze durch feste Punkte (die Koepfe eines Struktogramms).
+std::string linie(const std::string& id, const Linienzug& l)
+{
+    const auto punkt = [](const Punkt& p, std::string_view als) {
+        return "<mxPoint x=\"" + zahl(p.x) + "\" y=\"" + zahl(p.y) + "\"" +
+               (als.empty() ? std::string() : " as=\"" + std::string(als) + "\"") + "/>";
+    };
+    std::string aus = "        <mxCell id=\"" + id +
+                      "\" style=\"endArrow=none;html=1;rounded=0;\" edge=\"1\" parent=\"1\">\n"
+                      "          <mxGeometry relative=\"1\" as=\"geometry\">\n"
+                      "            " + punkt(l.front(), "sourcePoint") + "\n"
+                      "            " + punkt(l.back(), "targetPoint") + "\n";
+    if (l.size() > 2)
+    {
+        aus += "            <Array as=\"points\">";
+        for (std::size_t i = 1; i + 1 < l.size(); ++i) aus += punkt(l[i], {});
+        aus += "</Array>\n";
+    }
+    return aus + "          </mxGeometry>\n        </mxCell>\n";
+}
+
 /// Knotenart -> Stil der Zelle.
 constexpr std::string_view formVon(KnotenArt art)
 {
@@ -120,12 +141,12 @@ std::string_view stereotyp(KastenArt art)
 }
 
 /// Die Legende: je Bedingung ein Farbfeld und ihr Text.
-std::string legende(const FlussAnordnung& a, const Optionen& optionen)
+std::string legende(const std::vector<FlussAnordnung::Legende>& eintraege, const Optionen& optionen)
 {
     std::string aus;
-    for (std::size_t i = 0; i < a.legende.size(); ++i)
+    for (std::size_t i = 0; i < eintraege.size(); ++i)
     {
-        const FlussAnordnung::Legende& l = a.legende[i];
+        const FlussAnordnung::Legende& l = eintraege[i];
         const std::string f(rahmenFarbe(l.farbe));
         aus += ecke("l" + std::to_string(i), "", "rounded=0;fillColor=" + f + ";strokeColor=" + f + ";", "1", l.feld);
         const double breite =
@@ -180,7 +201,7 @@ public:
                         stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern(gruppe.eltern),
                         in(gruppe.eltern, a.gruppen[g]));
         }
-        aus += legende(a, optionen);
+        aus += legende(a.legende, optionen);
         for (std::size_t id = 0; id < diagramm.knoten().size(); ++id)
         {
             const Knoten& k = diagramm.knoten()[id];
@@ -279,6 +300,54 @@ public:
         return aus + std::string(kFuss);
     }
 
+    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
+    {
+        using FeldArt = StruktoAnordnung::FeldArt;
+        const AnordnungOptionen o = anordnung(optionen);
+        const StruktoAnordnung a = ordneAn(diagramm, o);
+        const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+        std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
+        for (std::size_t i = 0; i < a.felder.size(); ++i)
+        {
+            const StruktoAnordnung::Feld& f = a.felder[i];
+            std::string inhalt;
+            for (const std::string& z : f.zeilen) inhalt += (inhalt.empty() ? "" : "<br>") + html(kuerze(z, o.maxZeilenLaenge));
+            std::string stil = "rounded=0;whiteSpace=wrap;html=1;" + std::string(kSchrift);
+            if (f.art == FeldArt::Titel) stil += "fillColor=" + hell(Farbe::Getoent) + ";";
+            if (f.unerreichbar)
+                stil += "dashed=1;fillColor=" + hell(Farbe::Fremd) + ";strokeColor=" + hell(Farbe::FremdStrich) + ";";
+            // der Text steht, wo die Anordnung ihn hinstellt: oben im Kopf, unten im Fuss, rechts vom Pfeil
+            const Punkt m = f.ort.mitte();
+            if (f.text.y < m.y - 1) stil += "verticalAlign=top;spacingTop=" + zahl(f.text.y - f.ort.y - o.zeilenHoehe / 2) + ";";
+            if (f.text.y > m.y + 1)
+                stil += "verticalAlign=bottom;spacingBottom=" + zahl(f.ort.y + f.ort.hoehe - f.text.y - o.zeilenHoehe / 2) + ";";
+            if (f.text.x > m.x + 1) stil += "spacingLeft=" + zahl(2 * (f.text.x - m.x)) + ";";
+            aus += ecke("f" + std::to_string(i), inhalt, stil, "1", f.ort);
+        }
+        for (std::size_t i = 0; i < a.linien.size(); ++i)
+            if (a.linien[i].size() >= 2) aus += linie("l" + std::to_string(i), a.linien[i]);
+        for (std::size_t i = 0; i < a.beschriftungen.size(); ++i)
+        {
+            const StruktoAnordnung::Beschriftung& b = a.beschriftungen[i];
+            const std::string text = kuerze(b.text, o.maxZeilenLaenge);
+            const double breite = static_cast<double>(text.size()) * o.zeichenBreite + 8;
+            aus += ecke("b" + std::to_string(i), html(text), "text;html=1;align=center;verticalAlign=middle;" + std::string(kSchrift),
+                        "1", {b.mitte.x - breite / 2, b.mitte.y - 9, breite, 18});
+        }
+        for (std::size_t i = 0; i < a.rahmen.size(); ++i)
+        {
+            const StruktoAnordnung::Rahmen& r = a.rahmen[i];
+            const std::string f(rahmenFarbe(r.farbe));
+            aus += ecke("r" + std::to_string(i), html(kuerze(r.titel, titelZeichen(r.ort, o))),
+                        "rounded=0;fillColor=" + f + ";fillOpacity=8;strokeColor=" + f + ";fontColor=" + f +
+                            ";fontStyle=2;align=left;verticalAlign=top;spacingLeft=6;whiteSpace=wrap;html=1;" +
+                            std::string(kSchrift),
+                        "1", r.ort);
+        }
+        aus += legende(a.legende, optionen);
+        return aus + std::string(kFuss);
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const FlussAnordnung a = ordneAn(graph, anordnung(optionen));
@@ -293,7 +362,7 @@ public:
                         "swimlane;startSize=22;fontStyle=2;collapsible=0;container=1;dashed=1;fillColor=none;whiteSpace=wrap;"
                         "html=1;" + std::string(kSchrift),
                         "1", a.gruppen[d]);
-        aus += legende(a, optionen);
+        aus += legende(a.legende, optionen);
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
         {
             const AufrufKnoten& k = graph.knoten[id];

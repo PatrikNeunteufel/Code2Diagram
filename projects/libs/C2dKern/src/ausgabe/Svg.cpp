@@ -171,10 +171,10 @@ std::string textStil(std::size_t farbe)
 }
 
 /// Je Bedingung ein Farbfeld und ihr Text.
-std::string legende(const FlussAnordnung& a, const AnordnungOptionen& o)
+std::string legende(const std::vector<FlussAnordnung::Legende>& eintraege, const AnordnungOptionen& o)
 {
     std::string aus;
-    for (const FlussAnordnung::Legende& l : a.legende)
+    for (const FlussAnordnung::Legende& l : eintraege)
     {
         aus += rechteckMit(l.feld, "rahmen", flaechenStil(l.farbe));
         aus += textLinks(kuerze(l.titel, o.maxZeilenLaenge), l.text.x, l.text.y - o.zeilenHoehe / 2, o.zeilenHoehe);
@@ -300,7 +300,7 @@ public:
             titel += rahmenTitel(text, r, o,
                                  farben[g] != kKeine ? "font-style=\"italic\" " + textStil(farben[g]) : "font-style=\"italic\"");
         }
-        aus += legende(a, o);
+        aus += legende(a.legende, o);
         for (const Linienzug& l : a.kanten)
         {
             if (l.size() < 2) continue;
@@ -377,6 +377,32 @@ public:
         return aus + "</svg>\n";
     }
 
+    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
+    {
+        using FeldArt = StruktoAnordnung::FeldArt;
+        const AnordnungOptionen o = anordnung(optionen);
+        const StruktoAnordnung a = ordneAn(diagramm, o);
+        std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
+        // die Felder der Reihe nach: ein Block vor seinen Spalten, die darueber liegen
+        for (const StruktoAnordnung::Feld& f : a.felder)
+        {
+            std::vector<std::string> zeilen;
+            for (const std::string& z : f.zeilen) zeilen.push_back(kuerze(z, o.maxZeilenLaenge));
+            std::string stueck = rechteck(f.ort, f.art == FeldArt::Titel ? "getoent" : "flaeche");
+            if (!zeilen.empty()) stueck += textMittig(zeilen, f.text, o.zeilenHoehe);
+            aus += f.unerreichbar ? "  <g class=\"tot\">\n" + stueck + "  </g>\n" : stueck;
+        }
+        for (const Linienzug& l : a.linien) aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"/>\n";
+        for (const StruktoAnordnung::Beschriftung& b : a.beschriftungen)
+            aus += textMittig({kuerze(b.text, o.maxZeilenLaenge)}, b.mitte, o.zeilenHoehe);
+        for (const StruktoAnordnung::Rahmen& r : a.rahmen)
+            aus += rechteckMit(r.ort, "rahmen", flaechenStil(r.farbe)) +
+                   rahmenTitel(kuerze(r.titel, titelZeichen(r.ort, o)), r.ort, o,
+                               "font-style=\"italic\" " + textStil(r.farbe));
+        aus += legende(a.legende, o);
+        return aus + "</svg>\n";
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const AnordnungOptionen o = anordnung(optionen);
@@ -385,7 +411,7 @@ public:
 
         // hinten die Rahmen der Dateien, dann die Kanten, darauf Titel und Knoten, vorn die Beschriftungen
         for (const Rechteck& r : a.gruppen) aus += rechteck(r, "rahmen");
-        aus += legende(a, o);
+        aus += legende(a.legende, o);
         const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
         for (std::size_t e = 0; e < a.kanten.size(); ++e)
         {

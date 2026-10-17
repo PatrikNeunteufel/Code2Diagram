@@ -13,9 +13,11 @@
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -50,6 +52,10 @@ public:
     [[nodiscard]] virtual std::string schreibe(const diagramm::Zustandsdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Aufrufgraph& graph, const Optionen& optionen) const = 0;
+    /// Ein Struktogramm; std::nullopt = das Format kann es nicht richtig zeigen (Mermaid, DOT) —
+    /// wer schreibt, sagt dann `Nassi-Shneiderman is not available in <name>`.
+    [[nodiscard]] virtual std::optional<std::string> schreibe(const diagramm::Struktogramm& diagramm,
+                                                              const Optionen& optionen) const = 0;
 };
 
 /// Alle Formate; das erste ist die Vorgabe.
@@ -57,6 +63,9 @@ public:
 
 /// Das Format dieses Namens; nullptr = keines.
 [[nodiscard]] const Format* format(std::string_view name);
+
+/// Wie ein Format sagt, dass es ein Struktogramm nicht kann.
+[[nodiscard]] std::string keinStruktogramm(const Format& format);
 
 /// SVG: das Diagramm gezeichnet wie in der Vorschau, mit den Orten und Wegen aus
 /// diagramm/Anordnung.hpp — das eigene Format, die Vorgabe.

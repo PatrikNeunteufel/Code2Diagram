@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -492,6 +493,236 @@ KastenArt kastenArt(modell::TypArt art)
     return KastenArt::Struktur;
 }
 
+/// Baut ein Struktogramm aus dem Baum der Anweisungen (diagramm::struktogrammVon).
+class StruktoBauer
+{
+public:
+    explicit StruktoBauer(Struktogramm& diagramm) : m_d(diagramm) {}
+
+    void baueFolge(const std::vector<modell::AnweisungPtr>& folge, std::vector<Block>& ziel)
+    {
+        for (const modell::AnweisungPtr& a : folge) baue(*a, ziel);
+    }
+
+    void baue(const Anweisung& a, std::vector<Block>& ziel)
+    {
+        switch (a.art)
+        {
+            case AnweisungArt::Einfach:
+                ziel.push_back(block(istAufruf(a.text) ? BlockArt::Aufruf : BlockArt::Anweisung, a.text, a.zeile));
+                break;
+            case AnweisungArt::Block:
+            case AnweisungArt::Zweig:  // ausserhalb von Varianten: wie ein Block
+                baueFolge(a.kinder, ziel);
+                break;
+            case AnweisungArt::Wenn:
+            {
+                Block b = block(BlockArt::Verzweigung, a.text, a.zeile);
+                b.spalten = {Spalte{"yes", {}, false}, Spalte{"no", {}, false}};
+                baue(*a.kinder[0], b.spalten[0].bloecke);
+                if (a.sonst) baue(*a.sonst, b.spalten[1].bloecke);
+                ziel.push_back(std::move(b));
+                break;
+            }
+            case AnweisungArt::Solange:
+                schleife(immerWahr(a.text) ? BlockArt::Endlosschleife : BlockArt::Kopfschleife,
+                         immerWahr(a.text) ? std::string(kImmer) : "while (" + a.text + ")", a, ziel);
+                break;
+            case AnweisungArt::TueSolange:
+                schleife(immerWahr(a.text) ? BlockArt::Endlosschleife : BlockArt::Fussschleife,
+                         immerWahr(a.text) ? std::string(kImmer) : "while (" + a.text + ")", a, ziel);
+                break;
+            case AnweisungArt::Fuer:
+            {
+                const bool endlos = a.text.empty() || immerWahr(a.text);
+                std::string kopf = "for (" + a.init + "; " + a.text + "; " + a.schritt + ")";
+                if (endlos && a.init.empty() && a.schritt.empty()) kopf = kImmer;
+                schleife(endlos ? BlockArt::Endlosschleife : BlockArt::Kopfschleife, kopf, a, ziel);
+                break;
+            }
+            case AnweisungArt::FuerJedes:
+                schleife(BlockArt::Kopfschleife, "for (" + a.text + ")", a, ziel);
+                break;
+            case AnweisungArt::Auswahl:
+                auswahl(a, ziel);
+                break;
+            case AnweisungArt::Ruecksprung:
+                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "return" : "return " + a.text, a.zeile));
+                break;
+            case AnweisungArt::Wurf:
+                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "throw" : "throw " + a.text, a.zeile));
+                break;
+            case AnweisungArt::Abbruch:
+                ziel.push_back(block(BlockArt::Aussprung, "break", a.zeile));
+                break;
+            case AnweisungArt::Fortsetzung:
+                ziel.push_back(block(BlockArt::Aussprung, "continue", a.zeile));
+                break;
+            case AnweisungArt::Sprung:
+                ziel.push_back(block(BlockArt::Aussprung, "goto " + a.text, a.zeile));
+                m_d.hinweise.push_back({a.zeile, "goto " + a.text + ": not structured - see the flowchart"});
+                break;
+            case AnweisungArt::Marke:
+                ziel.push_back(block(BlockArt::Marke, a.text + ":", a.zeile));
+                break;
+            case AnweisungArt::Versuch:
+            {
+                Block b = block(BlockArt::Versuch, "try", a.zeile);
+                for (std::size_t i = 0; i < a.kinder.size(); ++i)
+                {
+                    const Anweisung& kind = *a.kinder[i];
+                    if (i == 0)
+                    {
+                        b.spalten.push_back({"try", {}, false});
+                        baue(kind, b.spalten.back().bloecke);
+                    }
+                    else if (kind.art == AnweisungArt::Fang && !kind.kinder.empty())
+                    {
+                        b.spalten.push_back({"catch (" + kind.text + ")", {}, false});
+                        baue(*kind.kinder[0], b.spalten.back().bloecke);
+                    }
+                }
+                ziel.push_back(std::move(b));
+                break;
+            }
+            case AnweisungArt::Varianten:
+            {
+                Block b = block(BlockArt::Varianten, a.text, a.zeile);
+                for (const modell::AnweisungPtr& zweig : a.kinder)
+                {
+                    b.spalten.push_back({zweig->gilt ? zweig->text + " (active)" : zweig->text, {}, zweig->gilt});
+                    baueFolge(zweig->kinder, b.spalten.back().bloecke);
+                }
+                ziel.push_back(std::move(b));
+                break;
+            }
+            case AnweisungArt::Bedingt:
+            {
+                Block b = block(BlockArt::Bedingt, a.text, a.zeile);
+                b.spalten.push_back({});
+                baueFolge(a.kinder, b.spalten.back().bloecke);
+                ziel.push_back(std::move(b));
+                break;
+            }
+            case AnweisungArt::Fall:       // ausserhalb eines switch-Blocks: ohne Wirkung
+            case AnweisungArt::Fang:       // ausserhalb eines try: ohne Wirkung
+            case AnweisungArt::Direktive:  // Praeprozessor im Rumpf: kein Block
+                break;
+        }
+    }
+
+private:
+    static constexpr std::string_view kImmer = "forever";
+
+    static Block block(BlockArt art, std::string text, int zeile)
+    {
+        Block b;
+        b.art = art;
+        b.aufrufe = aufrufeIn(text);
+        b.text = std::move(text);
+        b.quellZeile = zeile;
+        return b;
+    }
+
+    void schleife(BlockArt art, std::string kopf, const Anweisung& a, std::vector<Block>& ziel)
+    {
+        Block b = block(art, std::move(kopf), a.zeile);
+        b.spalten.push_back({});
+        baue(*a.kinder[0], b.spalten.back().bloecke);
+        ziel.push_back(std::move(b));
+    }
+
+    /// Verlaesst die Anweisung ihre Folge sicher — ein Sprung, auch als letzte eines Blocks?
+    static bool springt(const Anweisung& a)
+    {
+        switch (a.art)
+        {
+            case AnweisungArt::Abbruch:
+            case AnweisungArt::Fortsetzung:
+            case AnweisungArt::Ruecksprung:
+            case AnweisungArt::Wurf:
+            case AnweisungArt::Sprung: return true;
+            case AnweisungArt::Block: return !a.kinder.empty() && springt(*a.kinder.back());
+            default: return false;
+        }
+    }
+
+    void auswahl(const Anweisung& a, std::vector<Block>& ziel)
+    {
+        Block b = block(BlockArt::Fallunterscheidung, a.text, a.zeile);
+        struct Fall
+        {
+            std::string titel;
+            std::vector<const Anweisung*> anweisungen;
+            bool standard = false;
+        };
+        std::vector<Fall> faelle;
+        std::vector<const Anweisung*> folge;
+        const Anweisung& rumpf = *a.kinder[0];
+        if (rumpf.art == AnweisungArt::Block)
+            for (const modell::AnweisungPtr& s : rumpf.kinder) folge.push_back(s.get());
+        else
+            folge.push_back(&rumpf);
+        bool davorFall = false;
+        for (const Anweisung* s : folge)
+        {
+            if (s->art == AnweisungArt::Fall)
+            {
+                const std::string wert = s->text.empty() ? "default" : s->text;
+                if (davorFall)
+                {
+                    // `case 1: case 2:` ohne Anweisung dazwischen: eine Spalte "1, 2"
+                    faelle.back().titel += ", " + wert;
+                    faelle.back().standard = faelle.back().standard || s->text.empty();
+                }
+                else
+                    faelle.push_back({wert, {}, s->text.empty()});
+                davorFall = true;
+                continue;
+            }
+            davorFall = false;
+            if (s->art == AnweisungArt::Direktive) continue;
+            if (faelle.empty())
+            {
+                // vor dem ersten case: nie ausgefuehrt — nicht still weglassen
+                m_d.hinweise.push_back({s->zeile, "statement before the first case of a switch - not shown"});
+                continue;
+            }
+            faelle.back().anweisungen.push_back(s);
+        }
+        // default zuletzt — seine Spalte behaelt ihren Inhalt
+        std::stable_partition(faelle.begin(), faelle.end(), [](const Fall& f) { return !f.standard; });
+        for (std::size_t i = 0; i < faelle.size(); ++i)
+        {
+            Fall& fall = faelle[i];
+            Spalte spalte{fall.titel, {}, false};
+            // ein break am Ende eines Falls ist Syntax, kein Ablauf
+            const bool mitBreak = !fall.anweisungen.empty() && fall.anweisungen.back()->art == AnweisungArt::Abbruch;
+            if (mitBreak) fall.anweisungen.pop_back();
+            for (const Anweisung* s : fall.anweisungen) baue(*s, spalte.bloecke);
+            const bool letzter = i + 1 == faelle.size();
+            if (!mitBreak && !letzter && !fall.anweisungen.empty() && !springt(*fall.anweisungen.back()))
+                spalte.bloecke.push_back(block(BlockArt::Aussprung, "falls through", 0));
+            b.spalten.push_back(std::move(spalte));
+        }
+        if (std::none_of(faelle.begin(), faelle.end(), [](const Fall& f) { return f.standard; }))
+            b.spalten.push_back({"otherwise", {}, false});
+        ziel.push_back(std::move(b));
+    }
+
+    Struktogramm& m_d;
+};
+
+/// Unerreichbar wie im Ablauf: ein Block, dessen Zeile dort nur tote Knoten tragen.
+void markiereUnerreichbare(std::vector<Block>& bloecke, const std::set<int>& tot, const std::set<int>& lebt)
+{
+    for (Block& b : bloecke)
+    {
+        b.unerreichbar = tot.contains(b.quellZeile) && !lebt.contains(b.quellZeile);
+        for (Spalte& s : b.spalten) markiereUnerreichbare(s.bloecke, tot, lebt);
+    }
+}
+
 }  // namespace
 
 Flussdiagramm flussVon(const modell::Funktion& funktion)
@@ -499,6 +730,24 @@ Flussdiagramm flussVon(const modell::Funktion& funktion)
     Flussdiagramm diagramm(funktion.name);
     if (funktion.rumpf) FlussBauer(diagramm).baue(funktion);
     return diagramm;
+}
+
+Struktogramm struktogrammVon(const modell::Funktion& funktion)
+{
+    Struktogramm d;
+    d.titel = funktion.signatur();
+    d.quellZeile = funktion.zeile;
+    if (!funktion.rumpf) return d;
+    StruktoBauer(d).baue(*funktion.rumpf, d.bloecke);
+    // was nie erreicht wird und ob sie zurueckkehrt, sagt der Ablauf — dieselbe Antwort in beiden Ansichten
+    const Flussdiagramm fluss = flussVon(funktion);
+    std::set<int> tot, lebt;
+    for (const Knoten& k : fluss.knoten())
+        if (k.quellZeile > 0) (k.unerreichbar ? tot : lebt).insert(k.quellZeile);
+    markiereUnerreichbare(d.bloecke, tot, lebt);
+    d.kehrtNieZurueck = std::none_of(fluss.knoten().begin(), fluss.knoten().end(),
+                                     [](const Knoten& k) { return k.art == KnotenArt::Ende; });
+    return d;
 }
 
 int unerreichbarAb(const Flussdiagramm& diagramm)

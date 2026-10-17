@@ -246,6 +246,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_format->setObjectName(QStringLiteral("format"));
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate())
         m_format->addItem(ausStd(f->name()), ausStd(f->name()));
+    m_darstellung = new QComboBox(rechts);
+    m_darstellung->setObjectName(QStringLiteral("darstellung"));
+    m_darstellung->addItem(QStringLiteral("Flowchart"), QString::fromLatin1(kFlussdiagramm));
+    m_darstellung->addItem(QStringLiteral("Nassi-Shneiderman"), QString::fromLatin1(kStruktogramm));
+    m_darstellung->setToolTip(QStringLiteral("How a function is shown: its flowchart or its structogram (Nassi-Shneiderman)"));
     m_richtung = new QComboBox(rechts);
     m_richtung->setObjectName(QStringLiteral("richtung"));
     m_richtung->addItem(QStringLiteral("Top-down"), QStringLiteral("TD"));
@@ -265,6 +270,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     leiste->addWidget(new QLabel(QStringLiteral("Diagram:"), rechts));
     leiste->addWidget(m_auswahl, 1);
     leiste->addWidget(m_typAuswahl, 1);
+    leiste->addWidget(m_darstellung);
     leiste->addWidget(new QLabel(QStringLiteral("Format:"), rechts));
     leiste->addWidget(m_format);
     leiste->addWidget(m_richtung);
@@ -287,6 +293,8 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     });
     for (QComboBox* liste : {m_format, m_richtung})
         connect(liste, &QComboBox::currentIndexChanged, this, [this] { zeichne(); });
+    // die Darstellung gilt fuer jede Funktion: neu bauen, was gezeigt ist (Einbettungen gehen dabei)
+    connect(m_darstellung, &QComboBox::currentIndexChanged, this, [this] { baueNeu(); });
     connect(m_typAuswahl, &QComboBox::currentIndexChanged, this, [this] {
         const QString neu = m_typAuswahl->currentData().toString();
         if (neu.isEmpty() || neu == m_typ) return;
@@ -1663,6 +1671,21 @@ bool Hauptfenster::waehleFormat(const QString& name)
     return waehle(m_format, name);
 }
 
+bool Hauptfenster::waehleDarstellung(const QString& name)
+{
+    return waehle(m_darstellung, name);
+}
+
+QString Hauptfenster::darstellung() const
+{
+    return m_darstellung->currentData().toString();
+}
+
+bool Hauptfenster::zeigtStruktogramm() const
+{
+    return !m_struktogramm.titel.empty();
+}
+
 bool Hauptfenster::waehleAnsicht(const QString& name)
 {
     if (name == QLatin1String("preview"))
@@ -1745,6 +1768,7 @@ void Hauptfenster::gehe(const Fundstelle& stelle, c2d::diagramm::KnotenId von)
 bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const Fundstelle& gerufen)
 {
     using namespace c2d::diagramm;
+    if (zeigtStruktogramm()) return false;  // im Struktogramm (noch) nicht
     const c2d::modell::Funktion& f = c2d::projekt::funktion(m_projekt, gerufen);
     Flussdiagramm neu = c2d::diagramm::betteEin(m_fluss, knoten, fasseAnweisungsfolgenZusammen(flussVon(f)), f.signatur(),
                                                 m_projekt.dateien[gerufen.datei].pfad);
@@ -1827,6 +1851,8 @@ void Hauptfenster::baueNeu()
     const QString bisher = m_gezeigt;
     m_gezeigt = m_auswahl->currentData().toString();
     m_fluss = Flussdiagramm();
+    m_struktogramm = Struktogramm();
+    m_richtung->setEnabled(true);
     // ein anderer Aufrufgraph beginnt zugeklappt
     if (m_gezeigt != bisher) m_aufgeklappt.clear();
     m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
@@ -1837,6 +1863,24 @@ void Hauptfenster::baueNeu()
         for (const c2d::modell::Funktion& f : m_projekt.dateien[m_datei].ergebnis.einheit.funktionen)
         {
             if (!f.rumpf || f.vollerName() != name) continue;
+            if (darstellung() == QLatin1String(kStruktogramm))
+            {
+                m_struktogramm = struktogrammVon(f);
+                // je Block ein Knoten: Text, Zeile, Aufrufe — die Wege der Knoten gelten so auch hier
+                for (const Block* b : bloeckeVon(m_struktogramm))
+                {
+                    Knoten k;
+                    k.zeilen = {b->text};
+                    k.quellZeile = b->quellZeile;
+                    k.aufrufe = b->aufrufe;
+                    k.unerreichbar = b->unerreichbar;
+                    m_fluss.neuerKnoten(std::move(k));
+                }
+                for (const Hinweis& h : m_struktogramm.hinweise)
+                    statusBar()->showMessage(QStringLiteral("Line %1: %2").arg(h.zeile).arg(ausStd(h.text)), 8000);
+                m_richtung->setEnabled(false);  // ein Struktogramm waechst nach unten
+                break;
+            }
             m_fluss = fasseAnweisungsfolgenZusammen(flussVon(f));
             // nichts still: Code, der nie erreicht wird, steht unten — und hier mit seiner Zeile
             if (const int ab = c2d::diagramm::unerreichbarAb(m_fluss); ab > 0)
@@ -1905,6 +1949,15 @@ void Hauptfenster::zeichne()
             if (!c2d::projekt::kandidaten(m_projekt, von, aufruf).empty()) links[i].push_back(aufruf);
         for (const c2d::projekt::TypVerweis& t : typVerweiseVon(i)) links[i].push_back(t.name);
     }
+    if (zeigtStruktogramm())
+    {
+        m_vorschau->zeige(m_struktogramm, links);
+        const std::optional<std::string> text = format->schreibe(m_struktogramm, optionen);
+        m_text->setPlainText(text ? QString::fromStdString(*text)
+                                  : QString::fromStdString(c2d::ausgabe::keinStruktogramm(*format)) +
+                                        QStringLiteral(" - choose svg or drawio"));
+        return;
+    }
     m_vorschau->zeige(m_fluss, nachRechts, links);
     m_text->setPlainText(QString::fromStdString(format->schreibe(m_fluss, optionen)));
 }
@@ -1929,8 +1982,10 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 const QString voll = QString::fromStdString(c2d::projekt::funktion(m_projekt, f).vollerName());
                 const QString wo = f.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[f.datei].pfad));
                 menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f, knoten] { gehe(f, knoten); });
-                menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
-                    ->setEnabled(!traegtSchon);
+                // im Struktogramm gibt es (noch) kein Einbetten (Entscheid Patrik, 2026-10-17, G)
+                if (!zeigtStruktogramm())
+                    menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
+                        ->setEnabled(!traegtSchon);
                 menue.addAction(QStringLiteral("Call graph from %1()%2").arg(voll, wo), this,
                                 [this, f, knoten] { geheZuAufrufgraph(f, knoten); });
             }
@@ -1940,10 +1995,14 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 QMenu* wahl = menue.addMenu(QStringLiteral("%1(): %2 functions qualify").arg(ausStd(aufruf)).arg(gemeint.size()));
                 for (const Fundstelle& f : gemeint)
                     wahl->addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f, knoten] { gehe(f, knoten); });
-                wahl->addSeparator();
-                for (const Fundstelle& f : gemeint)
-                    wahl->addAction(QStringLiteral("Embed here: %1").arg(beschreibe(f)), this, [this, knoten, f] { betteEin(knoten, f); })
-                        ->setEnabled(!traegtSchon);
+                if (!zeigtStruktogramm())
+                {
+                    wahl->addSeparator();
+                    for (const Fundstelle& f : gemeint)
+                        wahl->addAction(QStringLiteral("Embed here: %1").arg(beschreibe(f)), this,
+                                        [this, knoten, f] { betteEin(knoten, f); })
+                            ->setEnabled(!traegtSchon);
+                }
             }
         }
         // die Typen, die der Knoten nennt

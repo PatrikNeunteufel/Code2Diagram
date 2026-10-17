@@ -11,6 +11,7 @@
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <QGraphicsView>
@@ -41,6 +42,9 @@ public:
     /// Ein Knoten des Aufrufgraphen ist fuer Doppelklick, Kontextmenue und markiere()
     /// wie ein Knoten des Flussdiagramms: seine Stelle in Aufrufgraph::knoten.
     void zeige(const c2d::diagramm::Aufrufgraph& graph, bool nachRechts);
+    /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
+    /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
+    void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {});
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.

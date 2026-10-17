@@ -140,7 +140,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark] [--einstellungen]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark] [--einstellungen] [--struktogramm]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -227,6 +227,17 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   auf anderem Weg (`eeprom.st` statt `p->st`) — anderswo in der Datei einen Zustand bekommt,
   kommt ein Übergang **von außen** (gefüllter Punkt, beschriftet `in init(): …`). Beispiel:
   `beispiele/automat.c`.
+- **Nassi-Shneiderman** (Struktogramm, DIN 66261): das Feld neben Diagram stellt jede Funktion
+  als **Flowchart** oder **Nassi-Shneiderman** dar; es bleibt beim Springen. Je Anweisung ein
+  Block; `if` mit Dreieck, `yes` und `no` in den Ecken; `switch` mit je Fall einer Spalte (leere
+  Fälle teilen sich eine, ein `break` am Fallende entfällt, Durchfallen endet auf `falls through`,
+  `default` zuletzt, sonst eine leere Spalte `otherwise`); Schleifen kopf- oder fußgesteuert mit
+  dem Text der Quelle, immer wahr als `forever`; `break`, `continue`, `return`, `throw`, `goto` als
+  Aussprung (Pfeil nach links); `try`/`catch`, Varianten und Rahmen wie im Ablauf. `goto` passt
+  nicht in die Struktur: eine Meldung mit Zeile. Spalten so breit wie ihr Inhalt. SVG und draw.io
+  schreiben es, Mermaid und DOT nicht (die Ansicht Text sagt es). Klick, Doppelklick und *Show in
+  diagram* wie im Ablauf; Einbetten gibt es hier nicht. `c2d --funktion f --struktogramm`,
+  im Fenster `--struktogramm`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -283,7 +294,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
-  `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`, `einstellungen_zeigen`,
+  `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`, `darstellung_waehlen name=<flowchart|nassi-shneiderman>`,
+  `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
 
 ### Kommandozeile
@@ -418,6 +430,9 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   neben ihrem Knoten Platz, über einer Zeile, in der ein Rahmen beginnt, sein Titel. Kreuzungen vermeidet sie nicht immer; ein
   Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
   wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
+- **Struktogramm:** kein Einbetten (vorgemerkt); eine lange Zeile wird gekürzt, nicht
+  umgebrochen; ein `switch` mit vielen Fällen und tiefe Schachtelung werden breit. Anweisungen vor
+  dem ersten `case` stehen nicht darin (Meldung).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

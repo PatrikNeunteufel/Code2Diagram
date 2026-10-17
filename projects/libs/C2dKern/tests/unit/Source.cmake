@@ -22,6 +22,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Schalter.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Aufrufgraph.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Typen.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Struktogramm.cpp"
 )
 
 set(_local_headers

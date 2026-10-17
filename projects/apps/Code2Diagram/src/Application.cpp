@@ -309,6 +309,16 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 / %2").arg(fenster.diagramm(), fenster.markiert()));
                      });
 
+    anbindung.aktion(QStringLiteral("darstellung_waehlen"),
+                     QStringLiteral("How a function is shown: flowchart or Nassi-Shneiderman"),
+                     QStringLiteral("name=<flowchart | nassi-shneiderman>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.waehleDarstellung(name))
+                             return st::ungueltig(QStringLiteral("No view '%1' - there are: flowchart, nassi-shneiderman").arg(name));
+                         return st::ok(fenster.darstellung());
+                     });
+
     anbindung.aktion(QStringLiteral("einstellungen_zeigen"), QStringLiteral("Opens File > Settings"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
                          fenster.zeigeEinstellungen();
@@ -419,7 +429,7 @@ bool Application::init(int argc, char* argv[])
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
     QString tiefe, hoechstens, aufrufRichtung;
-    bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false;
+    bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false, struktogramm = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
     {
         const QString& a = argumente[i];
@@ -440,6 +450,7 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--hoechstens")) hoechstens = wert();
         else if (a == QLatin1String("--thema")) wert();  // schon oben gesetzt
         else if (a == QLatin1String("--einstellungen")) m_impl->einstellungen = true;
+        else if (a == QLatin1String("--struktogramm")) struktogramm = true;
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
         else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
         else if (a == QLatin1String("--ohne-fremde")) ohneFremde = true;
@@ -458,6 +469,7 @@ bool Application::init(int argc, char* argv[])
     if (!hoechstens.isEmpty()) fenster.setzeHoechstens(hoechstens.toInt());
     if (!aufrufRichtung.isEmpty()) fenster.setzeAufrufRichtung(aufrufRichtung);
     fenster.setzeOhneFremde(ohneFremde);
+    if (struktogramm) fenster.waehleDarstellung(QString::fromLatin1(c2d::ui::Hauptfenster::kStruktogramm));
     if (!datei.isEmpty())
     {
         QString fehler;

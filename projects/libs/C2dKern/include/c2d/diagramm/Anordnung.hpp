@@ -19,9 +19,11 @@
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace c2d::diagramm
@@ -94,7 +96,52 @@ struct StrukturAnordnung
     double hoehe = 0;
 };
 
+/// Ein Struktogramm, gezeichnet als flache Liste: wer zeichnet, malt `felder` in ihrer
+/// Reihenfolge (ein Block vor den Bloecken seiner Spalten, die liegen darueber), dann
+/// `linien`, `beschriftungen`, `rahmen` und die Legende — und rechnet nichts selbst.
+struct StruktoAnordnung
+{
+    enum class FeldArt
+    {
+        Titel,      ///< oben: die Signatur (getoent)
+        Anweisung,  ///< auch eine Marke
+        Aufruf,     ///< die doppelten Seiten stehen in `linien`
+        Aussprung,  ///< der Pfeil nach links steht in `linien`
+        Kopf,       ///< ein Block mit Spalten: sein Kopf, Text oben; die Spalten liegen darueber
+        Leer,       ///< der Rest einer Spalte unter ihrem letzten Block, eine leere Spalte
+    };
+    struct Feld
+    {
+        Rechteck ort;
+        FeldArt art = FeldArt::Anweisung;
+        std::vector<std::string> zeilen;  ///< ungekuerzt; wer zeichnet, kuerzt auf maxZeilenLaenge
+        Punkt text;                       ///< die Mitte des Texts
+        std::size_t block = kKeine;       ///< Stelle in bloeckeVon(); kKeine: Titel oder Leer
+        bool unerreichbar = false;        ///< grau und gestrichelt
+    };
+    struct Beschriftung
+    {
+        Punkt mitte;
+        std::string text;  ///< `yes`, `no`, die Werte eines Falls, `catch (...)`
+    };
+    struct Rahmen
+    {
+        Rechteck ort;
+        std::string titel;  ///< die Bedingung; gekuerzt auf titelZeichen()
+        std::size_t farbe;  ///< rahmenFarbe
+    };
+    std::vector<Feld> felder;
+    std::vector<Linienzug> linien;  ///< Diagonalen und Trennstriche der Koepfe, Seiten, Pfeile
+    std::vector<Beschriftung> beschriftungen;
+    std::vector<Rahmen> rahmen;
+    std::vector<FlussAnordnung::Legende> legende;
+    std::vector<Rechteck> bloecke;  ///< je Block (Stelle in bloeckeVon()) sein Rechteck
+    double breite = 0;
+    double hoehe = 0;
+};
+
 [[nodiscard]] FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+[[nodiscard]] StruktoAnordnung ordneAn(const Struktogramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

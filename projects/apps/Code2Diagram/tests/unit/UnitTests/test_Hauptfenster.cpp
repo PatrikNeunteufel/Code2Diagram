@@ -593,6 +593,56 @@ TEST_SUITE("Hauptfenster")
         CHECK_FALSE(fenster.zeigeImDiagramm(99));
     }
 
+    TEST_CASE("Nassi-Shneiderman: das Feld neben Diagram, gilt fuer jede Funktion; Klick, Sprung, Show in diagram")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        QFile datei(QDir(ordner.path()).filePath(QStringLiteral("a.c")));
+        REQUIRE(datei.open(QIODevice::WriteOnly));
+        datei.write("void zwei(void)\n"   // 1
+                    "{\n"                 // 2
+                    "    b = 2;\n"        // 3
+                    "}\n"                 // 4
+                    "void eins(int x)\n"  // 5
+                    "{\n"                 // 6
+                    "    if (x)\n"        // 7
+                    "        zwei();\n"   // 8
+                    "    a = 1;\n"        // 9
+                    "}\n");               // 10
+        datei.close();
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDiagramm("eins"));
+        CHECK(fenster.darstellung() == Hauptfenster::kFlussdiagramm);
+        CHECK_FALSE(fenster.waehleDarstellung("kreis"));
+        REQUIRE(fenster.waehleDarstellung(Hauptfenster::kStruktogramm));
+        CHECK(fenster.vorschauFormen() == 3);  // if, zwei(), a = 1
+        CHECK(fenster.diagrammText().startsWith("<svg xmlns="));
+        CHECK(fenster.diagrammText().contains(">eins(int x)</tspan>"));
+
+        // Klick: die Stelle; Show in diagram: der Block
+        CHECK(fenster.klicke("a = 1"));
+        CHECK(fenster.gezeigteStelle() == "a.c:9");
+        CHECK(fenster.zeigeImDiagramm(8));
+        CHECK(fenster.markiert() == "zwei()");
+        // ein Sprung bleibt im Struktogramm; Einbetten gibt es hier nicht
+        CHECK_FALSE(fenster.betteEin("zwei"));
+        REQUIRE(fenster.springe("zwei"));
+        CHECK(fenster.diagramm() == "zwei");
+        CHECK(fenster.darstellung() == Hauptfenster::kStruktogramm);
+        CHECK(fenster.vorschauFormen() == 1);
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "eins");
+
+        // Mermaid kann es nicht: der Text sagt es
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().startsWith("Nassi-Shneiderman is not available in mermaid"));
+        // zurueck zum Ablauf
+        REQUIRE(fenster.waehleDarstellung(Hauptfenster::kFlussdiagramm));
+        CHECK(fenster.diagrammText().startsWith("%% eins"));
+    }
+
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
     {
         QTemporaryDir ordner;

@@ -10,6 +10,7 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/modell/Code.hpp"
 
@@ -37,6 +38,19 @@ namespace c2d::diagramm
 ///   beginnt (kein Knoten fuehrt hinein), steht vorn die Zeile kUnerreichbar. Ins Ende
 ///   fuehrt von ihm keine Kante.
 [[nodiscard]] Flussdiagramm flussVon(const modell::Funktion& funktion);
+
+/// Das Struktogramm einer Funktion (Nassi-Shneiderman); ohne Rumpf: keine Bloecke.
+///
+/// - je Anweisung ein Block; ein Block `{ }` geht in seiner Folge auf, Praeprozessor-Zeilen nicht
+/// - break, continue, return, throw, goto: ein Aussprung mit ihrem Text; goto dazu ein Hinweis
+/// - switch: je Fall eine Spalte, Faelle ohne Anweisung dazwischen teilen sich eine (`1, 2`);
+///   ein break am Ende eines Falls entfaellt; endet ein Fall mit Anweisungen ohne Sprung vor
+///   dem naechsten, ein Aussprung `falls through`; default zuletzt; ohne default eine leere
+///   Spalte `otherwise`
+/// - Schleifen mit dem Text der Quelle als Kopf (`while (x)`, `for (i = 0; i < n; i++)`);
+///   immer wahr (wie im Ablauf): Endlosschleife `forever`
+/// - unerreichbar und kehrtNieZurueck wie im Ablauf (flussVon)
+[[nodiscard]] Struktogramm struktogrammVon(const modell::Funktion& funktion);
 
 /// Die erste Zeile eines Knotens, mit dem Code beginnt, der nie erreicht wird.
 inline constexpr std::string_view kUnerreichbar = "(unreachable)";

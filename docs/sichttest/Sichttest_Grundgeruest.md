@@ -482,6 +482,37 @@ zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiel
       Prototyp): die Statuszeile sagt `Line 6 belongs to no function and no type`.
       `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main` `aktion: im_diagramm_zeigen zeile=20` `aktion: im_diagramm_zeigen zeile=11`
 
+## P. Nassi-Shneiderman
+
+- [ ] **P0 Vorbereiten:** Das Beispiel zeigen, `dauer_ms`, Vorschau, Format svg.
+      `aktion: beispiel_zeigen` `aktion: diagramm_waehlen name=dauer_ms` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **P1 Das Feld:** Neben Diagram ein Feld `Flowchart`. Auf **Nassi-Shneiderman** gestellt: oben
+      grau `dauer_ms(Phase phase)`, darunter ein Kopf `phase` mit zwei Diagonalen, eine Zeile mit
+      `ROT`, `GRUEN`, `ROT_GELB, GELB`, `otherwise`, je Spalte ein `return …` mit Pfeil nach links;
+      unten `return 0`. Kein Text schneidet eine Linie. Das Feld Top-down ist gesperrt.
+      `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **P2 if und Schleife:** `ampel_takt`: zwei Köpfe mit `yes` links unten, `no` rechts unten,
+      die `no`-Spalten leer. Ordner `beispiele/projekt`, `main.c`, `main()`: `forever` mit Leiste
+      links, darin `regle(100)` und `protokolliere("Takt")` mit doppelten Seiten, blau umrandet;
+      `return 0` grau gestrichelt unten.
+      `aktion: diagramm_waehlen name=ampel_takt` `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main`
+- [ ] **P3 Klick, Doppelklick, Show in diagram:** Klick auf `motor_starte(2)` hinterlegt Zeile 18.
+      Doppelklick: das Struktogramm von `motor_starte` (Feld bleibt auf Nassi-Shneiderman), Back
+      zurück. Rechtsklick im Quelltext auf Zeile 20, *Show in diagram*: Ring um `regle(100)`.
+      Rechtsklick auf `regle(100)`: *Go to …*, kein *Embed*.
+      `aktion: klicken name=motor_starte(2)` `aktion: springen name=motor_starte` `aktion: zurueck` `aktion: im_diagramm_zeigen zeile=20`
+- [ ] **P4 Formate:** Ansicht Text mit svg: `<svg …`; mit mermaid oder dot: `Nassi-Shneiderman is
+      not available in mermaid - choose svg or drawio`. File > Save diagram as… als `.drawio`, in
+      draw.io öffnen: dieselben Blöcke, Diagonalen als Linien.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=mermaid` `aktion: format_waehlen name=svg`
+- [ ] **P5 Varianten und Rahmen:** `beispiele/varianten.c`, `regle`, Show #if variants: ein Kopf
+      `#if` mit Spalten `FILTER_STUFE >= 2`, `FILTER_STUFE == 1`, `else (active)`. Frame #if
+      regions und Defines `MIT_PRUEFSUMME LOG_STUFE=2`, `melde`: farbige Rahmen mit Titel, Legende
+      rechts.
+      `aktion: datei_oeffnen pfad=beispiele/varianten.c` `aktion: zweige_waehlen name=varianten` `aktion: diagramm_waehlen name=regle`
+- [ ] **P6 Zurück zum Ablauf:** Feld auf Flowchart: wieder der Ablauf, Top-down wählbar.
+      `aktion: darstellung_waehlen name=flowchart`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

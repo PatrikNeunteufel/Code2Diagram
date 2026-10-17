@@ -391,6 +391,74 @@ public:
     }
 
     /// Eine Zeile, in der die Namen `links` (ganze Woerter) als Link hervorgehoben sind.
+    /// Ein Feld eines Struktogramms: sein Rechteck, sein Text — die Namen in `links` hervorgehoben.
+    void struktoFeld(const StruktoAnordnung::Feld& f, const std::vector<std::string>& links)
+    {
+        using FeldArt = StruktoAnordnung::FeldArt;
+        const QRectF r(f.ort.x, f.ort.y, f.ort.breite, f.ort.hoehe);
+        QPen stift = m_strich;
+        QColor pinsel = f.art == FeldArt::Titel ? m_getoent : m_flaeche;
+        // was weiterfuehrt, ist umrandet — nur ein Block ohne Spalten, sonst umrandete er alles darin
+        const bool blatt = f.art == FeldArt::Anweisung || f.art == FeldArt::Aufruf || f.art == FeldArt::Aussprung;
+        if (!links.empty() && blatt) stift = m_verweis;
+        if (f.unerreichbar)
+        {
+            stift = QPen(m_fremdStrich, 1.2, Qt::DashLine);
+            pinsel = m_fremd;
+        }
+        QGraphicsRectItem* stueck = m_szene.addRect(r, stift, pinsel);
+        stueck->setZValue(2);
+        const auto merke = [&](QGraphicsItem* teil) {
+            if (f.block != kKeine) teil->setData(kKnoten, static_cast<qulonglong>(f.block) + 1);
+        };
+        merke(stueck);
+        if (!links.empty())
+            stueck->setToolTip(QStringLiteral("Click: show in the source. Double-click: go to the function or type it names. Right-click: more."));
+        if (f.zeilen.empty()) return;
+
+        QStringList zeilen;
+        for (const std::string& z : f.zeilen) zeilen << gekuerzt(z);
+        const double hoehe = QFontMetricsF(m_schrift).lineSpacing();
+        const double oben = f.text.y - hoehe * static_cast<double>(zeilen.size()) / 2;
+        for (qsizetype i = 0; i < zeilen.size(); ++i)
+        {
+            QGraphicsItem* teil = nullptr;
+            const double y = oben + hoehe * static_cast<double>(i);
+            if (links.empty())
+            {
+                QGraphicsSimpleTextItem* t = text(zeilen[i], QRectF(f.text.x - 1, y, 2, hoehe), f.art == FeldArt::Titel);
+                teil = t;
+            }
+            else
+            {
+                QGraphicsTextItem* t = linkZeile(zeilen[i], links, {});
+                t->setPos(f.text.x - t->boundingRect().width() / 2, y);
+                teil = t;
+            }
+            merke(teil);
+        }
+    }
+
+    /// Eine Linie ohne Spitze (Diagonalen und Trennstriche eines Struktogramms).
+    void linie(const Linienzug& l)
+    {
+        if (l.size() < 2) return;
+        QPainterPath weg(alsPunkt(l[0]));
+        for (std::size_t i = 1; i < l.size(); ++i) weg.lineTo(alsPunkt(l[i]));
+        m_szene.addPath(weg, m_strich)->setZValue(3.5);
+    }
+
+    /// Ein Rahmen um einen bedingten Bereich im Struktogramm: farbig, ueber seinem Inhalt, Titel auf einem Schild.
+    void bereich(const QRectF& r, const QColor& farbe, const QString& titel, const QString& ganz)
+    {
+        m_szene.addRect(r, QPen(farbe, 1.4), QBrush(hauch(farbe)))->setZValue(4);
+        QGraphicsSimpleTextItem* kopf = textLinks(titel, r.topLeft() + QPointF(8, 2), true);
+        kopf->setBrush(farbe);
+        kopf->setToolTip(ganz);
+        kopf->setZValue(5);
+        m_szene.addRect(kopf->sceneBoundingRect().adjusted(-3, 0, 3, 0), Qt::NoPen, m_flaeche)->setZValue(4.5);
+    }
+
     QGraphicsTextItem* linkZeile(const QString& inhalt, const std::vector<std::string>& links, QPointF ort)
     {
         QStringList muster;
@@ -527,6 +595,36 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.knoten.size());
     m_rahmen = static_cast<int>(a.gruppen.size());
+}
+
+void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const StruktoAnordnung a = ordneAn(diagramm, optionen);
+
+    Zeichner z(*scene(), dunkel());
+    // die Felder der Reihe nach: ein Block vor seinen Spalten, die darueber liegen
+    for (const StruktoAnordnung::Feld& f : a.felder)
+        z.struktoFeld(f, f.block < links.size() ? links[f.block] : std::vector<std::string>{});
+    for (const Linienzug& l : a.linien) z.linie(l);
+    for (const StruktoAnordnung::Beschriftung& b : a.beschriftungen)
+        z.text(gekuerzt(b.text), QRectF(b.mitte.x - 1, b.mitte.y - 1, 2, 2));
+    for (const StruktoAnordnung::Rahmen& r : a.rahmen)
+    {
+        const QRectF ort(r.ort.x, r.ort.y, r.ort.breite, r.ort.hoehe);
+        const QString titel = QString::fromStdString(r.titel);
+        const auto passt = static_cast<qsizetype>(titelZeichen(r.ort, optionen));
+        z.bereich(ort, farbeVon(r.farbe), titel.size() <= passt ? titel : titel.left(passt - 3) + QStringLiteral("..."), titel);
+    }
+    for (const FlussAnordnung::Legende& l : a.legende)
+        z.legende(alsRect(l.feld), farbeVon(l.farbe), gekuerzt(l.titel), alsPunkt(l.text));
+    for (const Rechteck& r : a.bloecke) m_orte.push_back(alsRect(r));
+
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.bloecke.size());
+    m_rahmen = static_cast<int>(a.rahmen.size());
 }
 
 void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)

@@ -5,7 +5,7 @@
 //                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
 //                                            [--ohne-fremde]]
 //                             [--alle-zweige | --varianten | --rahmen]
-//                             [--format <name>] [--richtung TD|LR] [--roh]
+//                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
@@ -39,6 +39,8 @@
 //                  eine Farbe)
 //   --format       mermaid (Vorgabe), svg, dot oder drawio
 //   --roh          je Anweisung ein Knoten, nichts gebuendelt
+//   --struktogramm mit --funktion: das Struktogramm (Nassi-Shneiderman) statt des Ablaufs; svg und
+//                  drawio, Mermaid und DOT koennen es nicht (Meldung, Rueckgabe 1)
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
 // Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
@@ -83,7 +85,7 @@ int aufruf()
                  "                         [--aufrufgraph [<function>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]\n"
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
-                 "                         [--format <name>] [--richtung TD|LR] [--roh]\n"
+                 "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -138,7 +140,7 @@ int main(int argc, char* argv[])
     c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
     std::string richtung = "TD";
-    bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false;
+    bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
     c2d::projekt::AufrufgraphOptionen graph;
 
     for (int i = 1; i < argc; ++i)
@@ -148,6 +150,7 @@ int main(int argc, char* argv[])
         if (a == "--liste") zeigeListe = true;
         else if (a == "--struktur") struktur = true;
         else if (a == "--roh") roh = true;
+        else if (a == "--struktogramm") struktogramm = true;
         else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
         else if (a == "--automat") automat = wert();
@@ -355,6 +358,20 @@ int main(int argc, char* argv[])
             return roh ? d : fasseAnweisungsfolgenZusammen(d);
         };
         const c2d::modell::Funktion& wahl = c2d::projekt::funktion(p, *gewaehlt);
+        if (struktogramm)
+        {
+            const Struktogramm s = struktogrammVon(wahl);
+            for (const Hinweis& h : s.hinweise)
+                std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << h.zeile << ": " << h.text << '\n';
+            const std::optional<std::string> text = format->schreibe(s, optionen);
+            if (!text)
+            {
+                std::cerr << "c2d: " << c2d::ausgabe::keinStruktogramm(*format) << " - use --format svg or drawio\n";
+                return 1;
+            }
+            std::cout << *text;
+            return 0;
+        }
         Flussdiagramm d = ablauf(wahl);
         if (const int ab = unerreichbarAb(d); ab > 0)
             std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << ab << ": " << wahl.name

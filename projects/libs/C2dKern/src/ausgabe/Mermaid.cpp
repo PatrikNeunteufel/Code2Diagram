@@ -286,6 +286,11 @@ public:
         return aus;
     }
 
+    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm&, const Optionen&) const override
+    {
+        return std::nullopt;  // ein Struktogramm sind Bloecke, kein Graph: hier nicht richtig darstellbar
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         std::string aus = kommentar(graph.titel);

@@ -22,4 +22,9 @@ const Format* format(std::string_view name)
     return nullptr;
 }
 
+std::string keinStruktogramm(const Format& format)
+{
+    return "Nassi-Shneiderman is not available in " + std::string(format.name());
+}
+
 }  // namespace c2d::ausgabe

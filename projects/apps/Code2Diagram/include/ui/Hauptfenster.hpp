@@ -36,6 +36,7 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
@@ -81,6 +82,9 @@ public:
     static constexpr const char* kAufrufgraphDatei = "calls";
     /// So beginnt der Name des Aufrufgraphen ab einer Funktion: `calls:<Funktion>` (mit Bereich).
     static constexpr const char* kAufrufgraph = "calls:";
+    /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
+    static constexpr const char* kFlussdiagramm = "flowchart";
+    static constexpr const char* kStruktogramm = "nassi-shneiderman";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -213,6 +217,10 @@ public:
 
     /// `svg`, `mermaid`, `dot`, `drawio`, ...; false = so heisst kein Format.
     bool waehleFormat(const QString& name);
+    /// kFlussdiagramm oder kStruktogramm: so wird jede Funktion gezeigt, auch nach einem Sprung.
+    /// false = so heisst keine Darstellung.
+    bool waehleDarstellung(const QString& name);
+    [[nodiscard]] QString darstellung() const;
     /// `preview` oder `text`; false = so heisst keine Ansicht.
     bool waehleAnsicht(const QString& name);
 
@@ -267,6 +275,8 @@ protected:
     void changeEvent(QEvent* ereignis) override;
 
 private:
+    /// Ist eine Funktion als Struktogramm gezeigt? Dann haelt m_fluss je Block einen Knoten.
+    [[nodiscard]] bool zeigtStruktogramm() const;
     /// Was mit Farben der Palette gezeichnet ist, neu: Vorschau, Marke, Zeile im Quelltext.
     void farbenNeu();
     /// Die Hinterlegung der gezeigten Zeile: Highlight, halb durchsichtig — hell wie dunkel lesbar.
@@ -401,7 +411,11 @@ private:
     int m_quelleZeile = 0;  ///< die hervorgehobene Zeile darin; 0 = keine
     QPointer<EinstellungenDialog> m_einstellungen;  ///< der offene Dialog Settings
     bool m_farbenAusstehend = false;  ///< farbenNeu() ist schon angestossen
-    c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
+    /// Das gezeigte Flussdiagramm, samt Einbettungen. Im Struktogramm je Block (Stelle in
+    /// bloeckeVon()) ein Knoten ohne Kanten: so gelten Klick, Spruenge, Show in diagram fuer beide.
+    c2d::diagramm::Flussdiagramm m_fluss;
+    c2d::diagramm::Struktogramm m_struktogramm;  ///< das gezeigte Struktogramm; leer = keines
+    QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
     c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph
