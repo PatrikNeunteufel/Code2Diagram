@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++, Python | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: JavaScript/TypeScript, C#, Java, Kotlin) |
+| **Sprachen** | C, C++, Python, JavaScript, TypeScript | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: C#, Java, Kotlin) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -42,9 +42,9 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | Schicht (`projects/libs/C2dKern/…/c2d/`) | Inhalt | kennt |
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
-| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token) | quelle |
+| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), Python hat seinen eigenen (`python/`). Für alle gleich: die Basis `Leser` und die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`), gesteuert von den `Ausdrucksregeln` der Sprache | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), Python hat seinen eigenen (`python/`). Für alle gleich: die Basis `Leser` und die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`), gesteuert von den `Ausdrucksregeln` der Sprache | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -154,6 +154,29 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   C-Familie
 - Ohne Präprozessor: für Python-Dateien gibt es keine `#if`-Diagramme und keinen Eintrag
   `#if names`. Beispiel: `beispiele/lager.py`.
+
+**JavaScript und TypeScript** (`.js`, `.mjs`, `.cjs`; `.ts`, `.mts`, `.cts`):
+
+- Funktionen (`function`, `async`, `function*`), Methoden von Klassen (auch `get`/`set`, `static`,
+  `#privat`, Konstruktor) — und Funktionen ohne `function name`: eine Pfeil- oder `function`-Funktion
+  mit Block-Rumpf und eine Methode in einem Objekt (`{ f() {…} }`) werden eigene Funktionen, benannt
+  nach dem, dem sie zugewiesen werden (`const f =`, `x.f =`, `f:`), sonst `<anonymous:Zeile>` mit der
+  umgebenden Funktion als äußerer (`verbinde::<anonymous:14>`). In der Anweisung bleibt ihr Rumpf als
+  `{…}`; ein Doppelklick auf die Anweisung führt zu ihr. Ein Pfeil mit Ausdruck (`x => x * 2`) bleibt
+  Text.
+- `if`/`else`, `while`, `do`, `for` (auch `of`, `in`, `await`), `switch` mit Durchfallen,
+  `try`/`catch` (auch ohne Bindung)/`finally`, `break`, `continue`, `return`, `throw`, Marken
+- Ein fehlendes `;` wie in JavaScript: eine neue Zeile beendet die Anweisung, wenn sie sie nicht
+  fortsetzen kann (`.`, `(`, `?`, ein Operator vorn oder hinten); nach `return` immer
+- Vorlagen (`` `a${x}b` ``, verschachtelt), Regex-Literale (`/a+/g` — nach einem Wert ist `/` die
+  Division), `$` in Namen; `import`/`export … from` als Einbindung; was auf oberster Ebene
+  **abläuft**, ist `<module>` (nicht Deklarationen, Zuweisungen, `export default`, `'use strict'`)
+- TypeScript dazu: Typen an Parametern und Feldern (`x: number`, `name?: string`), Typ-Parameter
+  `<T>` (übergangen), `interface` (im Diagramm «interface», `extends` als Basis), `implements`
+  (gestrichelte Kante mit offener Spitze), `type X = { … }` als Struktur, jedes andere `type` als
+  Alias, `enum` und `const enum`, `namespace a.b` (Bereich `a::b`), `declare`, `abstract`,
+  Sichtbarkeit, Felder aus `constructor(private x: T)`.
+  Beispiele: `beispiele/lager.ts`, `beispiele/knopf.js`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -575,6 +598,14 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   wenn Python nur verweist. Andere Anweisungen im Rumpf einer Klasse als Felder und Methoden stehen
   nicht im Diagramm (Hinweis). In der Entscheidungstabelle steht das `else` einer Schleife nicht
   (Hinweis), `finally` nur auf den Regeln, die den `try` normal verlassen.
+- **JavaScript/TypeScript:** JSX/TSX (`.jsx`, `.tsx`) liest Code2Diagram noch nicht; JSX in einer
+  `.js`-Datei gibt Meldungen. `import` wird im Projekt nicht aufgelöst (Aufrufe über Dateien am
+  Namen). Methoden in Objekten tragen keinen Bereich: zwei `messageFont()` in zwei Objekten derselben
+  Datei sind mehrdeutig (Meldung). Eine Klasse als Ausdruck (`const A = class {…}`) und ein statischer
+  Block einer Klasse stehen nicht im Diagramm (Hinweis beim Block). `break marke`/`continue marke`
+  verlassen im Ablauf die innerste Schleife (Hinweis). Rückgabetypen, Vorgabewerte, Dekoratoren und
+  Typ-Parameter stehen nicht im Diagramm. Ein Regex-Literal in einer Anweisung kann wie ein Aufruf
+  aussehen (`/f(x)/` nennt `f`).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

@@ -35,6 +35,8 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/CFamilie.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cpp/CppSprache.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/python/Python.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Ecma.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Sprachen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Ableitung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Anordnung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Aufrufgraph.cpp"
@@ -90,6 +92,7 @@ set(_local_headers
     "${CMAKE_CURRENT_LIST_DIR}/sprache/Logik.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/Bedingt.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/CFamilie.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Ecma.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Text.hpp"
 )
 

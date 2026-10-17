@@ -90,7 +90,7 @@ std::optional<std::vector<Definition>> mitForderungen(std::vector<Definition> au
 std::span<const Sprache* const> sprachen()
 {
     // Eine neue Sprache hier eintragen.
-    static const Sprache* const liste[] = {&c(), &cpp(), &python()};
+    static const Sprache* const liste[] = {&c(), &cpp(), &python(), &javascript(), &typescript()};
     return liste;
 }
 

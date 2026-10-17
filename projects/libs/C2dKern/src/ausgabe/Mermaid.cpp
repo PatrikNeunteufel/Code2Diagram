@@ -135,6 +135,7 @@ std::string_view stereotyp(KastenArt art)
         case KastenArt::Struktur: return "struct";
         case KastenArt::Vereinigung: return "union";
         case KastenArt::Aufzaehlung: return "enumeration";
+        case KastenArt::Schnittstelle: return "interface";
         case KastenArt::Klasse: break;
     }
     return {};
@@ -252,6 +253,7 @@ public:
                 case BeziehungArt::Enthaelt: aus += "    " + von + " *-- " + nach; break;
                 case BeziehungArt::Verweist: aus += "    " + von + " --> " + nach; break;
                 case BeziehungArt::Erbt: aus += "    " + nach + " <|-- " + von; break;
+                case BeziehungArt::Realisiert: aus += "    " + nach + " <|.. " + von; break;
             }
             if (!b.beschriftung.empty()) aus += " : " + eintragText(b.beschriftung);
             aus += '\n';

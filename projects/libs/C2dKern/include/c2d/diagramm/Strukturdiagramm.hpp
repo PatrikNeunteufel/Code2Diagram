@@ -20,6 +20,7 @@ enum class KastenArt
     Vereinigung,
     Aufzaehlung,
     Klasse,
+    Schnittstelle,  ///< «interface»
 };
 
 struct Eintrag
@@ -62,6 +63,7 @@ enum class BeziehungArt
     Enthaelt,  ///< als Wert enthalten (Komposition)
     Verweist,  ///< ueber einen Zeiger, oder der Typ ist eine Aufzaehlung (Assoziation)
     Erbt,      ///< von = der abgeleitete Typ, nach = die Basis
+    Realisiert,  ///< von = der Typ, nach = die Schnittstelle, die er umsetzt (gestrichelt, Spitze wie Erbt)
 };
 
 struct Beziehung

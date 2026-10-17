@@ -743,7 +743,10 @@ private:
             m_aus.einheit.typen[ort.typ].methoden.push_back(std::move(m));
         }
         if (ort.ebene == Ebene::Funktion)
+        {
             aus.push_back(neu(AnweisungArt::Einfach, t, "def " + f.signatur().substr(f.bereich.size() + 2)));
+            aus.back()->innere.push_back(f.vollerName());
+        }
 
         // der Platz in der Reihenfolge der Quelle: vor den Funktionen, die in ihr stehen
         const std::size_t platz = m_aus.einheit.funktionen.size();

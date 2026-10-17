@@ -73,6 +73,7 @@ std::string_view stereotyp(KastenArt art)
         case KastenArt::Struktur: return "struct";
         case KastenArt::Vereinigung: return "union";
         case KastenArt::Aufzaehlung: return "enum";
+        case KastenArt::Schnittstelle: return "interface";
         case KastenArt::Klasse: break;
     }
     return "class";
@@ -164,6 +165,7 @@ public:
                 case BeziehungArt::Enthaelt: aus += "dir=back, arrowtail=diamond"; break;
                 case BeziehungArt::Verweist: aus += "arrowhead=vee"; break;
                 case BeziehungArt::Erbt: aus += "arrowhead=empty"; break;
+                case BeziehungArt::Realisiert: aus += "arrowhead=empty, style=dashed"; break;
             }
             if (!b.beschriftung.empty()) aus += ", label=\"" + maskiere(b.beschriftung) + "\"";
             aus += "];\n";

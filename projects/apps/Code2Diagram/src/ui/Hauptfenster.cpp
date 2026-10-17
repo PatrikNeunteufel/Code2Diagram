@@ -2095,11 +2095,14 @@ std::vector<Fundstelle> Hauptfenster::zieleVon(c2d::diagramm::KnotenId knoten) c
     std::vector<Fundstelle> aus;
     if (knoten >= m_fluss.knoten().size()) return aus;
     const std::size_t von = dateiVon(knoten);
-    for (const std::string& aufruf : m_fluss.knoten()[knoten].aufrufe)
-        for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, aufruf))
-            // find_if: std::find nimmt fuer diese Struktur einen vektorisierten Weg, den MSVC 14.51 nicht uebersetzt
-            if (std::find_if(aus.begin(), aus.end(), [&](const Fundstelle& a) { return a == f; }) == aus.end())
-                aus.push_back(f);
+    // was der Knoten ruft, und was in ihm definiert wird (ein Callback, Python def)
+    const c2d::diagramm::Knoten& k = m_fluss.knoten()[knoten];
+    for (const std::vector<std::string>* namen : {&k.aufrufe, &k.innere})
+        for (const std::string& name : *namen)
+            for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, name))
+                // find_if: std::find nimmt fuer diese Struktur einen vektorisierten Weg, den MSVC 14.51 nicht uebersetzt
+                if (std::find_if(aus.begin(), aus.end(), [&](const Fundstelle& a) { return a == f; }) == aus.end())
+                    aus.push_back(f);
     return aus;
 }
 
@@ -2125,11 +2128,12 @@ bool Hauptfenster::springe(const QString& aufruf, int wahl)
     const std::vector<Fundstelle> k = c2d::projekt::kandidaten(m_projekt, m_datei, name);
     if (wahl < 0 && k.size() == 1) wahl = 0;
     if (wahl < 0 || static_cast<std::size_t>(wahl) >= k.size()) return false;
-    // der Knoten, der so ruft: zu ihm fuehrt zurueck()
+    // der Knoten, der so ruft (oder in dem sie definiert wird): zu ihm fuehrt zurueck()
     c2d::diagramm::KnotenId von = c2d::diagramm::kKeine;
     for (c2d::diagramm::KnotenId i = 0; i < m_fluss.knoten().size() && von == c2d::diagramm::kKeine; ++i)
-        for (const std::string& a : m_fluss.knoten()[i].aufrufe)
-            if (a == name) von = i;
+        for (const std::vector<std::string>* namen : {&m_fluss.knoten()[i].aufrufe, &m_fluss.knoten()[i].innere})
+            for (const std::string& a : *namen)
+                if (a == name) von = i;
     gehe(k[static_cast<std::size_t>(wahl)], von);
     return true;
 }
@@ -2362,6 +2366,7 @@ void Hauptfenster::baueNeu()
                     k.zeilen = {b->text};
                     k.quellZeile = b->quellZeile;
                     k.aufrufe = b->aufrufe;
+                    k.innere = b->innere;
                     k.unerreichbar = b->unerreichbar;
                     m_fluss.neuerKnoten(std::move(k));
                 }
@@ -2536,6 +2541,13 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
             const QString name = ausStd(m_uebersicht.zeilen[knoten].name);
             menue.addAction(QStringLiteral("Where is %1 switched?").arg(name), this, [this, name] { zeigeSchaltstellen(name); });
         }
+        // eine Funktion, die hier definiert wird: nur hingehen
+        for (const std::string& name : k.innere)
+            for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, name))
+            {
+                const QString voll = QString::fromStdString(c2d::projekt::funktion(m_projekt, f).vollerName());
+                menue.addAction(QStringLiteral("Go to %1()").arg(voll), this, [this, f, knoten] { gehe(f, knoten); });
+            }
         for (const std::string& aufruf : k.aufrufe)
         {
             const std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, von, aufruf);

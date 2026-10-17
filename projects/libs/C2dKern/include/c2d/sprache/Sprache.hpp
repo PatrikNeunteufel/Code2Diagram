@@ -153,4 +153,16 @@ public:
 /// ist die Funktion `<module>`. Kein Praeprozessor; LeseOptionen gelten nicht.
 [[nodiscard]] const Sprache& python();
 
+/// JavaScript (ES2023; `.js`, `.mjs`, `.cjs`): Funktionen, auch ohne Namen (Pfeil, `function`,
+/// Methoden in Objekten) mit Block-Rumpf; Klassen mit Feldern, Methoden, get/set, `#privat`;
+/// if/else, while, do, for (auch of/in), switch, try/catch/finally, break, continue, return,
+/// throw, Marken; ein fehlendes `;` wie in JavaScript; import/export als Einbindung; was auf
+/// oberster Ebene ablaeuft, ist `<module>`. Kein Praeprozessor; LeseOptionen gelten nicht.
+[[nodiscard]] const Sprache& javascript();
+
+/// TypeScript (`.ts`, `.mts`, `.cts`): was JavaScript hat, dazu Typen an Parametern und Gliedern,
+/// interface (TypArt::Schnittstelle), type (Objekttyp: Struktur, sonst Alias), enum, namespace,
+/// declare, Sichtbarkeit, abstract, implements, Felder aus `constructor(private x: T)`.
+[[nodiscard]] const Sprache& typescript();
+
 }  // namespace c2d::sprache

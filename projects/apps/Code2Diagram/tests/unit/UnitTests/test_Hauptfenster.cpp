@@ -922,10 +922,26 @@ TEST_SUITE("Hauptfenster")
         CHECK(Hauptfenster().zuletztGeoeffnet().isEmpty());
     }
 
+    TEST_CASE("JavaScript: ein Callback ist eine Funktion; von der Anweisung dorthin und zurueck")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("function verbinde(k) {\n  k.on('click', (e) => {\n    tu(e)\n  })\n}\n", "a.js");
+        CHECK(fenster.diagramme().contains("verbinde::<anonymous:2>"));
+        REQUIRE(fenster.waehleDiagramm("verbinde"));
+        CHECK(fenster.ziele("verbinde::<anonymous:2>") == QStringList{"a.js:2"});
+        REQUIRE(fenster.springe("verbinde::<anonymous:2>"));
+        CHECK(fenster.diagramm() == "verbinde::<anonymous:2>");
+        CHECK(fenster.diagrammText().contains("tu(e)"));
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "verbinde");
+        CHECK(fenster.markiert().contains("k.on"));  // zurueck zu der Anweisung, in der sie steht
+    }
+
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
         CHECK(Hauptfenster::dateiFilter() ==
               "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;"
-              "Python files (*.py *.pyi *.pyw);;All files (*)");
+              "Python files (*.py *.pyi *.pyw);;JavaScript files (*.js *.mjs *.cjs);;TypeScript files (*.ts *.mts *.cts);;"
+              "All files (*)");
     }
 }

@@ -53,6 +53,7 @@ struct Block
     int quellZeile = 0;
     /// Die Funktionen, die der Text ruft (wie Knoten::aufrufe).
     std::vector<std::string> aufrufe;
+    std::vector<std::string> innere;  ///< wie Knoten::innere
     std::vector<Spalte> spalten;
     /// Kein Weg vom Start fuehrt hierher (wie Knoten::unerreichbar, aus dem Ablauf).
     bool unerreichbar = false;

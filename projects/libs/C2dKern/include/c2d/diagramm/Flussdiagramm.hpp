@@ -55,6 +55,8 @@ struct Knoten
     bool unerreichbar = false;
     /// Die Zeilen der Anweisungen, die beim Buendeln dazukamen (quellZeile ist die erste).
     std::vector<int> weitereZeilen;
+    /// Die Funktionen, die hier definiert werden (modell::Anweisung::innere): voller Name.
+    std::vector<std::string> innere;
 };
 
 struct Kante

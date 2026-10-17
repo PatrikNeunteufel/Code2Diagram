@@ -135,6 +135,7 @@ std::string_view stereotyp(KastenArt art)
         case KastenArt::Struktur: return "struct";
         case KastenArt::Vereinigung: return "union";
         case KastenArt::Aufzaehlung: return "enumeration";
+        case KastenArt::Schnittstelle: return "interface";
         case KastenArt::Klasse: break;
     }
     return {};
@@ -299,6 +300,7 @@ public:
                 case BeziehungArt::Enthaelt: stil = "startArrow=diamondThin;startFill=1;startSize=14;endArrow=none;"; break;
                 case BeziehungArt::Verweist: stil = "endArrow=open;endSize=10;"; break;
                 case BeziehungArt::Erbt: stil = "endArrow=block;endFill=0;endSize=12;"; break;
+                case BeziehungArt::Realisiert: stil = "endArrow=block;endFill=0;endSize=12;dashed=1;"; break;
             }
             aus += kante("e" + std::to_string(e), html(b.beschriftung), std::string(stil) + "html=1;" + std::string(kSchrift),
                          "k" + std::to_string(b.von), "k" + std::to_string(b.nach));

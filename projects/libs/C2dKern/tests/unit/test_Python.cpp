@@ -209,6 +209,7 @@ if __name__ == "__main__":
         CHECK(innen.vollerName() == "aussen::innen");
         CHECK(innen.aussen == "aussen");
         CHECK(baum(*e.einheit.funktionen[0].rumpf) == "B[E:def innen(y); RET:innen(x)]");
+        CHECK(e.einheit.funktionen[0].rumpf->kinder[0]->innere == std::vector<std::string>{"aussen::innen"});
         // die Definition ruft nichts, der return ruft innen
         CHECK(modell::aufrufeVon(e.einheit.funktionen[0]) == std::vector<std::string>{"innen"});
         const modell::Funktion& modul = e.einheit.funktionen[2];

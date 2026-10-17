@@ -164,13 +164,15 @@ private:
         for (const auto& [von, text] : enden) m_d.verbinde(von, ziel, text);
     }
 
-    KnotenId knoten(KnotenArt art, std::string_view text, int zeile, const Enden& eingang)
+    KnotenId knoten(KnotenArt art, std::string_view text, int zeile, const Enden& eingang,
+                    const std::vector<std::string>& innere = {})
     {
         Knoten k;
         k.art = art;
         k.zeilen.emplace_back(text);
         k.quellZeile = zeile;
         k.aufrufe = aufrufeIn(text);
+        k.innere = innere;
         k.gruppe = rahmen();
         const KnotenId id = m_d.neuerKnoten(std::move(k));
         verbinde(eingang, id);
@@ -219,7 +221,7 @@ private:
         {
             case AnweisungArt::Einfach:
                 return {{knoten(istAufruf(a.text) ? KnotenArt::Aufruf : KnotenArt::Anweisung, a.text, a.zeile,
-                                eingang),
+                                eingang, a.innere),
                          {}}};
 
             case AnweisungArt::Block:
@@ -408,13 +410,13 @@ private:
             case AnweisungArt::Wurf:  // verlaesst die Funktion wie ein return
             {
                 const std::string text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "throw" : "throw " + a.text;
-                m_wuerfe.back()->emplace_back(knoten(KnotenArt::Anweisung, text, a.zeile, eingang), std::string());
+                m_wuerfe.back()->emplace_back(knoten(KnotenArt::Anweisung, text, a.zeile, eingang, a.innere), std::string());
                 return {};
             }
 
             case AnweisungArt::Ruecksprung:
                 m_rueck.back()->emplace_back(
-                    knoten(KnotenArt::Anweisung, a.text.empty() ? "return" : "return " + a.text, a.zeile, eingang),
+                    knoten(KnotenArt::Anweisung, a.text.empty() ? "return" : "return " + a.text, a.zeile, eingang, a.innere),
                     std::string());
                 return {};
 
@@ -594,6 +596,7 @@ KastenArt kastenArt(modell::TypArt art)
         case modell::TypArt::Vereinigung: return KastenArt::Vereinigung;
         case modell::TypArt::Aufzaehlung: return KastenArt::Aufzaehlung;
         case modell::TypArt::Klasse: return KastenArt::Klasse;
+        case modell::TypArt::Schnittstelle: return KastenArt::Schnittstelle;
         case modell::TypArt::Struktur: break;
     }
     return KastenArt::Struktur;
@@ -616,6 +619,7 @@ public:
         {
             case AnweisungArt::Einfach:
                 ziel.push_back(block(istAufruf(a.text) ? BlockArt::Aufruf : BlockArt::Anweisung, a.text, a.zeile));
+                ziel.back().innere = a.innere;
                 break;
             case AnweisungArt::Block:
             case AnweisungArt::Zweig:  // ausserhalb von Varianten: wie ein Block
@@ -665,6 +669,7 @@ public:
                 break;
             case AnweisungArt::Ruecksprung:
                 ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "return" : "return " + a.text, a.zeile));
+                ziel.back().innere = a.innere;
                 break;
             case AnweisungArt::Wurf:
                 ziel.push_back(block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "throw" : "throw " + a.text), a.zeile));
@@ -953,6 +958,9 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         for (const std::string& basis : typ.basen)
             if (const std::size_t nach = ziel(basis); nach < diagramm.kaesten.size())
                 diagramm.beziehungen.push_back({von, nach, BeziehungArt::Erbt, {}});
+        for (const std::string& schnittstelle : typ.realisiert)
+            if (const std::size_t nach = ziel(schnittstelle); nach < diagramm.kaesten.size())
+                diagramm.beziehungen.push_back({von, nach, BeziehungArt::Realisiert, {}});
         for (const modell::Feld& feld : typ.felder)
         {
             const std::size_t nach = ziel(feld.typ);

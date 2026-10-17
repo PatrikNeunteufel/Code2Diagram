@@ -1165,7 +1165,7 @@ StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptio
     std::vector<double> schildLaenge;
     for (const Beziehung& b : diagramm.beziehungen)
     {
-        const bool erbt = b.art == BeziehungArt::Erbt;
+        const bool erbt = b.art == BeziehungArt::Erbt || b.art == BeziehungArt::Realisiert;
         paare.push_back(erbt ? Paar{b.nach, b.von} : Paar{b.von, b.nach});
         umgedreht.push_back(erbt);
         const std::string_view text = b.beschriftung;

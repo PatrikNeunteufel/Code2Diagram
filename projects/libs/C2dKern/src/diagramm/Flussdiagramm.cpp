@@ -186,6 +186,7 @@ Flussdiagramm fasseAnweisungsfolgenZusammen(const Flussdiagramm& diagramm, std::
             }
             ziel.zeilen.insert(ziel.zeilen.end(), zeilen.begin(), zeilen.end());
             nimmAuf(ziel.aufrufe, knoten[glied].aufrufe);
+            nimmAuf(ziel.innere, knoten[glied].innere);
             if (knoten[glied].quellZeile > 0) ziel.weitereZeilen.push_back(knoten[glied].quellZeile);
             ziel.weitereZeilen.insert(ziel.weitereZeilen.end(), knoten[glied].weitereZeilen.begin(),
                                       knoten[glied].weitereZeilen.end());

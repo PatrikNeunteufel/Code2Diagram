@@ -340,6 +340,7 @@ public:
             case KastenArt::Struktur: art = QString::fromUtf8("\xC2\xAB" "struct" "\xC2\xBB"); break;
             case KastenArt::Vereinigung: art = QString::fromUtf8("\xC2\xAB" "union" "\xC2\xBB"); break;
             case KastenArt::Aufzaehlung: art = QString::fromUtf8("\xC2\xAB" "enumeration" "\xC2\xBB"); break;
+            case KastenArt::Schnittstelle: art = QString::fromUtf8("\xC2\xAB" "interface" "\xC2\xBB"); break;
             case KastenArt::Klasse: break;
         }
         const QRectF oben(r.left(), r.top(), r.width(), kopf);
@@ -862,13 +863,16 @@ void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts,
         if (linie.size() < 2) continue;
         QPainterPath weg(alsPunkt(linie[0]));
         for (std::size_t i = 1; i < linie.size(); ++i) weg.lineTo(alsPunkt(linie[i]));
-        z.szene().addPath(weg, z.strich())->setZValue(1);
+        QPen stift = z.strich();
+        if (b.art == BeziehungArt::Realisiert) stift.setStyle(Qt::DashLine);
+        z.szene().addPath(weg, stift)->setZValue(1);
         const QPointF vorletzter = alsPunkt(linie[linie.size() - 2]);
         switch (b.art)
         {
             case BeziehungArt::Enthaelt: z.raute(alsPunkt(linie[0]), alsPunkt(linie[1])); break;
             case BeziehungArt::Verweist: z.spitze(vorletzter, alsPunkt(linie.back()), true); break;
-            case BeziehungArt::Erbt: z.spitze(vorletzter, alsPunkt(linie.back()), false, 13); break;
+            case BeziehungArt::Erbt:
+            case BeziehungArt::Realisiert: z.spitze(vorletzter, alsPunkt(linie.back()), false, 13); break;
         }
         if (!b.beschriftung.empty())
         {

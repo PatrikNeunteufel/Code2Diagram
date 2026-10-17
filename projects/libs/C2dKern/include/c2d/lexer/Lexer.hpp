@@ -83,11 +83,25 @@ struct Sprachtabelle
     /// `\` am Zeilenende setzt fort). Am Ende des Texts steht eins, wenn die letzte Zeile
     /// Inhalt hat.
     bool zeilenEnde = false;
+    /// Nur mit zeilenEnde: in welchen Klammern eine Zeile nicht endet — es zaehlt die innerste
+    /// offene. Python: alle; JavaScript: `(` und `[`, nicht `{` (ein Block in einem Aufruf hat
+    /// wieder Zeilen).
+    std::string_view klammernOhneZeilenende = "([{";
     /// Nur mit zeilenEnde: die Einrueckung einer Zeile gliedert in Bloecke (Token Einzug,
     /// Auszug); ein Tabulator rueckt bis zur naechsten Achterstelle. Rueckt eine Zeile auf
     /// keine fruehere Stufe zurueck, gibt es eine Meldung. Am Ende des Texts schliessen
     /// Auszuege jede offene Stufe.
     bool einrueckung = false;
+    /// Zeichenketten in Gravis mit eingebetteten Ausdruecken (JavaScript: `a${x}b`, auch
+    /// verschachtelt und ueber Zeilen): ein Token.
+    bool vorlagenZeichenketten = false;
+    /// `/` beginnt ein Regex-Literal (`/a+b/gi`, ein Token der Art Zeichenkette), wo kein Wert
+    /// davor steht: am Anfang, nach einem Operator ausser `)`, `]`, `}`, `++`, `--`, und nach
+    /// einem der Woerter in woerterVorRegex. Sonst ist es die Division.
+    bool regexLiterale = false;
+    std::span<const std::string_view> woerterVorRegex{};
+    /// Zeichen, die ausser Buchstaben, Ziffern und `_` in Namen stehen duerfen (JavaScript: `$`).
+    std::string_view namensZeichen{};
 };
 
 struct LexerOptionen

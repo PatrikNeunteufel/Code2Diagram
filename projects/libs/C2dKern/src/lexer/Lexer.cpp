@@ -90,7 +90,7 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         meldungen.push_back({schwere, ort, std::move(was)});
     };
     // Zeilenende und Einrueckung (Sprachtabelle::zeilenEnde, einrueckung)
-    int klammern = 0;            // offene ( [ { — darin endet keine Zeile
+    std::string klammern;        // die offenen ( [ {, innen zuletzt
     bool zeileOffen = false;     // die laufende logische Zeile hat schon Inhalt
     std::size_t zeilenBeginn = 0;  // wo die laufende physische Zeile beginnt
     std::vector<int> stufen{0};  // die offenen Einrueckungen, aussen zuerst
@@ -132,8 +132,8 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             if (art == TokenArt::Operator)
             {
                 const std::string_view t = text.substr(ort.versatz, i - ort.versatz);
-                if (t == "(" || t == "[" || t == "{") ++klammern;
-                if ((t == ")" || t == "]" || t == "}") && klammern > 0) --klammern;
+                if (t == "(" || t == "[" || t == "{") klammern += t.front();
+                if ((t == ")" || t == "]" || t == "}") && !klammern.empty()) klammern.pop_back();
             }
         }
         aus.push_back({art, text.substr(ort.versatz, i - ort.versatz), ort, abstand});
@@ -189,12 +189,107 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         gib(kette ? TokenArt::Zeichenkette : TokenArt::Zeichen, ort);
     };
 
+    /// i steht auf einem Gravis: die Zeichenkette bis zu ihrem Ende, samt `${…}` (darin Klammern,
+    /// Zeichenketten und weitere Vorlagen).
+    const auto liesVorlage = [&](const quelle::Position& ort) {
+        std::string modi = "`";  // innen zuletzt: ` = im Text einer Vorlage, { = in einem Ausdruck
+        vor(1);
+        while (i < text.size() && !modi.empty())
+        {
+            const char z = text[i];
+            if (modi.back() == '`')
+            {
+                if (z == '\\' && i + 1 < text.size())
+                    vor(2);
+                else if (z == '`')
+                {
+                    modi.pop_back();
+                    vor(1);
+                }
+                else if (z == '$' && text.substr(i + 1, 1) == "{")
+                {
+                    modi += '{';
+                    vor(2);
+                }
+                else
+                    vor(1);
+                continue;
+            }
+            // in einem Ausdruck
+            if (z == '{')
+                modi += '{';
+            else if (z == '}')
+                modi.pop_back();
+            else if (z == '`')
+            {
+                modi += '`';
+                vor(1);
+                continue;
+            }
+            else if (z == '"' || z == '\'')
+            {
+                vor(1);
+                while (i < text.size() && text[i] != z && text[i] != '\n') vor(text[i] == '\\' ? 2 : 1);
+            }
+            vor(1);
+        }
+        if (!modi.empty()) melde(quelle::Schwere::Fehler, ort, "template literal is not closed");
+        gib(TokenArt::Zeichenkette, ort);
+    };
+    /// Steht hier ein Wert davor, ist `/` die Division; sonst beginnt ein Regex-Literal.
+    const auto regexErlaubt = [&]() {
+        for (std::size_t k = aus.size(); k > 0; --k)
+        {
+            const Token& t = aus[k - 1];
+            if (t.art == TokenArt::Kommentar || t.art == TokenArt::Zeilenende) continue;
+            if (t.art == TokenArt::Operator)
+                return t.text != ")" && t.text != "]" && t.text != "}" && t.text != "++" && t.text != "--";
+            if (t.art == TokenArt::Schluesselwort) return enthaelt(sprache.woerterVorRegex, t.text);
+            return false;
+        }
+        return true;
+    };
+    /// i steht auf dem `/` eines Regex-Literals: bis zum schliessenden `/` (nicht in `[…]`), dann die Flaggen.
+    const auto liesRegex = [&](const quelle::Position& ort) {
+        vor(1);
+        bool klasse = false;
+        bool zu = false;
+        while (i < text.size() && text[i] != '\n')
+        {
+            const char z = text[i];
+            if (z == '\\' && i + 1 < text.size())
+            {
+                vor(2);
+                continue;
+            }
+            vor(1);
+            if (z == '[') klasse = true;
+            else if (z == ']') klasse = false;
+            else if (z == '/' && !klasse)
+            {
+                zu = true;
+                break;
+            }
+        }
+        if (!zu) melde(quelle::Schwere::Fehler, ort, "regular expression is not closed");
+        while (i < text.size() && istBezeichnerTeil(text[i])) vor(1);
+        gib(TokenArt::Zeichenkette, ort);
+    };
+
+    // Namen: Buchstaben, Ziffern, `_`, dazu die namensZeichen der Sprache
+    const auto namenStart = [&](char z) {
+        return istBezeichnerStart(z) || sprache.namensZeichen.find(z) != std::string_view::npos;
+    };
+    const auto namenTeil = [&](char z) { return namenStart(z) || istZiffer(z); };
+
     while (i < text.size())
     {
         const char c = text[i];
         if (c == '\n')
         {
-            if (sprache.zeilenEnde && zeileOffen && klammern == 0)
+            const bool inKlammer = !klammern.empty() &&
+                                   sprache.klammernOhneZeilenende.find(klammern.back()) != std::string_view::npos;
+            if (sprache.zeilenEnde && zeileOffen && !inKlammer)
             {
                 leeresToken(TokenArt::Zeilenende, {i, zeile, spalte});
                 zeileOffen = false;
@@ -275,11 +370,11 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             continue;
         }
 
-        if (istBezeichnerStart(c))
+        if (namenStart(c))
         {
             // ein Vorsatz vor einer Zeichenkette (`rb"…"`) gehoert zu ihr
             std::size_t j = i;
-            while (j < text.size() && istBezeichnerTeil(text[j])) ++j;
+            while (j < text.size() && namenTeil(text[j])) ++j;
             if (j < text.size() && sprache.zeichenkettenBegrenzer.find(text[j]) != std::string_view::npos)
             {
                 std::string vorsatz(text.substr(i, j - i));
@@ -291,7 +386,7 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
                     continue;
                 }
             }
-            while (i < text.size() && istBezeichnerTeil(text[i])) vor(1);
+            while (i < text.size() && namenTeil(text[i])) vor(1);
             const std::string_view wort = text.substr(ort.versatz, i - ort.versatz);
             gib(enthaelt(sprache.schluesselwoerter, wort) ? TokenArt::Schluesselwort : TokenArt::Bezeichner,
                 ort);
@@ -314,6 +409,17 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
                 vor(1);
             }
             gib(TokenArt::Zahl, ort);
+            continue;
+        }
+
+        if (sprache.vorlagenZeichenketten && c == '`')
+        {
+            liesVorlage(ort);
+            continue;
+        }
+        if (sprache.regexLiterale && c == '/' && regexErlaubt())
+        {
+            liesRegex(ort);
             continue;
         }
 

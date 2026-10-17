@@ -115,7 +115,9 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         "new",    "delete",  "alignof", "decltype", "typeid", "defined", "co_return", "case",
         "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast", "noexcept", "alignas",
         // Woerter von Python, die im Text einer Anweisung vor `(` stehen koennen (`not (a)`, `del (x)`)
-        "not", "and", "or", "in", "is", "assert", "del", "yield"};
+        "not", "and", "or", "in", "is", "assert", "del", "yield",
+        // JavaScript: eine Funktion ohne Namen (`function (x) {…}`), `typeof (x)`
+        "function", "typeof"};
     std::vector<std::string> aus;
     std::string_view davor;      // der Name vor dem laufenden
     std::size_t davorEnde = 0;   // wo er endet
@@ -141,9 +143,9 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         const std::size_t anfang = i;
         while (i < text.size() && istNamenZeichen(text[i])) ++i;
         const std::string_view name = text.substr(anfang, i - anfang);
-        // gleich hinter `def`/`class` (Python, nur Leerraum dazwischen) wird definiert, nicht gerufen
+        // gleich hinter `def`, `class`, `function` (nur Leerraum dazwischen) wird definiert, nicht gerufen
         const std::string_view zwischen = text.substr(davorEnde, anfang - davorEnde);
-        const bool definiert = (davor == "def" || davor == "class") && !zwischen.empty() &&
+        const bool definiert = (davor == "def" || davor == "class" || davor == "function") && !zwischen.empty() &&
                                zwischen.find_first_not_of(' ') == std::string_view::npos;
         davor = name;
         davorEnde = i;

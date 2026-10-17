@@ -123,6 +123,9 @@ struct Anweisung
     /// Nur Einfach, genau eine Zuweisung `ziel = wert` (nicht `+=`): beide Seiten — fuer Zuordnungen.
     std::string ziel;
     std::string wert;
+    /// Die Funktionen, die in der Anweisung definiert werden (ein Callback `(x) => {…}`, eine Methode
+    /// eines Objekts, Python `def` im Rumpf): ihr voller Name — der Text nennt sie nicht.
+    std::vector<std::string> innere;
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;
@@ -223,6 +226,7 @@ enum class TypArt
     Vereinigung,
     Aufzaehlung,
     Klasse,
+    Schnittstelle,  ///< interface (TypeScript; spaeter C#, Java): Glieder und Methoden ohne Rumpf
 };
 
 /// Wer ein Glied sehen darf. `Keine`: die Sprache kennt das nicht (C).
@@ -267,7 +271,8 @@ struct Typ
     std::string bereich;  ///< Namensraum und umgebender Typ; leer in C
     std::vector<Feld> felder;
     std::vector<Methode> methoden;
-    std::vector<std::string> basen;  ///< wovon der Typ erbt (C: leer)
+    std::vector<std::string> basen;  ///< wovon der Typ erbt (C: leer); bei einer Schnittstelle: extends
+    std::vector<std::string> realisiert;  ///< welche Schnittstellen er umsetzt (`implements`)
     int zeile = 0;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }

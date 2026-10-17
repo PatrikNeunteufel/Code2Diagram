@@ -242,6 +242,7 @@ std::string kasten(const Kasten& k, const Rechteck& r, const AnordnungOptionen& 
         case KastenArt::Struktur: art = "\xC2\xAB" "struct" "\xC2\xBB"; break;
         case KastenArt::Vereinigung: art = "\xC2\xAB" "union" "\xC2\xBB"; break;
         case KastenArt::Aufzaehlung: art = "\xC2\xAB" "enumeration" "\xC2\xBB"; break;
+        case KastenArt::Schnittstelle: art = "\xC2\xAB" "interface" "\xC2\xBB"; break;
         case KastenArt::Klasse: break;
     }
     const std::string name = kuerze(k.name, o.maxZeilenLaenge);
@@ -351,12 +352,15 @@ public:
             const Linienzug& l = a.beziehungen[e];
             const Beziehung& b = diagramm.beziehungen[e];
             if (l.size() < 2) continue;
-            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"/>\n";
+            const bool realisiert = b.art == BeziehungArt::Realisiert;
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" +
+                   (realisiert ? " style=\"stroke-dasharray:6 4\"" : "") + "/>\n";
             switch (b.art)
             {
                 case BeziehungArt::Enthaelt: aus += raute(l[0], l[1]); break;
                 case BeziehungArt::Verweist: aus += spitze(l[l.size() - 2], l.back(), true); break;
-                case BeziehungArt::Erbt: aus += spitze(l[l.size() - 2], l.back(), false, kSpitzeErbt); break;
+                case BeziehungArt::Erbt:
+                case BeziehungArt::Realisiert: aus += spitze(l[l.size() - 2], l.back(), false, kSpitzeErbt); break;
             }
             if (b.beschriftung.empty()) continue;
             // wo die Anordnung sie hinstellt: neben der Linie, frei von anderen Schildern und Kaesten

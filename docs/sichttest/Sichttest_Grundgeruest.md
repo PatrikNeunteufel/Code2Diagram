@@ -742,3 +742,30 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: diagramm_waehlen name=types:Lager`
 - [ ] **V8 Klick:** Ein Klick auf `raise` (in `lade()`) markiert im Quelltext Zeile 66.
       `aktion: diagramm_waehlen name=lade`
+
+## W. JavaScript und TypeScript
+
+- [ ] **W0 Vorbereiten:** `beispiele/knopf.js` öffnen, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/knopf.js` `aktion: ansicht_waehlen name=preview`
+- [ ] **W1 Gelesen:** Statuszeile `knopf.js, read as JavaScript: 6 function(s), 0 data type(s)` ohne Meldungen.
+      Diagram bietet `erhoehe()`, `zuruecksetzen()`, `verbinde()`, `verbinde::<anonymous:14>()`,
+      `<anonymous:28>()`, `<module>()`, `Call graph of this file`. File > Open source file… bietet
+      `JavaScript files (*.js *.mjs *.cjs)` und `TypeScript files (*.ts *.mts *.cts)`.
+- [ ] **W2 Callback:** `verbinde()`: ein Knoten mit `knopf.addEventListener("click", (ereignis) => {…})`,
+      `const muster = /^\d+$/g` und `return … ? "zahl" : "text"` (die Zeilen der Quelle ohne `;` richtig
+      getrennt, das `?` der nächsten Zeile gehört zum `return`). Doppelklick auf den Knoten zeigt
+      `verbinde::<anonymous:14>()` (if/else mit `zaehler.zuruecksetzen()`/`zaehler.erhoehe()`); **Back**
+      kehrt zurück und hebt den Knoten hervor. Rechtsklick auf den Knoten: *Go to verbinde::<anonymous:14>()*.
+      `aktion: diagramm_waehlen name=verbinde`
+- [ ] **W3 TypeScript:** `beispiele/lager.ts` öffnen, `lade()`: `try` mit Kante `catch (fehler)`, alle Wege
+      durch `console.log("geladen:", pfad)` (finally), von dort `throw` ins Ende.
+      `aktion: datei_oeffnen pfad=beispiele/lager.ts` `aktion: diagramm_waehlen name=lade`
+- [ ] **W4 Datentypen:** Typ `Lager`: Felder `- #posten = new Map<string, Posten>()`, `- grenze: number`
+      (aus `constructor(private readonly grenze: number)`), Methoden `constructor(grenze: number)`,
+      `lege(name: string, menge: number)`, `get zustand()`, `suche(filter: Filter)`; darüber `«interface»
+      Ablage`, die Kante gestrichelt mit offener Spitze. `Posten` ist ein «interface», `Zustand` eine
+      Aufzählung, `Bericht` eine Struktur.
+      `aktion: diagramm_waehlen name=types:Lager`
+- [ ] **W5 Zuordnung:** `Lager::get zustand()`: Tabellensymbol am Kopf `true` (switch), die Zuordnung mit
+      drei Zeilen `gesamt === 0`, `gesamt < this.grenze`, `default`.
+      `aktion: diagramm_waehlen name=Lager::get zustand`
