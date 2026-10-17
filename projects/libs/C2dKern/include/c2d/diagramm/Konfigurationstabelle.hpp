@@ -53,6 +53,11 @@ struct Konfigurationstabelle
     std::vector<std::string> hinweise;
 };
 
+/// Wie ein Zweig in der Tabelle heisst: `#if A`, `#elif B`, `#else`, `(no #else)` (z = zweige.size()).
+[[nodiscard]] std::string zweigMarke(const modell::Weiche& weiche, std::size_t z);
+/// Die Zeile des `#if`/`#elif`/`#else` von Zweig z; beim fehlenden `#else` die des `#endif`.
+[[nodiscard]] int zweigZeile(const modell::Weiche& weiche, std::size_t z);
+
 /// Je Kette eine Tabelle, in der Reihenfolge des Texts (eine innere nach ihrer aeusseren).
 /// `schalter`: wonach die Datei fragt, mit dem Stand dort (sprache::Ergebnis::schalter).
 [[nodiscard]] std::vector<Konfigurationstabelle> konfigurationVon(std::span<const modell::Weiche> weichen,

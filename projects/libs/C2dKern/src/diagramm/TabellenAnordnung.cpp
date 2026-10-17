@@ -481,9 +481,16 @@ TabellenAnordnung ordneAn(const Schaltstellen& t, const AnordnungOptionen& o)
         text(t.name + " is not asked for in any #if", false);
     else
     {
+        // die Spalte via nur, wo eine Zeile aus einer inneren Kette kommt
+        const bool mitVia = std::any_of(t.zeilen.begin(), t.zeilen.end(), [](const Schaltstellen::Zeile& z) { return !z.via.empty(); });
         Raster r;
         r.kopf = {"file", "line", "branch", kurz(t.name), "state in the file", "lines", "active"};
         r.links = {true, false, true, false, true, false, false};
+        if (mitVia)
+        {
+            r.kopf.insert(r.kopf.begin() + 3, "via");
+            r.links.insert(r.links.begin() + 3, true);
+        }
         std::string vorher;
         for (const Schaltstellen::Zeile& z : t.zeilen)
         {
@@ -501,7 +508,13 @@ TabellenAnordnung ordneAn(const Schaltstellen& t, const AnordnungOptionen& o)
             r.ganz.back()[5] = r.zeilen.back()[5];
             r.ganz.back()[6] = r.zeilen.back()[6];
             const bool grau = z.vorgegeben || z.inDatei > 0;
-            r.grau.push_back({false, false, false, grau, grau, false, false});
+            r.grau.push_back({false, false, false, grau || !z.via.empty(), grau, false, false});
+            if (mitVia)
+            {
+                r.zeilen.back().insert(r.zeilen.back().begin() + 3, weiter ? std::string() : kurz(z.via));
+                r.ganz.back().insert(r.ganz.back().begin() + 3, z.via);
+                r.grau.back().insert(r.grau.back().begin() + 3, false);
+            }
             r.getoent.push_back(z.geltend);
         }
         y = legeRaster(a, r, kRand, y, 0, knoten, o);

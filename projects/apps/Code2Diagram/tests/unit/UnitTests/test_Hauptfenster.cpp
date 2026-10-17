@@ -795,8 +795,8 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramme().contains("switch:TAKT"));
         REQUIRE(fenster.waehleFormat("csv"));
         CHECK(fenster.diagrammText().contains("project;code2diagram.json;;TAKT=100\n"));
-        CHECK(fenster.diagrammText().contains("a.c;1;#if TAKT > 50;> 50;= 100 (project);1;3;1;yes\n"));
-        CHECK(fenster.diagrammText().contains("b.c;3;#else;!def;= 100 (project);3;5;1;\n"));
+        CHECK(fenster.diagrammText().contains("a.c;1;#if TAKT > 50;;> 50;= 100 (project);1;3;1;yes\n"));
+        CHECK(fenster.diagrammText().contains("b.c;3;#else;;!def;= 100 (project);3;5;1;\n"));
 
         // ein Klick zeigt die Stelle, auch in einer anderen Datei; die gewaehlte Datei bleibt
         CHECK(fenster.klicke("b.c:3"));

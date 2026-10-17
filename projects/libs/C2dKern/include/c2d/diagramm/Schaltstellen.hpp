@@ -5,7 +5,8 @@
  * Zwei Tabellen. `Schaltstellen`: fuer einen Namen oben, wer ihn festlegt (Projektdatei,
  * Abschnitte, `#define`/`#undef` der Dateien, von aussen), darunter je Zweig, dessen absolute
  * Forderung ihn betrifft (wie in der Konfigurationstabelle, auch innere Ketten), eine Zeile —
- * mit dem Stand des Namens in dieser Datei und wie viele Zeilen der Zweig umfasst.
+ * mit dem Stand des Namens in dieser Datei und wie viele Zeilen der Zweig umfasst. Nennt die
+ * eigene Kette den Namen nicht (er kommt nur ueber eine umgebende), steht diese unter `via`.
  * `Schalteruebersicht`: je Name, nach dem eine Datei fragt, eine Zeile.
  * Abgeleitet wird im Projekt (projekt/Schaltstellen.hpp); hier steht nur, was gezeichnet wird.
  */
@@ -40,6 +41,9 @@ struct Schaltstellen
         std::string forderung;       ///< `def`, `!def`, `> 50`, `–` (in dieser Alternative gleich), `never`; Text: `?`
         std::string stand;           ///< `def (project)`, `= 100 (header x.h)`, `undef`
         std::string bedingung;       ///< die Bedingung des Zweigs, wie in der Quelle (Tooltip; bei `text` die Zeile)
+        /// Eine innere Kette, die selbst nicht nach dem Namen fragt: der naechste umgebende Zweig, der
+        /// es tut (`#if defined(A), line 60`); leer = die Kette fragt selbst.
+        std::string via;
         int von = 0;                 ///< die Zeilen des Zweigs: von der Direktive
         int bis = 0;                 ///< bis zur naechsten (`#elif`, `#else`, `#endif`); 0 = unbekannt
         bool geltend = false;

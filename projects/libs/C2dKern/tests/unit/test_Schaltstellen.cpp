@@ -112,6 +112,12 @@ TEST_SUITE("Schaltstellen")
         CHECK(s.zeilen[0].text);
         CHECK(s.zeilen[2].datei == p.finde("eins.c"));
         CHECK(s.zeilen[3].weiche == 1);
+        // die innere Kette fragt selbst nicht nach TAKT: via nennt den aeusseren Zweig
+        CHECK(s.zeilen[2].via.empty());
+        CHECK(s.zeilen[3].via == "#if defined(TAKT), line 2");
+        CHECK(s.zeilen[4].via == "#if defined(TAKT), line 2");
+        CHECK(s.zeilen[5].via.empty());  // das #else der aeusseren
+        CHECK(s.zeilen[0].via.empty());  // Text, der TAKT selbst nennt
         CHECK_FALSE(s.hinweise.empty());
     }
 
@@ -254,8 +260,9 @@ TEST_SUITE("Schaltstellen")
 
         const std::string csv = c2d::ausgabe::csv().schreibe(s, {});
         CHECK(csv.find("project;code2diagram.json;;TAKT=100\n") != std::string::npos);
-        CHECK(csv.find("eins.c;2;#if defined(TAKT);def;= 100 (project);2;7;4;yes\n") != std::string::npos);
-        CHECK(csv.find("eins.c;6;(no #else);def;= 100 (project);;;;\n") != std::string::npos);
+        CHECK(csv.find("file;line;branch;via;TAKT;state in the file;from;to;lines;active\n") != std::string::npos);
+        CHECK(csv.find("eins.c;2;#if defined(TAKT);;def;= 100 (project);2;7;4;yes\n") != std::string::npos);
+        CHECK(csv.find("eins.c;6;(no #else);#if defined(TAKT), line 2;def;= 100 (project);;;;\n") != std::string::npos);
         CHECK(csv.find(kStrich) == std::string::npos);  // reines ASCII
         CHECK(c2d::ausgabe::csv().schreibe(u, {}).find("TAKT;2;3;differs;project, section;\n") != std::string::npos);
         CHECK(c2d::ausgabe::svg().schreibe(s, {}).find("<svg") != std::string::npos);
@@ -263,6 +270,21 @@ TEST_SUITE("Schaltstellen")
 
         const TabellenAnordnung a = ordneAn(s);
         CHECK(a.knotenOrte.size() == s.gesetzt.size() + s.zeilen.size());
+        // die Spalte via steht da (es gibt innere Zeilen), die Forderung einer inneren ist grau
+        CHECK(std::any_of(a.zellen.begin(), a.zellen.end(),
+                          [](const TabellenAnordnung::Zelle& c) { return c.kopf && c.zeilen == std::vector<std::string>{"via"}; }));
+        const std::size_t innen = s.gesetzt.size() + 3;  // eins.c:4, die innere Kette
+        std::vector<const TabellenAnordnung::Zelle*> zellen;
+        for (const TabellenAnordnung::Zelle& c : a.zellen)
+            if (c.knoten == innen) zellen.push_back(&c);
+        REQUIRE(zellen.size() == 8);
+        CHECK(zellen[3]->zeilen.front() == "#if defined(TAKT), line 2");
+        CHECK(zellen[4]->zeilen.front() == "def");
+        CHECK(zellen[4]->grau);
+        // MOTOR fragt seine Kette selbst: keine Spalte via
+        const TabellenAnordnung m = ordneAn(schaltstellen(p, "MOTOR"));
+        CHECK(std::none_of(m.zellen.begin(), m.zellen.end(),
+                           [](const TabellenAnordnung::Zelle& c) { return c.kopf && c.zeilen == std::vector<std::string>{"via"}; }));
         const TabellenAnordnung b = ordneAn(u);
         CHECK(b.knotenOrte.size() == u.zeilen.size());
         // nichts ueberlappt

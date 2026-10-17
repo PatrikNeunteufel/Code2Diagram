@@ -238,19 +238,6 @@ V bedingungVon(std::span<const Weiche> weichen, std::size_t w, std::size_t z)
     return v;
 }
 
-std::string marke(const Weiche& w, std::size_t z)
-{
-    if (z >= w.zweige.size()) return "(no #else)";
-    if (z == 0) return "#if " + w.zweige[0];
-    return w.zweige[z] == "else" ? "#else" : "#elif " + w.zweige[z];
-}
-
-int zeileVon(const Weiche& w, std::size_t z)
-{
-    if (z < w.zweigZeilen.size()) return w.zweigZeilen[z];
-    return w.endZeile != 0 ? w.endZeile : w.zeile;
-}
-
 std::string zelle(const std::vector<const Literal*>& ls)
 {
     std::string aus;
@@ -267,6 +254,19 @@ std::string zelle(const std::vector<const Literal*>& ls)
 
 }  // namespace
 
+std::string zweigMarke(const Weiche& w, std::size_t z)
+{
+    if (z >= w.zweige.size()) return "(no #else)";
+    if (z == 0) return "#if " + w.zweige[0];
+    return w.zweige[z] == "else" ? "#else" : "#elif " + w.zweige[z];
+}
+
+int zweigZeile(const Weiche& w, std::size_t z)
+{
+    if (z < w.zweigZeilen.size()) return w.zweigZeilen[z];
+    return w.endZeile != 0 ? w.endZeile : w.zeile;
+}
+
 std::vector<Konfigurationstabelle> konfigurationVon(std::span<const Weiche> weichen, std::span<const modell::Schalter> schalter)
 {
     std::vector<Konfigurationstabelle> aus;
@@ -276,12 +276,12 @@ std::vector<Konfigurationstabelle> konfigurationVon(std::span<const Weiche> weic
         Konfigurationstabelle t;
         t.weiche = w;
         t.quellZeile = weiche.zeile;
-        t.titel = marke(weiche, 0) + " (line " + std::to_string(weiche.zeile) + ")";
+        t.titel = zweigMarke(weiche, 0) + " (line " + std::to_string(weiche.zeile) + ")";
         if (weiche.eltern != modell::kKeinZweig && weiche.eltern < weichen.size())
         {
             const Weiche& eltern = weichen[weiche.eltern];
-            t.titel += ", in " + marke(eltern, weiche.elternZweig) + " (line " +
-                       std::to_string(zeileVon(eltern, weiche.elternZweig)) + ")";
+            t.titel += ", in " + zweigMarke(eltern, weiche.elternZweig) + " (line " +
+                       std::to_string(zweigZeile(eltern, weiche.elternZweig)) + ")";
             for (std::size_t e = weiche.eltern; e != modell::kKeinZweig && e < weichen.size(); e = weichen[e].eltern) ++t.tiefe;
         }
 
@@ -335,9 +335,9 @@ std::vector<Konfigurationstabelle> konfigurationVon(std::span<const Weiche> weic
         for (const Zweig& z : alle)
         {
             Konfigurationstabelle::Zeile r;
-            r.zweig = marke(weiche, z.z);
+            r.zweig = zweigMarke(weiche, z.z);
             r.zweigIndex = z.z;
-            r.quellZeile = zeileVon(weiche, z.z);
+            r.quellZeile = zweigZeile(weiche, z.z);
             r.geltend = weiche.geltend == z.z;
             r.bedingung = z.z < weiche.zweige.size() ? weiche.zweige[z.z] : "else";
             if (!zerlegt(z.d))

@@ -294,7 +294,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   *set by*: wer ihn festlegt (`project`, `section <ordner>`, `#define`/`#undef` mit Datei und Zeile,
   `outside` = Defines oder `-D`, `language`); ein `#define` in einem Zweig, der nicht gilt, sieht der
   Leser nicht. Darunter je Zweig im ganzen Projekt, dessen absolute Forderung den Namen betrifft
-  (auch eine innere Kette unter `#ifdef NAME`), eine Zeile: Datei, Zeile, Zweig, Forderung, der
+  (auch eine innere Kette unter `#ifdef NAME` — sie trägt in der Spalte *via* den äußeren Zweig,
+  `#if defined(NAME), line 60`, ihre Forderung steht grau), eine Zeile: Datei, Zeile, Zweig, Forderung, der
   Stand in dieser Datei mit Herkunft (`= 100 (project)`, `def (header cfg.h)`, `undef (line 7)` —
   was die Datei vor der Kette selbst festlegt, gilt dort), wie viele Zeilen der Zweig umfasst,
   *active*. Ein Kopf steht einmal, in seiner eigenen Datei. Ein Klick zeigt die Stelle, auch in einer

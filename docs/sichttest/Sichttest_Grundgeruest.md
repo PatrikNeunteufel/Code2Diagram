@@ -668,11 +668,16 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       wieder leer.
       `aktion: definitionen_setzen wert=MOTOREN=1` `aktion: schaltstellen_zeigen name=MOTOREN` `aktion: definitionen_setzen wert=`
 - [ ] **U9 Formate:** csv: `set by;file;line;value`, `section antrieb;code2diagram.json;;MOTOREN=2`, eine
-      Leerzeile, dann `file;line;branch;MOTOREN;state in the file;from;to;lines;active` und
-      `antrieb/motor.c;21;#if MOTOREN > 1;> 1;= 2 (section antrieb);21;26;4;yes`; draw.io dieselbe
+      Leerzeile, dann `file;line;branch;via;MOTOREN;state in the file;from;to;lines;active` und
+      `antrieb/motor.c;21;#if MOTOREN > 1;;> 1;= 2 (section antrieb);21;26;4;yes`; draw.io dieselbe
       Tabelle; mermaid und dot: `#if switch points is not available in mermaid` (dot entsprechend). Bei
       *#if names* in mermaid: `#if names is not available in mermaid`.
       `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=drawio` `aktion: format_waehlen name=mermaid`
+- [ ] **U11 Innere Kette:** `beispiele/konfiguration.c` öffnen, *Where is DEBUG switched?*: Zeilen 12
+      und 16 (`#ifdef DEBUG`, `(no #else)`) ohne *via*; die Zeilen 13 und 15 (`#if LOG_STUFE > 1`,
+      `(no #else)`) tragen *via* `#if defined(DEBUG), line 12`, ihr `def` grau. Bei *Where is TAKT_MHZ
+      switched?* gibt es keine Spalte *via*. In csv steht *via* immer (leer, wo die Kette selbst fragt).
+      `aktion: datei_oeffnen pfad=beispiele/konfiguration.c` `aktion: schaltstellen_zeigen name=DEBUG` `aktion: schaltstellen_zeigen name=TAKT_MHZ`
 - [ ] **U10 Dunkel:** Thema Dark: die getönte Zeile (✓) bleibt von den übrigen zu unterscheiden, die
       Schrift lesbar. Thema wieder System.
       `aktion: thema_setzen name=dark` `aktion: thema_setzen name=system`

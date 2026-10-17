@@ -166,11 +166,11 @@ public:
         for (const Schaltstellen::Setzung& s : t.gesetzt)
             aus += zeile({s.herkunft, s.pfad, s.zeile > 0 ? std::to_string(s.zeile) : std::string(), s.wert});
         aus += '\n';
-        aus += zeile({"file", "line", "branch", t.name, "state in the file", "from", "to", "lines", "active"});
+        aus += zeile({"file", "line", "branch", "via", t.name, "state in the file", "from", "to", "lines", "active"});
         for (const Schaltstellen::Zeile& z : t.zeilen)
         {
             const bool bekannt = z.bis != 0;
-            aus += zeile({z.pfad, std::to_string(z.quellZeile), z.text ? z.bedingung : z.zweig,
+            aus += zeile({z.pfad, std::to_string(z.quellZeile), z.text ? z.bedingung : z.zweig, z.via,
                           z.forderung == "\xE2\x80\x93" ? std::string("-") : z.forderung, z.stand,
                           bekannt ? std::to_string(z.von) : std::string(), bekannt ? std::to_string(z.bis) : std::string(),
                           bekannt ? std::to_string(zeilenDazwischen(z)) : std::string(),

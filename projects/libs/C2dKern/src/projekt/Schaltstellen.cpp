@@ -212,6 +212,26 @@ bool nenntAbsolut(std::span<const modell::Weiche> weichen, std::size_t w, std::s
     return false;
 }
 
+/// Fragt die Kette `w` selbst nicht nach `name`, der naechste umgebende Zweig, der es tut, als
+/// `#if defined(A), line 60`; leer = sie fragt selbst (oder keiner tut es).
+std::string viaVon(std::span<const modell::Weiche> weichen, std::size_t w, std::string_view name)
+{
+    const modell::Weiche& eigen = weichen[w];
+    if (std::any_of(eigen.zweige.begin(), eigen.zweige.end(), [&](const std::string& z) { return nennt(z, name); }))
+        return {};
+    for (std::size_t innen = w; weichen[innen].eltern != modell::kKeinZweig && weichen[innen].eltern < innen;)
+    {
+        const std::size_t aussen = weichen[innen].eltern;
+        const std::size_t zweig = weichen[innen].elternZweig;
+        const modell::Weiche& a = weichen[aussen];
+        for (std::size_t i = 0; i <= zweig && i < a.zweige.size(); ++i)
+            if (nennt(a.zweige[i], name))
+                return diagramm::zweigMarke(a, zweig) + ", line " + std::to_string(diagramm::zweigZeile(a, zweig));
+        innen = aussen;
+    }
+    return {};
+}
+
 /// Die Zeilen der Tabelle (Stellen), deren Zweig etwas von `name` fordert: je Zweig alle seine
 /// Alternativen, wenn eine davon es tut.
 std::vector<std::size_t> betroffen(const Konfigurationstabelle& t, std::span<const modell::Weiche> weichen, std::string_view name)
@@ -297,6 +317,7 @@ diagramm::Schaltstellen schaltstellen(const Projekt& projekt, std::string_view n
             const modell::Weiche& weiche = e.weichen[t.weiche];
             const auto s2 = std::find_if(t.spalten.begin(), t.spalten.end(), [&](const auto& x) { return x.name == name; });
             const std::size_t spalte = static_cast<std::size_t>(s2 - t.spalten.begin());
+            const std::string via = viaVon(e.weichen, t.weiche, name);
             for (const std::size_t r : betroffen(t, e.weichen, name))
             {
                 const Konfigurationstabelle::Zeile& z = t.zeilen[r];
@@ -313,6 +334,7 @@ diagramm::Schaltstellen schaltstellen(const Projekt& projekt, std::string_view n
                 a.stand = stand.text();
                 a.inDatei = stand.inDatei;
                 a.bedingung = z.bedingung;
+                a.via = via;
                 a.von = z.quellZeile;
                 a.bis = bisZeile(weiche, z.zweigIndex);
                 a.geltend = z.geltend;
