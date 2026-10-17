@@ -266,6 +266,22 @@ TEST_SUITE("Projekt")
         }
     }
 
+    TEST_CASE("Zwei Koepfe definieren denselben Namen: der spaeter eingebundene gilt, auch mittelbar")
+    {
+        TempOrdner t;
+        t.lege("a.h", "#define STUFE 1\n#define NUR_A\n");
+        t.lege("b.h", "#include \"c.h\"\n#define STUFE 2\n");
+        t.lege("c.h", "#define STUFE 3\n#define AUS_C\n");
+        t.lege("main.c", "#include \"a.h\"\n#include \"b.h\"\n"
+                         "#if STUFE == 2\nvoid zwei(void) {}\n#endif\n"
+                         "#if defined(NUR_A) && defined(AUS_C)\nvoid beide(void) {}\n#endif\n");
+        const Projekt p = liesOrdner(t.weg());
+        const Datei& haupt = p.dateien[p.finde("main.c")];
+        CHECK(hatFunktion(haupt, "zwei"));   // a.h, dann c.h (von b.h), dann b.h selbst
+        CHECK(hatFunktion(haupt, "beide"));
+        CHECK(herkunft(p.einstellungen, haupt, "STUFE") == Herkunft::kopf);
+    }
+
     TEST_CASE("Ohne Projektdatei: ein Kopf findet sich ueber seinen Namen, wenn es ihn genau einmal gibt")
     {
         TempOrdner t;

@@ -10,6 +10,7 @@
 #include <set>
 #include <sstream>
 #include <system_error>
+#include <unordered_map>
 
 namespace c2d::projekt
 {
@@ -67,16 +68,21 @@ bool liesDatei(const fs::path& weg, std::string& text)
     return true;
 }
 
-/// Gleichnamiges ersetzt: das Spaetere gilt, an der Stelle des Frueheren.
+/// Gleichnamiges ersetzt: das Spaetere gilt, an der Stelle des Frueheren (auch innerhalb von `dazu`).
+/// Ueber einen Index nach Namen: die Koepfe eines Projekts bringen Tausende `#define` je Datei.
 void fuegeHinzu(std::vector<sprache::Definition>& ziel, const std::vector<sprache::Definition>& dazu)
 {
+    if (dazu.empty()) return;
+    std::unordered_map<std::string, std::size_t> stelle;  // Name -> Index in `ziel`
+    stelle.reserve(ziel.size() + dazu.size());
+    for (std::size_t i = 0; i < ziel.size(); ++i) stelle.try_emplace(ziel[i].name, i);  // der erste gilt als Ort
     for (const sprache::Definition& d : dazu)
     {
-        const auto gleich = std::find_if(ziel.begin(), ziel.end(), [&](const sprache::Definition& z) { return z.name == d.name; });
-        if (gleich != ziel.end())
-            *gleich = d;  // auch eine Aufhebung `!NAME` oder ihr Gegenteil
-        else
+        const auto [wo, neu] = stelle.try_emplace(d.name, ziel.size());
+        if (neu)
             ziel.push_back(d);
+        else
+            ziel[wo->second] = d;  // auch eine Aufhebung `!NAME` oder ihr Gegenteil
     }
 }
 
@@ -278,7 +284,7 @@ private:
     {
         const Datei& d = m_p.dateien[i];
         const std::vector<std::string> includePfade = includePfadeFuer(m_p.einstellungen, d.pfad);
-        std::vector<sprache::Definition> aus;
+        std::vector<sprache::Definition> gefunden;  // alle #define in der Reihenfolge, gleichnamige mehrfach
         std::set<std::string> besucht{std::to_string(i)};
         const auto folge = [&](auto& selbst, const std::vector<modell::Einbindung>& einbindungen, const fs::path& ordner,
                                const std::string& wer) -> void {
@@ -300,17 +306,19 @@ private:
                     koepfe.push_back(k.datei);
                     const Datei& kopf = m_p.dateien[k.datei];
                     selbst(selbst, kopf.ergebnis.einheit.einbindungen, m_p.wurzel / alsWeg(ordnerVon(kopf.pfad)), kopf.pfad);
-                    for (const modell::Makro& m : kopf.ergebnis.einheit.makros) fuegeHinzu(aus, {alsDefinition(m)});
+                    for (const modell::Makro& m : kopf.ergebnis.einheit.makros) gefunden.push_back(alsDefinition(m));
                 }
                 else
                 {
                     const Draussen& kopf = draussen(k.draussen, m_p.einstellungen.definitionen);
                     selbst(selbst, kopf.einbindungen, alsWeg(k.draussen).parent_path(), k.draussen);
-                    for (const modell::Makro& m : kopf.makros) fuegeHinzu(aus, {alsDefinition(m)});
+                    for (const modell::Makro& m : kopf.makros) gefunden.push_back(alsDefinition(m));
                 }
             }
         };
         folge(folge, d.ergebnis.einheit.einbindungen, m_p.wurzel / alsWeg(ordnerVon(d.pfad)), d.pfad);
+        std::vector<sprache::Definition> aus;
+        fuegeHinzu(aus, gefunden);  // je Name einmal, der spaetere gilt
         return aus;
     }
 
