@@ -595,6 +595,40 @@ Am Beispiel `beispiele/zuordnung.c`: `dauer_ms` (Zeile 18, `switch` mit `return`
       eingebundenen Kopf steht (etwa LLC, `Serial_Commands.c`): *Lookup tables* zeigt die Glieder
       des Kopfs als Spalten (`Template`, `Groupe`, …), nicht `1`, `2`, ….
 
+## T. #if-Konfiguration
+
+Am Beispiel `beispiele/konfiguration.c`: Kette ab Zeile 4 (`#if defined(BOARD_A) || defined(BOARD_B)`,
+`#elif VERSION >= 2` in Zeile 6, `#else` in Zeile 8), `#ifdef DEBUG` (Zeile 12) mit `#if LOG_STUFE > 1`
+darin (Zeile 13), `#if TAKT_MHZ > 50` (Zeile 18; `TAKT_MHZ` definiert die Datei in Zeile 2).
+
+- [ ] **T0 Vorbereiten:** Die Datei öffnen, Defines leer, Vorschau, Format svg; in Diagram
+      *#if configuration (4)*.
+      `aktion: datei_oeffnen pfad=beispiele/konfiguration.c` `aktion: definitionen_setzen wert=` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview` `aktion: diagramm_waehlen name=ifconfig`
+- [ ] **T1 Die Form:** Vier Tabellen untereinander. Die erste: Spalten `branch`, `BOARD_A`, `BOARD_B`,
+      `VERSION` (je mit `undef` darunter), `active`; Zeilen `#if defined(BOARD_A) || …` (`def – –`),
+      `or` (`– def –`), `#elif VERSION >= 2` (`!def !def >= 2`), `#else` (`!def !def < 2`) — diese
+      getönt, mit ✓.
+- [ ] **T2 Innen:** Die dritte Tabelle ist eingerückt, Titel `#if LOG_STUFE > 1 (line 13), in #if
+      defined(DEBUG) (line 12)`; beide Zeilen fordern `DEBUG` `def`. Keine trägt ✓ (DEBUG gilt nicht).
+- [ ] **T3 Selbst definiert:** Die vierte: Spalte `TAKT_MHZ` mit `= 100` und `(line 2)` im Kopf, ihr
+      Text grau (hell wie dunkel deutlich anders als die getönte Zeile); `#if TAKT_MHZ > 50` trägt ✓.
+      Rechtsklick auf `#else`: *Make this branch active* gesperrt, Tooltip nennt den Grund.
+- [ ] **T4 Klick:** Klick auf `#elif VERSION >= 2`: im Quelltext ist Zeile 6 hinterlegt; Klick auf
+      `(no #else)` der zweiten Tabelle: Zeile 16 (das `#endif`).
+      `aktion: klicken name=#elif VERSION >= 2`
+- [ ] **T5 Make this branch active:** Rechtsklick auf `#elif VERSION >= 2`, *Make this branch active*:
+      im Feld Defines steht `VERSION=2`, die Datei wird neu gelesen, die Tabelle bleibt; jetzt trägt
+      `#elif VERSION >= 2` das ✓, im Kopf `VERSION` `= 2`. Das Feld Configuration zeigt denselben
+      Zweig. Rechtsklick auf dieselbe Zeile: der Eintrag ist gesperrt (*This branch holds already*).
+      `aktion: zweig_aktivieren zeile=6`
+- [ ] **T6 Aus dem Quelltext:** Rechtsklick im Quelltext auf Zeile 13, *#if configuration of line
+      13*: Ring um die erste Zeile der eingerückten Tabelle. Auf Zeile 3 ist der Eintrag gesperrt.
+      `aktion: konfiguration_zeigen zeile=13`
+- [ ] **T7 Formate:** csv: je Kette Titel, `branch;BOARD_A;BOARD_B;VERSION;active`, … `yes` in der
+      Zeile, die gilt; draw.io dieselben Tabellen, die Spalte `TAKT_MHZ` mit grauer Schrift; mermaid:
+      `#if configuration is not available in mermaid`. Danach Defines wieder leer.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=drawio` `aktion: format_waehlen name=mermaid` `aktion: definitionen_setzen wert=`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

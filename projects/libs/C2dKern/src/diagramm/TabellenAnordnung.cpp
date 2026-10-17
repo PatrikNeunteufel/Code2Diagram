@@ -196,6 +196,99 @@ TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOp
     return a;
 }
 
+TabellenAnordnung ordneAn(std::span<const Konfigurationstabelle> tabellen, const AnordnungOptionen& o)
+{
+    constexpr double kEinzug = 24;  // je Stufe, die eine Kette in einer anderen steht
+    TabellenAnordnung a;
+    const double zeile = o.zeilenHoehe + 6;
+    const auto weite = [&](std::size_t n) { return static_cast<double>(n) * o.zeichenBreite + 2 * kLuft; };
+    double y = kRand;
+    std::size_t knoten = 0;
+    for (std::size_t ti = 0; ti < tabellen.size(); ++ti)
+    {
+        const Konfigurationstabelle& t = tabellen[ti];
+        const double x0 = kRand + kEinzug * static_cast<double>(t.tiefe);
+        const auto text = [&](const std::string& s, bool fett) {
+            a.texte.push_back({{x0, y + o.zeilenHoehe / 2}, s, fett, ti});
+            a.breite = std::max(a.breite, x0 + weite(zeichen(s)) + kRand);
+            y += o.zeilenHoehe + 6;
+        };
+        text(gekuerzt(t.titel, o.maxZeilenLaenge == 0 ? 0 : 2 * o.maxZeilenLaenge), true);
+
+        // der Kopf: Zweig, je Name sein Stand (und wo die Datei ihn definiert), active
+        std::vector<std::vector<std::string>> kopf{{"branch"}};
+        for (const Konfigurationstabelle::Spalte& s : t.spalten)
+        {
+            std::vector<std::string> k{gekuerzt(s.name, o.maxZeilenLaenge)};
+            if (!s.jetzt.empty()) k.push_back(gekuerzt(s.jetzt, o.maxZeilenLaenge));
+            if (s.inDatei > 0) k.push_back("(line " + std::to_string(s.inDatei) + ")");
+            if (s.vorgegeben) k.push_back("(language)");
+            kopf.push_back(std::move(k));
+        }
+        kopf.push_back({"active"});
+        std::size_t kopfZeilen = 1;
+        for (const auto& k : kopf) kopfZeilen = std::max(kopfZeilen, k.size());
+        const double kopfHoehe = static_cast<double>(kopfZeilen) * o.zeilenHoehe + 6;
+
+        std::vector<double> breiten;
+        for (const auto& k : kopf)
+        {
+            double b = 0;
+            for (const std::string& s : k) b = std::max(b, weite(zeichen(s)));
+            breiten.push_back(b);
+        }
+        const auto aktiv = [](const Konfigurationstabelle::Zeile& r) {
+            return std::string(r.geltend ? "\xE2\x9C\x93" : r.nie ? "never" : "");  // Haekchen
+        };
+        std::vector<std::vector<std::string>> inhalt;
+        for (const Konfigurationstabelle::Zeile& r : t.zeilen)
+        {
+            std::vector<std::string> z{gekuerzt(r.zweig, o.maxZeilenLaenge)};
+            for (const std::string& w : r.werte) z.push_back(gekuerzt(w, o.maxZeilenLaenge));
+            z.push_back(aktiv(r));
+            for (std::size_t s = 0; s < z.size() && s < breiten.size(); ++s) breiten[s] = std::max(breiten[s], weite(zeichen(z[s])));
+            inhalt.push_back(std::move(z));
+        }
+        const auto grau = [&](std::size_t s) {
+            return s > 0 && s <= t.spalten.size() && (t.spalten[s - 1].inDatei > 0 || t.spalten[s - 1].vorgegeben);
+        };
+
+        double x = x0;
+        for (std::size_t s = 0; s < kopf.size(); ++s)
+        {
+            TabellenAnordnung::Zelle z{{x, y, breiten[s], kopfHoehe}, kopf[s], true, false, {}, ti, kKeine, s == 0};
+            z.grau = grau(s);
+            a.zellen.push_back(std::move(z));
+            x += breiten[s];
+        }
+        const double rechts = x;
+        y += kopfHoehe;
+        for (std::size_t r = 0; r < inhalt.size(); ++r)
+        {
+            const Konfigurationstabelle::Zeile& zr = t.zeilen[r];
+            double xr = x0;
+            for (std::size_t s = 0; s < inhalt[r].size() && s < breiten.size(); ++s)
+            {
+                const std::string ganz = s == 0 ? zr.bedingung : "";
+                TabellenAnordnung::Zelle z{{xr, y, breiten[s], zeile}, {inhalt[r][s]}, false, zr.geltend,
+                                           ganz != inhalt[r][s] ? ganz : "", ti, knoten, s == 0};
+                z.grau = grau(s);
+                a.zellen.push_back(std::move(z));
+                xr += breiten[s];
+            }
+            a.knotenOrte.push_back({x0, y, rechts - x0, zeile});
+            ++knoten;
+            y += zeile;
+        }
+        a.breite = std::max(a.breite, rechts + kRand);
+        if (!t.hinweise.empty()) y += 4;
+        for (const std::string& h : t.hinweise) text(h, false);
+        if (ti + 1 < tabellen.size()) y += kAbstand * o.zeilenHoehe;
+    }
+    a.hoehe = y + kRand;
+    return a;
+}
+
 TabellenAnordnung ordneAn(const Entscheidungstabelle& t, const AnordnungOptionen& o)
 {
     TabellenAnordnung a;

@@ -35,6 +35,7 @@
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
+#include "c2d/diagramm/Konfigurationstabelle.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -53,6 +54,7 @@
 #include <QStringList>
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 class QAction;
@@ -95,6 +97,8 @@ public:
     static constexpr const char* kZuordnung = "mapping:";
     /// Die konstanten Tabellen der Datei.
     static constexpr const char* kNachschlagetabellen = "lookup";
+    /// Je Kette #if der Datei, welcher Zweig bei welchen Definitionen gilt.
+    static constexpr const char* kKonfiguration = "ifconfig";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -212,6 +216,14 @@ public:
     /// Wie Rechtsklick im Quelltext, Mapping table of line n: der switch in Zeile `zeile`, wenn er nur
     /// Werte zuordnet. false = dort keiner.
     bool zeigeZuordnung(int zeile);
+    /// Wie Rechtsklick im Quelltext, #if configuration of line n: die Konfigurationstabellen der Datei,
+    /// die Kette dieser Zeile (`#if`, `#elif`, `#else`, `#endif`) hervorgehoben. false = dort keine.
+    bool zeigeKonfiguration(int zeile);
+    /// Wie im Kontextmenue einer Zeile der Konfigurationstabelle, Make this branch active: die erste
+    /// Zeile, deren `#if`/`#elif`/`#else` (beim fehlenden: `#endif`) in Zeile `zeile` steht. Setzt die
+    /// Namen im Feld Defines wie die Radioknoepfe im Feld Configuration. false = keine solche, oder
+    /// der Zweig gilt schon oder laesst sich nicht aus Namen waehlen.
+    bool aktiviereZweig(int zeile);
     /// Wie Rechtsklick im Quelltext, Show in diagram: Zeile `zeile` der Datei im Quelltext. In einer
     /// Funktion: ihr Knoten im gezeigten Ablauf (sonst erst zum Ablauf der Funktion; Back fuehrt
     /// zurueck), im Aufrufgraph die Funktion; in einem Typ: Data types mit ihm. Hervorgehoben (Ring),
@@ -252,6 +264,8 @@ public:
     /// `NAME=wert`, durch Leerzeichen, Komma oder Strichpunkt getrennt; geht der
     /// Projektdatei vor. Alles wird neu gelesen; Datei und Diagramm bleiben, wenn es sie noch gibt.
     void setzeDefinitionen(const QString& definitionen);
+    /// Der Text im Feld Defines.
+    [[nodiscard]] QString definitionen() const;
     /// Bedingte Uebersetzung nicht auswerten, sondern alle Zweige lesen.
     void setzeAlleZweige(bool alle);
     /// Ein #if im Rumpf, das ganze Anweisungen schaltet, als Varianten zeigen
@@ -306,6 +320,15 @@ private:
     [[nodiscard]] bool hatWahrheitstabelle(std::size_t datei, int zeile) const;
     /// Steht in dieser Zeile ein switch, der nur Werte zuordnet?
     [[nodiscard]] bool hatZuordnung(std::size_t datei, int zeile) const;
+    /// Steht in dieser Zeile eine Direktive einer Kette #if (`#if`, `#elif`, `#else`, `#endif`)?
+    [[nodiscard]] bool hatKonfiguration(std::size_t datei, int zeile) const;
+    /// Der Knoten einer Zeile der Konfigurationstabelle: welche Tabelle, welche Zeile; nullopt = keiner.
+    [[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> konfigurationsZeile(c2d::diagramm::KnotenId knoten) const;
+    /// Die Definitionen im Feld Defines, mit denen der Zweig dieses Knotens gilt; nullopt und `warum`
+    /// = es geht nicht (er gilt schon, oder er laesst sich nicht aus Namen waehlen).
+    [[nodiscard]] std::optional<std::vector<c2d::sprache::Definition>> zweigDefinitionen(c2d::diagramm::KnotenId knoten,
+                                                                                         QString* warum = nullptr) const;
+    bool aktiviereZweig(c2d::diagramm::KnotenId knoten);
     [[nodiscard]] bool istZuordnung() const;
     /// Zur Zuordnung des switch in der Zeile; `von` wie bei gehe(). false = dort keine.
     bool geheZuZuordnung(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
@@ -458,6 +481,7 @@ private:
     std::vector<c2d::diagramm::Wahrheitstabelle> m_tabellen;  ///< die gezeigte Wahrheitstabelle
     c2d::diagramm::Entscheidungstabelle m_entscheidung;       ///< die gezeigte; leer = keine
     std::vector<c2d::diagramm::Zuordnung> m_zuordnungen;      ///< die gezeigte Zuordnung oder die Nachschlagetabellen
+    std::vector<c2d::diagramm::Konfigurationstabelle> m_ketten;  ///< die Konfigurationstabellen: die Ketten #if der Datei
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei

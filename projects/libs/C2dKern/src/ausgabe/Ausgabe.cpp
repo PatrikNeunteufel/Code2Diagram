@@ -34,6 +34,7 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Wahrheitstabelle: return "Truth table";
         case Diagrammart::Entscheidungstabelle: return "Decision table";
         case Diagrammart::Zuordnung: return "Mapping table";
+        case Diagrammart::Konfiguration: return "#if configuration";
     }
     return {};
 }

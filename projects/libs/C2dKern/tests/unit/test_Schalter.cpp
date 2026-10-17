@@ -20,7 +20,7 @@ namespace
 constexpr std::string_view kKopf = R"c(
 #ifndef KOPF_H
 #define KOPF_H
-#define FEST 3
+#define FEST 3 /* die Stufe */ // ohne Kommentar im Wert
 
 #ifdef BOARD_A
 void a(void) {}
@@ -86,7 +86,7 @@ TEST_SUITE("Schalter und Weichen")
         CHECK(e.schalter[2].zahl);  // STUFE >= 2: ein Wert
         CHECK_FALSE(e.schalter[2].definiert);
         CHECK(e.schalter[3].definiert);
-        CHECK(e.schalter[3].wert == "3");
+        CHECK(e.schalter[3].wert == "3");  // ohne die Kommentare dahinter
         CHECK(e.schalter[3].inDatei == 4);  // die Datei definiert FEST: von aussen nicht zu aendern
         CHECK_FALSE(e.schalter[5].zahl);   // !VERBOSE: nur ja/nein — auch ungefragt (DEBUG gilt nicht) steht er da
         CHECK(e.einheit.funktionen.back().bisZeile == 29);

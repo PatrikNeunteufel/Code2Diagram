@@ -46,7 +46,8 @@ public:
     // eine Tabelle ja, ein Graph oder Bloecke nicht
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
-        return art == Diagrammart::Wahrheitstabelle || art == Diagrammart::Entscheidungstabelle || art == Diagrammart::Zuordnung;
+        return art == Diagrammart::Wahrheitstabelle || art == Diagrammart::Entscheidungstabelle || art == Diagrammart::Zuordnung ||
+               art == Diagrammart::Konfiguration;
     }
 
     [[nodiscard]] std::string schreibe(const Flussdiagramm&, const Optionen&) const override { return {}; }
@@ -128,6 +129,31 @@ public:
                 for (const std::string& w : z.werte) r.push_back(w == "\xE2\x80\x94" ? std::string("-") : w);
                 aus += zeile(r);
             }
+        }
+        return aus;
+    }
+
+    // je Kette: Titel, Kopf (Zweig, die Namen, active), die Zeilen, die Hinweise
+    [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle> tabellen, const Optionen&) const override
+    {
+        std::string aus;
+        for (std::size_t ti = 0; ti < tabellen.size(); ++ti)
+        {
+            const Konfigurationstabelle& t = tabellen[ti];
+            if (ti > 0) aus += '\n';
+            aus += zeile({t.titel});
+            std::vector<std::string> kopf{"branch"};
+            for (const Konfigurationstabelle::Spalte& s : t.spalten) kopf.push_back(s.name);
+            kopf.emplace_back("active");
+            aus += zeile(kopf);
+            for (const Konfigurationstabelle::Zeile& z : t.zeilen)
+            {
+                std::vector<std::string> r{z.zweig};
+                for (const std::string& w : z.werte) r.push_back(w == "\xE2\x80\x93" ? std::string("-") : w);
+                r.emplace_back(z.geltend ? "yes" : z.nie ? "never" : "");
+                aus += zeile(r);
+            }
+            for (const std::string& h : t.hinweise) aus += zeile({h});
         }
         return aus;
     }

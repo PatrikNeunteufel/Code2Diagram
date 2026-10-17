@@ -331,6 +331,28 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.diagramm());
                      });
 
+    anbindung.aktion(QStringLiteral("konfiguration_zeigen"),
+                     QStringLiteral("Like right-click in the source, #if configuration of line n"),
+                     QStringLiteral("zeile=<line of an #if, #elif, #else or #endif in the file shown in the source>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         if (zeile <= 0) return st::ungueltig(QStringLiteral("zeile is missing"));
+                         if (!fenster.zeigeKonfiguration(zeile))
+                             return st::fehler(QStringLiteral("Line %1 is not part of an #if chain").arg(zeile));
+                         return st::ok(fenster.diagramm());
+                     });
+
+    anbindung.aktion(QStringLiteral("zweig_aktivieren"),
+                     QStringLiteral("Like Make this branch active on a row of the #if configuration"),
+                     QStringLiteral("zeile=<line of the #if, #elif or #else of the row; #endif for (no #else)>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         if (zeile <= 0) return st::ungueltig(QStringLiteral("zeile is missing"));
+                         if (!fenster.aktiviereZweig(zeile))
+                             return st::fehler(QStringLiteral("The branch of line %1 cannot be made active").arg(zeile));
+                         return st::ok(fenster.definitionen());
+                     });
+
     anbindung.aktion(QStringLiteral("darstellung_waehlen"),
                      QStringLiteral("How a function is shown: flowchart, Nassi-Shneiderman or decision table"),
                      QStringLiteral("name=<flowchart | nassi-shneiderman | decision-table>"),

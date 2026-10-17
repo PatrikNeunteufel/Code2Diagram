@@ -7,13 +7,14 @@
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
-//                             [--zuordnung [<zeile>]] [--nachschlagetabellen]
+//                             [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
 //                  das Strukturdiagramm
 //   --liste        nennt, was die Datei (das Projekt: jede Datei) enthaelt (auch Automaten,
-//                  Zuordnungen "mapping" und konstante Tabellen "lookup"), und endet
+//                  Zuordnungen "mapping", konstante Tabellen "lookup", die Ketten #if "ifconfig"),
+//                  und endet
 //   --datei        im Projekt: die Datei, um die es geht (relativ zum Ordner)
 //   --funktion     das Flussdiagramm dieser Funktion (Name allein oder mit Bereich); im
 //                  Projekt muss sie eindeutig sein, sonst --datei
@@ -52,6 +53,8 @@
 //   --zuordnung    mit --funktion: die Zuordnungstabelle des switch in dieser Zeile (ohne Zeile: alle
 //                  der Funktion, die Zuordnungen sind); svg, drawio, csv
 //   --nachschlagetabellen  die konstanten Tabellen (const-Arrays) der Datei (im Projekt: --datei)
+//   --konfiguration  je Kette #if der Datei, welcher Zweig bei welchen Definitionen gilt (im
+//                  Projekt: --datei); svg, drawio, csv
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
 // Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
@@ -105,7 +108,7 @@ int aufruf()
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
                  "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
-                 "                         [--zuordnung [<line>]] [--nachschlagetabellen]\n"
+                 "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -147,6 +150,18 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
             if (const std::optional<c2d::diagramm::Zuordnung> z = c2d::diagramm::zuordnungVon(f, zeile))
                 std::cout << "mapping   " << f.name << '@' << zeile << " (" << z->zeilen.size() << " rows, "
                           << z->spalten.size() << " columns)\n";
+    if (const std::vector<c2d::diagramm::Konfigurationstabelle> k =
+            c2d::diagramm::konfigurationVon(d.ergebnis.weichen, d.ergebnis.schalter);
+        !k.empty())
+    {
+        std::size_t zeilen = 0, ungeteilt = 0;
+        for (const c2d::diagramm::Konfigurationstabelle& t : k)
+        {
+            zeilen += t.zeilen.size();
+            for (const c2d::diagramm::Konfigurationstabelle::Zeile& z : t.zeilen) ungeteilt += z.text ? 1 : 0;
+        }
+        std::cout << "ifconfig  " << k.size() << " chains, " << zeilen << " rows, " << ungeteilt << " not split\n";
+    }
     for (const c2d::diagramm::Zuordnung& t : c2d::diagramm::nachschlagetabellenVon(
              einheit, [&](std::string_view name) { return typen.eindeutig(i, name); }))
         std::cout << "lookup    " << t.titel << " (" << t.zeilen.size() << " rows, " << t.spalten.size()
@@ -172,6 +187,7 @@ int main(int argc, char* argv[])
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
     bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
+    bool konfiguration = false;
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -185,6 +201,7 @@ int main(int argc, char* argv[])
         else if (a == "--struktogramm") struktogramm = true;
         else if (a == "--entscheidungstabelle") entscheidungstabelle = true;
         else if (a == "--nachschlagetabellen") nachschlagetabellen = true;
+        else if (a == "--konfiguration") konfiguration = true;
         else if (a == "--zuordnung")
         {
             zuordnung = true;
@@ -341,6 +358,26 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Zuordnung, std::span<const c2d::diagramm::Zuordnung>(tabellen));
+    }
+
+    // je Kette #if der Datei: welcher Zweig bei welchen Definitionen gilt
+    if (konfiguration)
+    {
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: --konfiguration needs --datei in a folder\n";
+            return 1;
+        }
+        const c2d::sprache::Ergebnis& e = p.dateien[gewaehlteDatei].ergebnis;
+        const std::vector<c2d::diagramm::Konfigurationstabelle> tabellen = c2d::diagramm::konfigurationVon(e.weichen, e.schalter);
+        if (tabellen.empty())
+        {
+            std::cerr << "c2d: no #if chain in " << vorn(p.dateien[gewaehlteDatei].pfad)
+                      << (lesen.alleZweige ? " (--alle-zweige does not evaluate #if)" : "") << '\n';
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Konfiguration,
+                        std::span<const c2d::diagramm::Konfigurationstabelle>(tabellen));
     }
 
     // --automat: ein Zustandsautomat, erkannt im Code

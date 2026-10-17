@@ -180,6 +180,8 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             ->setEnabled(hatWahrheitstabelle(datei, zeile));
         menue->addAction(QStringLiteral("Mapping table of line %1").arg(zeile), this, [this, zeile] { zeigeZuordnung(zeile); })
             ->setEnabled(hatZuordnung(datei, zeile));
+        menue->addAction(QStringLiteral("#if configuration of line %1").arg(zeile), this, [this, zeile] { zeigeKonfiguration(zeile); })
+            ->setEnabled(hatKonfiguration(datei, zeile));
         menue->exec(m_quelle->mapToGlobal(ort));
     });
     m_definitionen = new QLineEdit(links);
@@ -821,6 +823,9 @@ void Hauptfenster::zeigeDatei(std::size_t index)
             m_auswahl->addItem(QStringLiteral("Call graph of this file"), QString::fromLatin1(kAufrufgraphDatei));
         if (const std::size_t n = c2d::diagramm::nachschlagetabellenVon(einheit).size(); n > 0)  // nur die Zahl
             m_auswahl->addItem(QStringLiteral("Lookup tables (%1)").arg(n), QString::fromLatin1(kNachschlagetabellen));
+        if (!d.ergebnis.weichen.empty())
+            m_auswahl->addItem(QStringLiteral("#if configuration (%1)").arg(d.ergebnis.weichen.size()),
+                               QString::fromLatin1(kKonfiguration));
     }
     {
         // die Typen der Datei, vorn alle; gewaehlt ist der erste
@@ -972,6 +977,11 @@ void Hauptfenster::setzeDefinitionen(const QString& definitionen)
 {
     m_definitionen->setText(definitionen);
     liesNeu();
+}
+
+QString Hauptfenster::definitionen() const
+{
+    return m_definitionen->text();
 }
 
 void Hauptfenster::setzeAlleZweige(bool alle)
@@ -1830,6 +1840,101 @@ bool Hauptfenster::geheZuZuordnung(std::size_t datei, int zeile, c2d::diagramm::
     return da;
 }
 
+bool Hauptfenster::hatKonfiguration(std::size_t datei, int zeile) const
+{
+    if (datei >= m_projekt.dateien.size() || zeile <= 0) return false;
+    for (const c2d::sprache::Weiche& w : m_projekt.dateien[datei].ergebnis.weichen)
+        if (w.endZeile == zeile || std::find(w.zweigZeilen.begin(), w.zweigZeilen.end(), zeile) != w.zweigZeilen.end())
+            return true;
+    return false;
+}
+
+bool Hauptfenster::zeigeKonfiguration(int zeile)
+{
+    const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
+    if (!hatKonfiguration(datei, zeile))
+    {
+        statusBar()->showMessage(QStringLiteral("Line %1 is not part of an #if chain").arg(zeile), 4000);
+        return false;
+    }
+    if (datei != m_datei || m_gezeigt != QLatin1String(kKonfiguration))
+    {
+        if (!m_gezeigt.isEmpty()) m_verlauf << hier();
+        m_ohneVerlauf = true;
+        if (datei != m_datei) zeigeDatei(datei);
+        const bool da = waehleEintrag(QString::fromLatin1(kKonfiguration));
+        m_ohneVerlauf = false;
+        aktualisiereLeiste();
+        if (!da) return false;
+    }
+    // die erste Zeile der Kette, zu der die Zeile gehoert
+    c2d::diagramm::KnotenId knoten = 0;
+    for (const c2d::diagramm::Konfigurationstabelle& t : m_ketten)
+    {
+        const c2d::sprache::Weiche& w = m_projekt.dateien[m_datei].ergebnis.weichen[t.weiche];
+        if (w.endZeile == zeile || std::find(w.zweigZeilen.begin(), w.zweigZeilen.end(), zeile) != w.zweigZeilen.end())
+        {
+            m_vorschau->markiere(knoten);
+            return true;
+        }
+        knoten += t.zeilen.size();
+    }
+    return true;
+}
+
+std::optional<std::pair<std::size_t, std::size_t>> Hauptfenster::konfigurationsZeile(c2d::diagramm::KnotenId knoten) const
+{
+    if (m_gezeigt != QLatin1String(kKonfiguration)) return std::nullopt;
+    for (std::size_t t = 0; t < m_ketten.size(); ++t)
+    {
+        if (knoten < m_ketten[t].zeilen.size()) return std::pair{t, static_cast<std::size_t>(knoten)};
+        knoten -= m_ketten[t].zeilen.size();
+    }
+    return std::nullopt;
+}
+
+std::optional<std::vector<c2d::sprache::Definition>> Hauptfenster::zweigDefinitionen(c2d::diagramm::KnotenId knoten,
+                                                                                    QString* warum) const
+{
+    const auto nein = [&](const QString& grund) {
+        if (warum != nullptr) *warum = grund;
+        return std::nullopt;
+    };
+    const std::optional<std::pair<std::size_t, std::size_t>> stelle = konfigurationsZeile(knoten);
+    if (!stelle || m_datei >= m_projekt.dateien.size()) return nein(QStringLiteral("Not a row of an #if chain"));
+    const c2d::diagramm::Konfigurationstabelle::Zeile& z = m_ketten[stelle->first].zeilen[stelle->second];
+    if (z.geltend) return nein(QStringLiteral("This branch holds already"));
+    const c2d::projekt::Datei& d = m_projekt.dateien[m_datei];
+    const c2d::sprache::Weiche& w = d.ergebnis.weichen[m_ketten[stelle->first].weiche];
+    if (z.zweigIndex >= w.wahl.size() || !w.wahl[z.zweigIndex])
+        return nein(QStringLiteral("Cannot be chosen by names: the file defines a name itself, the condition is not "
+                                   "made of names, or the conditions contradict each other"));
+    std::optional<std::vector<c2d::sprache::Definition>> neu =
+        c2d::sprache::mitForderungen(definitionenImFeld(), *w.wahl[z.zweigIndex], d.ergebnis.schalter, d.definitionen);
+    if (!neu) return nein(QStringLiteral("Cannot be chosen: the file or the language defines a name itself"));
+    return neu;
+}
+
+bool Hauptfenster::aktiviereZweig(c2d::diagramm::KnotenId knoten)
+{
+    QString warum;
+    const std::optional<std::vector<c2d::sprache::Definition>> neu = zweigDefinitionen(knoten, &warum);
+    if (!neu)
+    {
+        statusBar()->showMessage(warum, 4000);
+        return false;
+    }
+    setzeDefinitionen(Konfiguration::alsText(*neu));
+    return true;
+}
+
+bool Hauptfenster::aktiviereZweig(int zeile)
+{
+    for (c2d::diagramm::KnotenId k = 0; k < m_fluss.knoten().size(); ++k)
+        if (konfigurationsZeile(k) && m_fluss.knoten()[k].quellZeile == zeile) return aktiviereZweig(k);
+    return false;
+}
+
 bool Hauptfenster::geheZuTabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von)
 {
     return hatWahrheitstabelle(datei, zeile) ? geheZuWahrheitstabelle(datei, zeile, von) : geheZuZuordnung(datei, zeile, von);
@@ -2025,6 +2130,7 @@ void Hauptfenster::baueNeu()
     m_entscheidung = Entscheidungstabelle();
     m_tabellen.clear();
     m_zuordnungen.clear();
+    m_ketten.clear();
     // Zuordnung und Nachschlagetabellen: je Zeile ein Knoten (Klick, Show in diagram)
     const auto zeilenAlsKnoten = [&] {
         for (const Zuordnung& t : m_zuordnungen)
@@ -2043,6 +2149,20 @@ void Hauptfenster::baueNeu()
             if (auto t = zuordnungVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
                 m_zuordnungen.push_back(std::move(*t));
         zeilenAlsKnoten();
+    }
+    if (m_gezeigt == QLatin1String(kKonfiguration) && m_datei < m_projekt.dateien.size())
+    {
+        // je Zeile ein Knoten (Klick, Show in diagram, Make this branch active)
+        const c2d::sprache::Ergebnis& e = m_projekt.dateien[m_datei].ergebnis;
+        m_ketten = konfigurationVon(e.weichen, e.schalter);
+        for (const Konfigurationstabelle& t : m_ketten)
+            for (const Konfigurationstabelle::Zeile& z : t.zeilen)
+            {
+                Knoten k;
+                k.zeilen = {z.zweig};
+                k.quellZeile = z.quellZeile;
+                m_fluss.neuerKnoten(std::move(k));
+            }
     }
     if (m_gezeigt == QLatin1String(kNachschlagetabellen) && m_datei < m_projekt.dateien.size())
     {
@@ -2142,6 +2262,14 @@ void Hauptfenster::zeichne()
         return QString::fromStdString(format->schreibe(diagramm, optionen));
     };
 
+    if (m_gezeigt == QLatin1String(kKonfiguration))
+    {
+        using c2d::diagramm::Konfigurationstabelle;
+        m_vorschau->zeige(std::span<const Konfigurationstabelle>(m_ketten));
+        m_text->setPlainText(
+            alsText(c2d::ausgabe::Diagrammart::Konfiguration, std::span<const Konfigurationstabelle>(m_ketten)));
+        return;
+    }
     if (istZuordnung() || m_gezeigt == QLatin1String(kNachschlagetabellen))
     {
         m_vorschau->zeige(std::span<const Zuordnung>(m_zuordnungen));
@@ -2223,6 +2351,16 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
         const bool traegtSchon = std::any_of(m_fluss.gruppen().begin(), m_fluss.gruppen().end(),
                                              [&](const Gruppe& g) { return g.aufrufer == knoten; });
         const std::size_t von = dateiVon(knoten);
+        if (konfigurationsZeile(knoten))
+        {
+            // wie die Radioknoepfe im Feld Configuration: die Namen im Feld Defines setzen
+            QString warum;
+            const bool geht = zweigDefinitionen(knoten, &warum).has_value();
+            QAction* aktiv = menue.addAction(QStringLiteral("Make this branch active"), this, [this, knoten] { aktiviereZweig(knoten); });
+            aktiv->setEnabled(geht);
+            aktiv->setToolTip(geht ? QStringLiteral("Sets the names in Defines so that this branch holds") : warum);
+            menue.setToolTipsVisible(true);
+        }
         for (const std::string& aufruf : k.aufrufe)
         {
             const std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, von, aufruf);

@@ -76,6 +76,7 @@ std::string farbRegeln(bool dunkel, std::string_view einzug)
            e + ".rahmen { stroke: " + f(Farbe::Rahmen) + "; }\n" +
            e + ".fremd { fill: " + f(Farbe::Fremd) + "; stroke: " + f(Farbe::FremdStrich) + "; }\n" +
            e + "text { fill: " + f(Farbe::Text) + "; }\n" +
+           e + "text.grau { fill: " + f(Farbe::FremdStrich) + "; }\n" +
            e + ".tot .flaeche, .tot .getoent { fill: " + f(Farbe::Fremd) + "; }\n" +
            e + ".tot .flaeche, .tot .getoent, .tot .linie { stroke: " + f(Farbe::FremdStrich) + "; }\n";
 }
@@ -275,8 +276,9 @@ std::string tabelle(const TabellenAnordnung& a, const std::string& titel, const 
     std::string aus = kopf(titel, a.breite, a.hoehe);
     for (const TabellenAnordnung::Zelle& z : a.zellen)
     {
-        const std::string stil = z.kopf ? "font-weight=\"bold\"" : "";
-        std::string stueck = rechteck(z.ort, z.kopf || z.mcdc ? "getoent" : "flaeche");
+        std::string stil = z.kopf ? "font-weight=\"bold\"" : "";
+        if (z.grau) stil += std::string(stil.empty() ? "" : " ") + "class=\"grau\"";
+        std::string stueck = rechteck(z.ort, z.kopf || z.getoent ? "getoent" : "flaeche");
         if (z.links)
             stueck += textLinks(z.zeilen.empty() ? std::string() : z.zeilen.front(), z.ort.x + 8, z.ort.y + (z.ort.hoehe - o.zeilenHoehe) / 2,
                                 o.zeilenHoehe, stil);
@@ -442,6 +444,12 @@ public:
     {
         const AnordnungOptionen o = anordnung(optionen);
         return tabelle(ordneAn(tabellen, o), tabellen.empty() ? std::string("mapping") : tabellen.front().titel, o);
+    }
+
+    [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle> tabellen, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        return tabelle(ordneAn(tabellen, o), "#if configuration", o);
     }
 
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override

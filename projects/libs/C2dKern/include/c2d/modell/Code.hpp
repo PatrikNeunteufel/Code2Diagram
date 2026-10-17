@@ -11,6 +11,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -301,6 +302,86 @@ struct Einheit
     std::vector<Alias> aliase;
     std::vector<Variable> variablen;
     std::vector<Funktion> funktionen;
+};
+
+// ---------------------------------------------------------------------------
+// Bedingte Uebersetzung: wonach gefragt wird, und die Ketten #if / #elif / #else
+// (der Leser liefert sie in sprache::Ergebnis, nicht beim Lesen aller Zweige)
+// ---------------------------------------------------------------------------
+
+/// "Kein Zweig" (Weiche::geltend, Weiche::elternZweig) und "keine Weiche" (Weiche::eltern).
+inline constexpr std::size_t kKeinZweig = static_cast<std::size_t>(-1);
+
+/// Ein Name, nach dem eine Bedingung der Uebersetzung fragt — was man von aussen schalten kann.
+struct Schalter
+{
+    std::string name;
+    bool definiert = false;  ///< dort, wo zuerst nach ihm gefragt wird
+    std::string wert;        ///< dort sein Wert, wenn er definiert ist (`#define X` ohne Wert: leer)
+    /// Er wird verglichen oder verrechnet (`X >= 2`), nicht nur gefragt, ob er gilt: er braucht einen Wert.
+    bool zahl = false;
+    /// Die Datei definiert ihn selbst, bevor nach ihm gefragt wird (die Zeile): eine
+    /// Definition von aussen aendert dann nichts. 0 = nicht.
+    int inDatei = 0;
+    bool vorgegeben = false;  ///< die Sprache definiert ihn (`__cplusplus`)
+};
+
+/// Was fuer einen Zweig gelten muss: ein Name definiert (mit `wert`; leer = gleich mit
+/// welchem) oder nicht definiert.
+struct Forderung
+{
+    std::string name;
+    bool definiert = true;
+    std::string wert;
+};
+
+/// Die Bedingung eines Zweigs der bedingten Uebersetzung als Baum: Und, Oder, Nicht und Atome.
+/// Ein Atom laesst sich an einem Namen einstellen (`defined(X)`, `X > 50`, `X` = `X != 0`), ist
+/// eine Zahl (`#if 0`), oder ist Text, wo der Ausdruck sich nicht nach Namen zerlegen laesst
+/// (`F(2) > 1`, `A + B > 3`, `A == B`).
+struct Vorbedingung
+{
+    enum class Art
+    {
+        Definiert,  ///< name
+        Vergleich,  ///< name op wert: `X > 50`; der Name steht links
+        Konstante,  ///< wert: `0` oder `1`
+        Text,       ///< text, wie in der Quelle
+        Nicht,      ///< teile[0]
+        Und,        ///< teile
+        Oder,       ///< teile
+    };
+    Art art = Art::Text;
+    std::string name;
+    std::string op;  ///< `==`, `!=`, `<`, `<=`, `>`, `>=`
+    std::string wert;
+    std::string text;
+    std::vector<Vorbedingung> teile;
+};
+
+/// Eine Kette `#if` / `#elif` / `#else`, in der Reihenfolge des Texts. Include-Waechter
+/// (`#ifndef K` mit `#define K` gleich darauf) zaehlen nicht.
+struct Weiche
+{
+    int zeile = 0;  ///< des #if
+    std::size_t eltern = kKeinZweig;       ///< die Weiche, in deren Zweig sie steht
+    std::size_t elternZweig = kKeinZweig;  ///< und welcher es ist
+    /// Je Zweig seine Bedingung, kurz wie bei AnweisungArt::Zweig (`A`,
+    /// `defined(A)`, `else`); ein fehlendes `#else` steht nicht da.
+    std::vector<std::string> zweige;
+    /// Der Zweig, der gilt; zweige.size() = das fehlende `#else`; kKeinZweig = keiner
+    /// (die Weiche steht in einem Zweig, der nicht gilt).
+    std::size_t geltend = kKeinZweig;
+    /// Je Zweig — und zuletzt fuer das fehlende `#else`, wenn es fehlt —, was sich an
+    /// den Definitionen aendern muss, damit er gilt; leer = er gilt schon. nullopt =
+    /// aus Namen nicht abzuleiten (eine Bedingung wie `F(2) > 1`, ein Name, den die
+    /// Datei selbst definiert, Forderungen, die sich widersprechen).
+    std::vector<std::optional<std::vector<Forderung>>> wahl;
+    /// Je Zweig (wie `zweige`, ohne das fehlende `#else`) seine Bedingung als Baum.
+    std::vector<Vorbedingung> baeume;
+    /// Je Zweig (wie `zweige`) die Zeile seines `#if`, `#elif`, `#else`.
+    std::vector<int> zweigZeilen;
+    int endZeile = 0;  ///< des `#endif`; 0 = es fehlt
 };
 
 }  // namespace c2d::modell

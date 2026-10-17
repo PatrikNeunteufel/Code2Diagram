@@ -198,12 +198,14 @@ public:
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
         return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle &&
-               art != Diagrammart::Entscheidungstabelle && art != Diagrammart::Zuordnung;
+               art != Diagrammart::Entscheidungstabelle && art != Diagrammart::Zuordnung &&
+               art != Diagrammart::Konfiguration;
     }
     [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle>, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Entscheidungstabelle&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Zuordnung>, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle>, const Optionen&) const override { return {}; }
 
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {

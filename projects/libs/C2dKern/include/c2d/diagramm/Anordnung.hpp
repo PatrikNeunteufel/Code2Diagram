@@ -19,6 +19,7 @@
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
+#include "c2d/diagramm/Konfigurationstabelle.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
@@ -155,11 +156,12 @@ struct TabellenAnordnung
         Rechteck ort;
         std::vector<std::string> zeilen;  ///< mittig
         bool kopf = false;                ///< die Kopfzeile: getoent, fett
-        bool mcdc = false;                ///< eine Zeile der MC/DC-Menge: getoent
+        bool getoent = false;             ///< eine Zeile der MC/DC-Menge, der Zweig, der gilt
         std::string ganz;                 ///< der volle Text (Tooltip); leer = wie zeilen
         std::size_t tabelle = 0;          ///< welche Tabelle
         std::size_t knoten = kKeine;      ///< was ein Klick trifft; kKeine = nichts
         bool links = false;               ///< Text linksbuendig (die Spalte der Bedingungen und Aktionen)
+        bool grau = false;                ///< grauer Text: die Spalte eines Namens, den die Datei selbst definiert
     };
     struct Text
     {
@@ -188,6 +190,10 @@ inline constexpr std::size_t kAtomZeichen = 30;
 /// Zuordnungen untereinander: je Tabelle ihr Titel, ein Kopf (Schluessel, Spalten), je Zeile ein
 /// Knoten — gezaehlt ueber alle Tabellen.
 [[nodiscard]] TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOptionen& optionen = {});
+/// Konfigurationstabellen untereinander, eine innere Kette eingerueckt: Titel, Kopf (Zweig, je
+/// Name mit seinem Stand, active), je Zeile ein Knoten — gezaehlt ueber alle Tabellen; Hinweise darunter.
+[[nodiscard]] TabellenAnordnung ordneAn(std::span<const Konfigurationstabelle> tabellen,
+                                        const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

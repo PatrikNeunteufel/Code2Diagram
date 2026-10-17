@@ -168,7 +168,8 @@ std::string tabelle(const TabellenAnordnung& a, const std::string& titel, const 
         std::string inhalt;
         for (const std::string& zeile : z.zeilen) inhalt += (inhalt.empty() ? "" : "<br>") + html(zeile);
         std::string stil = "rounded=0;whiteSpace=wrap;html=1;" + std::string(kSchrift);
-        if (z.kopf || z.mcdc) stil += "fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + ";";
+        if (z.kopf || z.getoent) stil += "fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + ";";
+        if (z.grau) stil += "fontColor=" + std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + ";";
         if (z.kopf) stil += "fontStyle=1;";
         if (z.links) stil += "align=left;spacingLeft=6;";
         aus += ecke("z" + std::to_string(i), inhalt, stil, "1", z.ort);
@@ -395,6 +396,12 @@ public:
     {
         const AnordnungOptionen o = anordnung(optionen);
         return tabelle(ordneAn(tabellen, o), tabellen.empty() ? std::string("mapping") : tabellen.front().titel, o);
+    }
+
+    [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle> tabellen, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        return tabelle(ordneAn(tabellen, o), "#if configuration", o);
     }
 
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override

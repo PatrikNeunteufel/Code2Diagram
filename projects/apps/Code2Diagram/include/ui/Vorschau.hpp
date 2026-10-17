@@ -60,6 +60,8 @@ public:
     void zeige(const c2d::diagramm::Entscheidungstabelle& tabelle, const std::vector<QString>& tabellen = {});
     /// Zuordnungen untereinander; jede Zeile ist ein Knoten (gezaehlt ueber alle Tabellen).
     void zeige(std::span<const c2d::diagramm::Zuordnung> tabellen);
+    /// Konfigurationstabellen untereinander; jede Zeile ist ein Knoten (gezaehlt ueber alle Tabellen).
+    void zeige(std::span<const c2d::diagramm::Konfigurationstabelle> tabellen);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.

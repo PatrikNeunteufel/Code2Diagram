@@ -459,11 +459,12 @@ public:
         treffer->setCursor(Qt::PointingHandCursor);
     }
 
-    /// Eine Zelle einer Tabelle: getoent im Kopf und in den MC/DC-Zeilen; ein Klick trifft ihren Knoten.
+    /// Eine Zelle einer Tabelle: getoent im Kopf, in den MC/DC-Zeilen und im Zweig, der gilt; grauer Text
+    /// in der Spalte eines Namens, den die Datei selbst definiert; ein Klick trifft ihren Knoten.
     void tabellenZelle(const TabellenAnordnung::Zelle& z)
     {
         const QRectF r(z.ort.x, z.ort.y, z.ort.breite, z.ort.hoehe);
-        QGraphicsRectItem* feld = m_szene.addRect(r, m_strich, z.kopf || z.mcdc ? m_getoent : m_flaeche);
+        QGraphicsRectItem* feld = m_szene.addRect(r, m_strich, z.kopf || z.getoent ? m_getoent : m_flaeche);
         feld->setZValue(2);
         const qulonglong knoten = z.knoten == kKeine ? 0ULL : static_cast<qulonglong>(z.knoten) + 1;
         feld->setData(kKnoten, knoten);
@@ -483,6 +484,7 @@ public:
         }
         else
             t = text(zeilen.join(QLatin1Char('\n')), r, z.kopf);
+        if (z.grau) t->setBrush(m_fremdStrich);
         t->setData(kKnoten, knoten);
         if (!z.ganz.empty())
         {
@@ -733,6 +735,13 @@ void Vorschau::zeige(const Entscheidungstabelle& tabelle, const std::vector<QStr
 }
 
 void Vorschau::zeige(std::span<const Zuordnung> tabellen)
+{
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    zeigeTabelle(ordneAn(tabellen, optionen), {});
+}
+
+void Vorschau::zeige(std::span<const Konfigurationstabelle> tabellen)
 {
     AnordnungOptionen optionen;
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);

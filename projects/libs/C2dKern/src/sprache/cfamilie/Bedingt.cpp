@@ -337,6 +337,229 @@ std::string bedingungstext(std::string_view wort, std::span<const Token> rest)
     return aus;
 }
 
+/// Zerlegt die Bedingung eines Zweigs in einen Baum (modell::Vorbedingung): `||`, `&&`, `!`,
+/// Klammern; Atome `defined(X)`, `X`, `X op Zahl`, `Zahl op X`, eine Zahl. Was sich nicht nach
+/// Namen zerlegen laesst, bleibt ein Atom Text — ein `?:` irgendwo macht die ganze Bedingung Text.
+class Zerleger
+{
+public:
+    explicit Zerleger(std::span<const Token> rest)
+    {
+        for (const Token& t : rest)
+            if (t.art != TokenArt::Ende && t.art != TokenArt::Kommentar) m_t.push_back(&t);
+    }
+
+    modell::Vorbedingung ganz()
+    {
+        int tiefe = 0;
+        for (const Token* t : m_t)
+        {
+            if (t->istOp("(")) ++tiefe;
+            if (t->istOp(")")) --tiefe;
+            if (tiefe == 0 && t->istOp("?")) return text(0, m_t.size());
+        }
+        if (m_t.empty()) return text(0, 0);
+        modell::Vorbedingung v = oder();
+        return m_i == m_t.size() ? v : text(0, m_t.size());  // ein Rest: nicht verstanden
+    }
+
+private:
+    using V = modell::Vorbedingung;
+
+    [[nodiscard]] bool istOp(std::string_view op) const { return m_i < m_t.size() && m_t[m_i]->istOp(op); }
+
+    V verbunden(V::Art art, std::string_view op, V (Zerleger::*teil)())
+    {
+        V erst = (this->*teil)();
+        if (!istOp(op)) return erst;
+        V v;
+        v.art = art;
+        v.teile.push_back(std::move(erst));
+        while (istOp(op))
+        {
+            ++m_i;
+            v.teile.push_back((this->*teil)());
+        }
+        return v;
+    }
+    V oder() { return verbunden(V::Art::Oder, "||", &Zerleger::und); }
+    V und() { return verbunden(V::Art::Und, "&&", &Zerleger::nicht); }
+
+    static V nicht(V innen)
+    {
+        V v;
+        v.art = V::Art::Nicht;
+        v.teile.push_back(std::move(innen));
+        return v;
+    }
+
+    V nicht()
+    {
+        if (!istOp("!")) return primaer();
+        // `!X == 2` ist `(!X) == 2`: ein Nicht nur vor einer Klammer, `defined`, `!` oder einem Atom allein
+        const std::size_t a = m_i++;
+        if (istOp("(") || istOp("!") || (m_i < m_t.size() && m_t[m_i]->text == "defined")) return nicht(nicht());
+        if (atomEnde(m_i) == m_i + 1) return nicht(primaer());
+        const std::size_t e = atomEnde(a);
+        m_i = e;
+        return text(a, e);
+    }
+
+    V primaer()
+    {
+        const std::size_t a = m_i;
+        const std::size_t e = atomEnde(a);
+        if (e == a)
+        {
+            m_i = m_t.size();  // nichts, wo ein Atom stehen muesste: ganz() macht alles Text
+            return text(a, a);
+        }
+        if (m_t[a]->istOp("(") && passendeKlammer(a) == e - 1)
+        {
+            ++m_i;
+            V innen = oder();
+            if (m_i == e - 1)
+            {
+                m_i = e;
+                return innen;
+            }
+            m_i = e;
+            return text(a, e);
+        }
+        m_i = e;
+        return atom(a, e);
+    }
+
+    /// Wo das Atom endet, das bei `a` beginnt: vor `&&`, `||` oder einer `)`, die es nicht oeffnete.
+    [[nodiscard]] std::size_t atomEnde(std::size_t a) const
+    {
+        int tiefe = 0;
+        for (std::size_t i = a; i < m_t.size(); ++i)
+        {
+            if (m_t[i]->istOp("(")) ++tiefe;
+            if (m_t[i]->istOp(")") && --tiefe < 0) return i;
+            if (tiefe == 0 && (m_t[i]->istOp("&&") || m_t[i]->istOp("||"))) return i;
+        }
+        return m_t.size();
+    }
+
+    [[nodiscard]] std::size_t passendeKlammer(std::size_t a) const
+    {
+        int tiefe = 0;
+        for (std::size_t i = a; i < m_t.size(); ++i)
+        {
+            if (m_t[i]->istOp("(")) ++tiefe;
+            if (m_t[i]->istOp(")") && --tiefe == 0) return i;
+        }
+        return m_t.size();
+    }
+
+    static bool istName(const Token* t) { return t->art == TokenArt::Bezeichner; }
+    static bool istZahl(const Token* t) { return t->art == TokenArt::Zahl; }
+    static bool vergleicht(const Token* t)
+    {
+        return t->istOp("==") || t->istOp("!=") || t->istOp("<") || t->istOp("<=") || t->istOp(">") || t->istOp(">=");
+    }
+
+    V atom(std::size_t a, std::size_t e) const
+    {
+        const std::size_t n = e - a;
+        V v;
+        if (m_t[a]->text == "defined")
+        {
+            if (n == 4 && m_t[a + 1]->istOp("(") && istName(m_t[a + 2]) && m_t[a + 3]->istOp(")"))
+                v.name = m_t[a + 2]->text;
+            else if (n == 2 && istName(m_t[a + 1]))
+                v.name = m_t[a + 1]->text;
+            else
+                return text(a, e);
+            v.art = V::Art::Definiert;
+            return v;
+        }
+        if (n == 1 && (istZahl(m_t[a]) || m_t[a]->istWort("true") || m_t[a]->istWort("false")))
+        {
+            v.art = V::Art::Konstante;
+            const std::string_view t = m_t[a]->text;
+            bool wahr = t == "true";
+            if (istZahl(m_t[a]))
+            {
+                std::string zahl(t);
+                while (!zahl.empty() && std::string_view("uUlL").find(zahl.back()) != std::string_view::npos) zahl.pop_back();
+                wahr = std::strtoll(zahl.c_str(), nullptr, 0) != 0;
+            }
+            v.wert = wahr ? "1" : "0";
+            return v;
+        }
+        if (n == 1 && istName(m_t[a]))
+        {
+            v.art = V::Art::Vergleich;
+            v.name = m_t[a]->text;
+            v.op = "!=";
+            v.wert = "0";
+            return v;
+        }
+        if (n == 3 && vergleicht(m_t[a + 1]) && istName(m_t[a]) && istZahl(m_t[a + 2]))
+        {
+            v.art = V::Art::Vergleich;
+            v.name = m_t[a]->text;
+            v.op = m_t[a + 1]->text;
+            v.wert = m_t[a + 2]->text;
+            return v;
+        }
+        if (n == 3 && vergleicht(m_t[a + 1]) && istZahl(m_t[a]) && istName(m_t[a + 2]))
+        {
+            // `5 < X` ist `X > 5`: der Name steht links
+            static const std::map<std::string_view, std::string_view> kGespiegelt{
+                {"==", "=="}, {"!=", "!="}, {"<", ">"}, {"<=", ">="}, {">", "<"}, {">=", "<="}};
+            v.art = V::Art::Vergleich;
+            v.name = m_t[a + 2]->text;
+            v.op = kGespiegelt.at(m_t[a + 1]->text);
+            v.wert = m_t[a]->text;
+            return v;
+        }
+        return text(a, e);
+    }
+
+    [[nodiscard]] V text(std::size_t a, std::size_t e) const
+    {
+        V v;
+        v.art = V::Art::Text;
+        for (std::size_t i = a; i < e && i < m_t.size(); ++i)
+        {
+            if (!v.text.empty() && m_t[i]->abstandDavor) v.text += ' ';
+            v.text += m_t[i]->text;
+        }
+        return v;
+    }
+
+    std::vector<const Token*> m_t;
+    std::size_t m_i = 0;
+};
+
+/// Die Bedingung eines Zweigs als Baum; `#ifdef`, `#ifndef` und `#else` ohne Zerlegen.
+modell::Vorbedingung baumVon(std::string_view wort, std::span<const Token> rest)
+{
+    using V = modell::Vorbedingung;
+    V v;
+    if (wort == "else")
+    {
+        v.art = V::Art::Konstante;
+        v.wert = "1";
+        return v;
+    }
+    if (wort == "ifdef" || wort == "elifdef" || wort == "ifndef" || wort == "elifndef")
+    {
+        v.art = V::Art::Definiert;
+        v.name = rest.size() > 1 ? std::string(rest[0].text) : std::string();
+        if (wort == "ifdef" || wort == "elifdef") return v;
+        V nicht;
+        nicht.art = V::Art::Nicht;
+        nicht.teile.push_back(std::move(v));
+        return nicht;
+    }
+    return Zerleger(rest).ganz();
+}
+
 // ---------------------------------------------------------------------------
 // Weichen: welcher Zweig gilt — und was sich aendern muesste, damit ein anderer gilt
 // ---------------------------------------------------------------------------
@@ -765,6 +988,8 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                         break;
                     }
                 neu.zweige.push_back(bedingungstext(wort, rest));
+                neu.baeume.push_back(baumVon(wort, rest));
+                neu.zweigZeilen.push_back(t.ort.zeile);
                 if (wahr) neu.geltend = 0;
                 weiche = weichen->size();
                 weichen->push_back(std::move(neu));
@@ -794,6 +1019,8 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                 {
                     Weiche& w = (*weichen)[e.weiche];
                     w.zweige.push_back(bedingungstext(wort, rest));
+                    w.baeume.push_back(baumVon(wort, rest));
+                    w.zweigZeilen.push_back(t.ort.zeile);
                     if (e.gilt) w.geltend = w.zweige.size() - 1;
                     staende[e.weiche].bedingungen.push_back({wort, std::vector<Token>(rest.begin(), rest.end())});
                 }
@@ -828,6 +1055,7 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                     if (!e.sonst && e.elternGelten && !e.genommen) g.geltend = g.bedingungen.size();  // das fehlende #else
                     bleibt = true;
                 }
+                if (e.weiche != kKeinZweig) (*weichen)[e.weiche].endZeile = t.ort.zeile;
                 if (e.weiche != kKeinZweig && !e.sonst && e.elternGelten && !e.genommen)
                     (*weichen)[e.weiche].geltend = (*weichen)[e.weiche].zweige.size();
                 stapel.pop_back();
@@ -843,9 +1071,15 @@ std::string werteBedingteAus(std::string_view text, const lexer::Sprachtabelle& 
                 {
                     // `#define F(x)`: die Klammer folgt dem Namen ohne Abstand
                     const bool mitParametern = rest.size() > 2 && rest[1].istOp("(") && !rest[1].abstandDavor;
-                    const std::size_t hinterName = static_cast<std::size_t>(rest[0].text.data() - t.text.data()) + erster.size();
-                    makros[std::string(erster)] = {std::string(gestutzt(t.text.substr(hinterName))), mitParametern,
-                                                   t.ort.zeile, false};
+                    // der Wert ohne Kommentare und Fortsetzungen (`#define N 20 /* Zahl */` hat den Wert `20`)
+                    std::string wert;
+                    for (std::size_t i = 1; i < rest.size() && rest[i].art != TokenArt::Ende; ++i)
+                    {
+                        if (rest[i].art == TokenArt::Kommentar || rest[i].text == "\\") continue;
+                        if (!wert.empty() && rest[i].abstandDavor) wert += ' ';
+                        wert += rest[i].text;
+                    }
+                    makros[std::string(erster)] = {std::move(wert), mitParametern, t.ort.zeile, false};
                 }
             }
             else if (wort == "undef" && galt)

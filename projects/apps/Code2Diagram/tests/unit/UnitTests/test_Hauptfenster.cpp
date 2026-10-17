@@ -119,13 +119,13 @@ TEST_SUITE("Hauptfenster")
                              "void immer(void) {\n#if STUFE > 1\n  laut();\n#endif\n  leise();\n}\n";
         Hauptfenster fenster;
         fenster.zeige(quelle, "v.c");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig"});
         CHECK(fenster.unbekannteNamen() == QStringList{"BOARD_A", "STUFE"});
         CHECK(fenster.waehleDiagramm("immer"));
         CHECK_FALSE(fenster.diagrammText().contains("laut"));
 
         fenster.setzeDefinitionen("BOARD_A, STUFE=2");
-        CHECK(fenster.diagramme() == QStringList{"a", "immer", "calls"});
+        CHECK(fenster.diagramme() == QStringList{"a", "immer", "calls", "ifconfig"});
         CHECK(fenster.unbekannteNamen().isEmpty());
         CHECK(fenster.diagramm() == "immer");  // das gewaehlte Diagramm bleibt
         CHECK(fenster.diagrammText().contains("laut"));
@@ -134,7 +134,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramme() == QStringList{"a", "b", "immer", "calls"});
         fenster.setzeAlleZweige(false);
         fenster.setzeDefinitionen("");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig"});
     }
 
     TEST_CASE("Das Feld Configuration: Haken und Knoepfe schreiben ins Feld Defines, gelesen wird neu")
@@ -271,12 +271,12 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.dateien() == QStringList{"antrieb/motor.c", "antrieb/regler.c", "inc/config.h", "main.c", "sim/regler_sim.c"});
         CHECK(fenster.uebergangeneOrdner() == QStringList{"alt"});
         CHECK(fenster.datei() == "antrieb/motor.c");  // die erste mit einer Funktion
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei", "calls"});  // MOTOREN aus dem Abschnitt
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei", "calls", "ifconfig"});  // MOTOREN aus dem Abschnitt
         CHECK(fenster.windowTitle().contains("antrieb/motor.c"));
 
         REQUIRE(fenster.waehleDatei("main.c"));
         CHECK_FALSE(fenster.waehleDatei("alt/x.c"));
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose", "calls"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose", "calls", "ifconfig"});
         CHECK(fenster.waehleDiagramm("main"));
         CHECK(fenster.diagrammText().contains("diagnose()"));  // MIT_DIAGNOSE aus inc/config.h
 
@@ -324,7 +324,7 @@ TEST_SUITE("Hauptfenster")
         REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
         fenster.setzeDefinitionen("MOTOREN=1");
         CHECK(fenster.datei() == "antrieb/motor.c");
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "calls"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "calls", "ifconfig"});
         fenster.setzeDefinitionen("");
 
         // die Projektdatei: was nicht passt, wird nicht geschrieben
@@ -732,6 +732,36 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText() == "static const int t[2]\nindex;value\n0;7\n1;9\n");
         REQUIRE(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText() == "Mapping table is not available in mermaid");
+    }
+
+    TEST_CASE("Konfiguration: #if configuration der Datei, aus dem Quelltext, Klick, Make this branch active")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("#ifdef A\n"                     // 1
+                                     "int a;\n"                       // 2
+                                     "#elif B > 1\n"                  // 3
+                                     "int b;\n"                       // 4
+                                     "#endif\n"                       // 5
+                                     "int f(void) { return 0; }\n"),  // 6
+                      QStringLiteral("t.c"));
+        CHECK(fenster.diagramme().contains("ifconfig"));
+        CHECK_FALSE(fenster.zeigeKonfiguration(2));
+        REQUIRE(fenster.zeigeKonfiguration(3));
+        CHECK(fenster.diagramm() == "ifconfig");
+        CHECK(fenster.vorschauFormen() == 3);  // je Zeile ein Knoten
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText() ==
+              "#if defined(A) (line 1)\nbranch;A;B;active\n#if defined(A);def;-;\n#elif B > 1;!def;> 1;\n(no #else);!def;<= 1;yes\n");
+        CHECK(fenster.klicke("#elif B > 1"));
+        CHECK(fenster.gezeigteStelle() == "t.c:3");
+
+        CHECK_FALSE(fenster.aktiviereZweig(5));  // (no #else) gilt schon
+        REQUIRE(fenster.aktiviereZweig(3));
+        CHECK(fenster.definitionen() == "B=2");
+        CHECK(fenster.diagramm() == "ifconfig");  // neu gelesen, die Tabelle bleibt
+        CHECK(fenster.diagrammText().contains("#elif B > 1;!def;> 1;yes"));
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText() == "#if configuration is not available in mermaid");
     }
 
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")

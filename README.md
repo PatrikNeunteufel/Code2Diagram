@@ -43,7 +43,7 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
 | `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten) | quelle |
-| `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros | — |
+| `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
 | `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
@@ -272,6 +272,22 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   auf eine Zeile zeigt sie im Quelltext. SVG, draw.io und csv schreiben sie, Mermaid und DOT nicht.
   `c2d --funktion f --zuordnung [<zeile>]`, `c2d <datei> --nachschlagetabellen` (im Projekt mit
   `--datei`). Beispiel: `beispiele/zuordnung.c`.
+- **`#if`-Konfiguration:** je Kette `#if`/`#elif`/`#else` einer Datei eine Tabelle, welcher Zweig
+  bei welchen Definitionen gilt — in Diagram *#if configuration (n)*. Je Zweig eine Zeile, je Name,
+  nach dem die Kette fragt, eine Spalte (im Kopf sein Stand: `= 100`, `def`, `undef`); in der Zelle,
+  was der Zweig fordert: `def`, `!def`, ein Vergleich (`> 50`, `<= 1`), `–` = gleich. Die Forderung
+  ist **absolut**: der Zweig gilt, wenn seine Bedingung wahr ist, alle davor falsch und der Zweig, in
+  dem die Kette steht, gilt (eine innere Kette ist eingerückt, ihr Titel nennt den äußeren Zweig).
+  Ein `||` gibt je Alternative eine Zeile `or` (bis 8); nicht definiert zählt wie im Präprozessor als
+  0, Widersprüche fallen weg, ein Zweig, den keine Definition gelten lässt, heißt `never`. Was sich
+  nicht nach Namen zerlegen lässt (`A == B`, `F(2) > 1`, Rechnungen), steht als Bedingung in einer
+  Zeile, mit Hinweis darunter. Ein Name, den die Datei selbst definiert, hat grauen Text und im
+  Kopf `(line n)`. Die Zeile, die gilt, ist getönt und trägt ✓. Ein Klick zeigt `#if`/`#elif`/`#else`
+  (beim fehlenden `#else` das `#endif`) im Quelltext; im Kontextmenü einer Zeile **Make this branch
+  active** — setzt die Namen im Feld Defines wie die Radioknöpfe im Feld Configuration (gesperrt mit
+  Tooltip, wo es nicht geht); im Quelltext auf einer Direktive *#if configuration of line n*. SVG,
+  draw.io und csv schreiben sie, Mermaid und DOT nicht. `c2d <datei> --konfiguration` (im Projekt mit
+  `--datei`). Beispiel: `beispiele/konfiguration.c`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -330,14 +346,15 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
   `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`,
   `darstellung_waehlen name=<flowchart|nassi-shneiderman|decision-table>`,
-  `wahrheitstabelle_zeigen zeile=<n>`, `zuordnung_zeigen zeile=<n>`,
+  `wahrheitstabelle_zeigen zeile=<n>`, `zuordnung_zeigen zeile=<n>`, `konfiguration_zeigen zeile=<n>`,
+  `zweig_aktivieren zeile=<n>`,
   `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
 
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio] [--richtung TD|LR] [--roh]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -359,9 +376,10 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat; Zuordnungen als
-  `mapping f@zeile`, konstante Tabellen als `lookup`
+  `mapping f@zeile`, konstante Tabellen als `lookup`, die Ketten `#if` als `ifconfig n chains, …`
 - `--zuordnung [<zeile>]` (mit `--funktion`) schreibt die Zuordnungstabelle des `switch` in dieser
-  Zeile, ohne Zeile alle der Funktion; `--nachschlagetabellen` die konstanten Tabellen der Datei
+  Zeile, ohne Zeile alle der Funktion; `--nachschlagetabellen` die konstanten Tabellen der Datei;
+  `--konfiguration` je Kette `#if` der Datei die Konfigurationstabelle
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
   als 1; `-U NAME` (auch `-UNAME`, `-D !NAME`): gilt als nicht definiert, auch wo Projektdatei
   oder ein Kopf ihn definieren; für einen Namen gilt die letzte Angabe; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
@@ -472,8 +490,13 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
 - **Wahrheitstabellen:** Atome gelten als unabhängig — `x > 5` und `x > 10` können nicht beide
   falsch-wahr sein, die Tabelle zeigt die Zeile trotzdem. Makros werden nicht aufgelöst (`IS_OK(x)`
   ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche
-  in ihrer Grenze bleibt (sonst ein Hinweis). Die `#if`-Konfigurationstabelle fehlt noch (eigene
-  Fragen).
+  in ihrer Grenze bleibt (sonst ein Hinweis).
+- **`#if`-Konfiguration:** nur je Datei, nicht „wo schaltet NAME im ganzen Projekt“ (eigene Frage);
+  Ketten in eingebundenen Köpfen stehen in der Tabelle des Kopfs. Gerechnet wird nur mit den Zahlen
+  der Bedingungen: ein Vergleich zweier Namen, ein Makro mit Parametern (`QT_VERSION_CHECK(6, 0, 0)`)
+  oder `__has_attribute` bleibt Text — und weil ein späterer Zweig das Gegenteil eines früheren
+  fordert, auch jeder Zweig danach. Über 8 Alternativen eine Zeile Text (lange Ketten wie die
+  Compiler-Erkennung von CMake). Mit „All #if branches“ gibt es keine Tabelle.
 - **Zuordnungstabellen:** nur `switch` (keine `if`-Kette); ein Fall, der noch etwas anderes tut
   (rufen, durchfallen, andere Namen setzen), macht den `switch` zu keiner Tabelle. Konstante
   Tabellen nur auf Dateiebene, nicht `const`-Arrays in einer Funktion; bei mehrdimensionalen
