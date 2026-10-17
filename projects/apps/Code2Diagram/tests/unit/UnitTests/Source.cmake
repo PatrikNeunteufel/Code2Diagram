@@ -9,6 +9,7 @@
 
 set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_main.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Einstellungen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Hauptfenster.cpp"
 )
 

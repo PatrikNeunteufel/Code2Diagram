@@ -7,8 +7,10 @@
 
 #include "AppInfo.hpp"
 #include "sichttest/Anbindung.hpp"
+#include "ui/Einstellungen.hpp"
 #include "ui/Hauptfenster.hpp"
 #include "ui/Konfiguration.hpp"
+#include "ui/Thema.hpp"
 
 #include <QApplication>
 #include <QDebug>
@@ -294,6 +296,23 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.gezeigteStelle());
                      });
 
+    anbindung.aktion(QStringLiteral("einstellungen_zeigen"), QStringLiteral("Opens File > Settings"), QString(),
+                     [&fenster](const QJsonObject&) -> st::Ergebnis {
+                         fenster.zeigeEinstellungen();
+                         return st::ok();
+                     });
+
+    anbindung.aktion(QStringLiteral("thema_setzen"),
+                     QStringLiteral("Like File > Settings, Theme, Apply: saves the theme and sets it"),
+                     QStringLiteral("name=<system | light | dark>"),
+                     [](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!c2d::ui::einstellungen::setze(QString::fromLatin1(c2d::ui::einstellungen::kThema), name))
+                             return st::ungueltig(QStringLiteral("No theme '%1' - there are: system, light, dark").arg(name));
+                         c2d::ui::einstellungen::wendeAn();
+                         return st::ok(c2d::ui::thema::idVon(c2d::ui::thema::gilt()));
+                     });
+
     anbindung.aktion(QStringLiteral("zuletzt_oeffnen"),
                      QStringLiteral("File > Open recent: opens entry number wahl (0 = the newest)"),
                      QStringLiteral("wahl=<0, 1, ...>"),
@@ -352,8 +371,18 @@ bool Application::init(int argc, char* argv[])
     QCoreApplication::setOrganizationName(ausStd(c2d::appName()));  // fuer QSettings (Open recent)
     QCoreApplication::setApplicationVersion(ausStd(c2d::appVersion()));
 
-    m_impl->fenster = std::make_unique<c2d::ui::Hauptfenster>();
     const QStringList argumente = QCoreApplication::arguments();
+    // das Thema vor dem Fenster: aus File > Settings, oder fuer diesen Lauf --thema (nicht gespeichert)
+    c2d::ui::einstellungen::wendeAn();
+    if (const qsizetype t = argumente.indexOf(QStringLiteral("--thema")); t >= 0 && t + 1 < argumente.size())
+    {
+        if (const auto thema = c2d::ui::thema::ausId(argumente[t + 1]))
+            c2d::ui::thema::wende(*thema);
+        else
+            qWarning().noquote() << "No theme" << argumente[t + 1] << "- there are: system, light, dark";
+    }
+
+    m_impl->fenster = std::make_unique<c2d::ui::Hauptfenster>();
 
     if (c2d::sichttest::verlangt(argumente))
     {
@@ -395,6 +424,7 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--rahmen")) rahmen = true;
         else if (a == QLatin1String("--tiefe")) tiefe = wert();
         else if (a == QLatin1String("--hoechstens")) hoechstens = wert();
+        else if (a == QLatin1String("--thema")) wert();  // schon oben gesetzt
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
         else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
         else if (a == QLatin1String("--ohne-fremde")) ohneFremde = true;

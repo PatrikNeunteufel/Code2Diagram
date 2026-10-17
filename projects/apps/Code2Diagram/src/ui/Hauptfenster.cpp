@@ -8,6 +8,7 @@
 #include "AppInfo.hpp"
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "ui/Einstellungen.hpp"
 #include "ui/Konfiguration.hpp"
 #include "ui/Vorschau.hpp"
 
@@ -21,6 +22,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
+#include <QEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -31,6 +33,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSettings>
@@ -39,6 +42,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QTextBlock>
 #include <QStyle>
 #include <QToolBar>
@@ -351,6 +355,10 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     datei->addAction(QStringLiteral("&Save diagram as..."), QKeySequence::Save, this,
                      [this] { speichereUnter(); });
     datei->addSeparator();
+    // QKeySequence::Preferences ist unter Windows leer
+    datei->addAction(QStringLiteral("Se&ttings..."), QKeySequence(Qt::CTRL | Qt::Key_Comma), this,
+                     [this] { zeigeEinstellungen(); });
+    datei->addSeparator();
     datei->addAction(QStringLiteral("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
     QMenu* projekt = menuBar()->addMenu(QStringLiteral("&Project"));
@@ -362,7 +370,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_meldungenAktion->setEnabled(false);
 
     // Back und Called from: im Menue und als Knoepfe in der Leiste
-    m_zurueckAktion = new QAction(style()->standardIcon(QStyle::SP_ArrowBack), QStringLiteral("&Back"), this);
+    m_zurueckAktion = new QAction(QStringLiteral("&Back"), this);
     m_zurueckAktion->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
     m_zurueckAktion->setEnabled(false);
     connect(m_zurueckAktion, &QAction::triggered, this, [this] {
@@ -375,7 +383,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         aufruferMenue->clear();
         fuelleAufruferMenue(aufruferMenue);
     });
-    m_aufruferAktion = new QAction(style()->standardIcon(QStyle::SP_ArrowUp), QStringLiteral("Called &from"), this);
+    m_aufruferAktion = new QAction(QStringLiteral("Called &from"), this);
     m_aufruferAktion->setMenu(aufruferMenue);
     m_aufruferAktion->setEnabled(false);
     m_aufruferAktion->setToolTip(QStringLiteral("The functions in the project that call the one shown"));
@@ -383,6 +391,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     navigation->setObjectName(QStringLiteral("navigation"));
     navigation->setMovable(false);
     navigation->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    faerbeSymbole();
     navigation->addAction(m_zurueckAktion);
     navigation->addAction(m_aufruferAktion);
     if (auto* knopf = qobject_cast<QToolButton*>(navigation->widgetForAction(m_aufruferAktion)))
@@ -1990,11 +1999,71 @@ bool Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
     // die ganze Zeile hinterlegen, auch wo sie leer ist
     QTextEdit::ExtraSelection marke;
     marke.cursor = zeiger;
-    marke.format.setBackground(palette().color(QPalette::Highlight).lighter(160));
+    marke.format.setBackground(zeilenFarbe());
     marke.format.setProperty(QTextFormat::FullWidthSelection, true);
     m_quelle->setExtraSelections({marke});
     m_quelleZeile = zeile;
     return true;
+}
+
+QColor Hauptfenster::zeilenFarbe() const
+{
+    QColor farbe = palette().color(QPalette::Highlight);
+    farbe.setAlpha(90);
+    return farbe;
+}
+
+EinstellungenDialog* Hauptfenster::zeigeEinstellungen()
+{
+    if (m_einstellungen.isNull())
+    {
+        m_einstellungen = new EinstellungenDialog(this);
+        m_einstellungen->setAttribute(Qt::WA_DeleteOnClose);
+        m_einstellungen->open();
+    }
+    m_einstellungen->raise();
+    m_einstellungen->activateWindow();
+    return m_einstellungen.data();
+}
+
+void Hauptfenster::changeEvent(QEvent* ereignis)
+{
+    QMainWindow::changeEvent(ereignis);
+    // ein Wechsel des Themas schickt mehrere Ereignisse: einmal neu zeichnen, wenn sie durch sind
+    if (ereignis->type() != QEvent::PaletteChange || m_farbenAusstehend || m_vorschau == nullptr) return;
+    m_farbenAusstehend = true;
+    QTimer::singleShot(0, this, [this] { farbenNeu(); });
+}
+
+void Hauptfenster::faerbeSymbole()
+{
+    const auto gefaerbt = [this](QStyle::StandardPixmap welches) {
+        QPixmap bild = style()->standardIcon(welches).pixmap(32, 32);
+        QPainter maler(&bild);
+        maler.setCompositionMode(QPainter::CompositionMode_SourceIn);  // die Form bleibt, die Farbe wechselt
+        maler.fillRect(bild.rect(), palette().color(QPalette::WindowText));
+        maler.end();
+        return QIcon(bild);
+    };
+    m_zurueckAktion->setIcon(gefaerbt(QStyle::SP_ArrowBack));
+    m_aufruferAktion->setIcon(gefaerbt(QStyle::SP_ArrowUp));
+}
+
+void Hauptfenster::farbenNeu()
+{
+    m_farbenAusstehend = false;
+    faerbeSymbole();
+    m_vorschau->setBackgroundBrush(m_vorschau->palette().color(QPalette::Base));
+    // dasselbe Bild in anderen Farben: Marke und Ausschnitt bleiben
+    const c2d::diagramm::KnotenId marke = m_vorschau->markiert();
+    const QPointF mitte = m_vorschau->mapToScene(m_vorschau->viewport()->rect().center());
+    zeichne();
+    if (marke != c2d::diagramm::kKeine) m_vorschau->markiere(marke);
+    m_vorschau->centerOn(mitte);
+    // die Zeile im Quelltext bleibt, wo sie ist; nur ihre Farbe folgt
+    QList<QTextEdit::ExtraSelection> marken = m_quelle->extraSelections();
+    for (QTextEdit::ExtraSelection& m : marken) m.format.setBackground(zeilenFarbe());
+    m_quelle->setExtraSelections(marken);
 }
 
 bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)

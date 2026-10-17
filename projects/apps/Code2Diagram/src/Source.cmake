@@ -19,8 +19,10 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/AppInfo.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Application.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sichttest/Anbindung.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/ui/Einstellungen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ui/Hauptfenster.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ui/Konfiguration.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/ui/Thema.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ui/Vorschau.cpp"
 )
 

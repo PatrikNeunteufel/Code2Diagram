@@ -135,7 +135,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -147,6 +147,13 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   geöffneten Dateien und Ordner (höchstens 10, das Neueste oben, ein Ordner mit `/` am Ende);
   was es nicht mehr gibt, fällt beim Wählen heraus, *Clear list* leert sie. Die Liste bleibt über
   Neustarts (`QSettings`, unter Windows `HKCU\Software\Code2Diagram`).
+- **File > Settings…** (Strg + ,): links die Seiten, rechts ihre Felder; OK, Cancel, Apply. Heute
+  eine Seite, *Appearance*, mit **Theme**: *System* (folgt dem hellen oder dunklen Modus des
+  Betriebssystems, auch während des Laufs), *Light*, *Dark*. Gesetzt wird es über Qt
+  (`QStyleHints::setColorScheme`); die Vorschau zeichnet bei jedem Wechsel in den Farben der
+  Palette neu. Unter Windows 10 wechselt das Fenster dafür auf den Stil Fusion. Gespeichert unter
+  `aussehen/thema` (`system`, `light`, `dark`). `--thema` setzt es nur für diesen Lauf (für
+  Bilder), ohne es zu speichern. Exportierte SVG folgen dem Browser, nicht dem Thema.
 - **Die Projektdatei** `code2diagram.json` im Ordner trägt die Projektparameter (Beispiel und
   Regeln: `projects/libs/C2dKern/include/c2d/projekt/Projektdatei.hpp`, ein ganzes Projekt:
   `beispiele/projekt/`):
@@ -262,7 +269,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `springen name=<Aufruf> [wahl=<0, 1, …>]`, `zum_aufrufer [wahl=<0, 1, …>]`, `beispiel_zeigen`, `diagramm_waehlen name=<Funktion|types>`,
   `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
-  `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`.
+  `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
+  `klicken name=<…>`, `einstellungen_zeigen`, `thema_setzen name=<system|light|dark>`.
 
 ### Kommandozeile
 

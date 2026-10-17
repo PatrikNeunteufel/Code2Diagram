@@ -44,6 +44,7 @@
 #include <QImage>
 #include <QList>
 #include <QMainWindow>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -64,6 +65,7 @@ class QTreeWidgetItem;
 namespace c2d::ui
 {
 
+class EinstellungenDialog;
 class Konfiguration;
 class Vorschau;
 
@@ -250,7 +252,22 @@ public:
     /// Die Filter des Dialogs Open, aus den Endungen der Sprachen des Kerns.
     [[nodiscard]] static QString dateiFilter();
 
+    /// File > Settings: den Dialog oeffnen, ohne zu warten (fensterweit modal); ist er offen,
+    /// nach vorn holen. Gibt ihn zurueck (fuer Tests und den Tester).
+    EinstellungenDialog* zeigeEinstellungen();
+
+protected:
+    /// Wechselt die Palette (Thema gesetzt, oder das System schaltet um): neu zeichnen.
+    void changeEvent(QEvent* ereignis) override;
+
 private:
+    /// Was mit Farben der Palette gezeichnet ist, neu: Vorschau, Marke, Zeile im Quelltext.
+    void farbenNeu();
+    /// Die Hinterlegung der gezeigten Zeile: Highlight, halb durchsichtig — hell wie dunkel lesbar.
+    [[nodiscard]] QColor zeilenFarbe() const;
+    /// Die Pfeile von Back und Called from in der Textfarbe: die des Stils sind schwarz, auch im Dunkeln.
+    void faerbeSymbole();
+
     /// Eine Stelle im Verlauf: welche Datei, welches Diagramm.
     struct Stelle
     {
@@ -376,6 +393,8 @@ private:
     std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
     std::size_t m_quelleZeigt = c2d::projekt::kKeine;  ///< die Datei im Quelltext
     int m_quelleZeile = 0;  ///< die hervorgehobene Zeile darin; 0 = keine
+    QPointer<EinstellungenDialog> m_einstellungen;  ///< der offene Dialog Settings
+    bool m_farbenAusstehend = false;  ///< farbenNeu() ist schon angestossen
     c2d::diagramm::Flussdiagramm m_fluss;  ///< das gezeigte Flussdiagramm, samt Einbettungen
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl

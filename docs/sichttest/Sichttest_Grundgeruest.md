@@ -469,3 +469,26 @@ zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiel
 - [ ] **N5 Methoden:** `beispiele/motor.cpp`, Data types, `antrieb::Motor`: ein Klick auf eine
       Methode (etwa `bool starte()`) hinterlegt ihre Deklaration in der Klasse.
       `aktion: datei_oeffnen pfad=beispiele/motor.cpp` `aktion: typ_waehlen name=antrieb::Motor` `aktion: klicken name=antrieb::Motor::starte`
+
+## O. Einstellungen und Thema
+
+- [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.
+      `aktion: beispiel_zeigen` `aktion: diagramm_waehlen name=ampel_takt` `aktion: ansicht_waehlen name=preview` `aktion: thema_setzen name=system`
+- [ ] **O1 Der Dialog:** File > Settings… (oder Strg + ,): links eine Seite *Appearance*, rechts
+      *Theme* mit `System`, `Light`, `Dark`; gewählt ist `System`. Tooltip auf dem Feld nennt, dass
+      System dem Betriebssystem folgt.
+      `aktion: einstellungen_zeigen`
+- [ ] **O2 Apply:** `Dark` wählen, **Apply**: Fenster, Menüs, Quelltext und Vorschau werden dunkel,
+      der Dialog bleibt offen. Die Vorschau zeigt dasselbe Bild, an derselben Stelle, helle Striche
+      auf dunklem Grund; die Pfeile von **Back** und **Called from** sind hell. **Cancel**: es
+      bleibt dunkel.
+      `aktion: thema_setzen name=dark`
+- [ ] **O3 Lesbar im Dunkeln:** Ein Klick auf einen Knoten: die hinterlegte Zeile im Quelltext ist
+      lesbar (heller Text auf getöntem Grund). Data types: Kästen mit dunklem Grund, getöntem Kopf.
+- [ ] **O4 Bleibt über Neustarts:** Code2Diagram schließen und neu starten: dunkel. Dann `Light`,
+      **OK**: hell, der Dialog ist zu.
+      `aktion: thema_setzen name=light`
+- [ ] **O5 System folgt dem Betriebssystem:** `System`, OK. In Windows unter *Einstellungen >
+      Personalisierung > Farben* den Modus wechseln: Code2Diagram folgt, ohne Neustart, die
+      Vorschau mit.
+      `aktion: thema_setzen name=system`
