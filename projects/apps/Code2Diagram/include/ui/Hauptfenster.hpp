@@ -31,11 +31,17 @@
  * seinen Nachbarn, projekt/Typen.hpp), oder alle. Ein Typ, den ein Glied oder
  * ein Knoten des Ablaufs nennt, ist ein hervorgehobener Link: Doppelklick oder
  * Kontextmenue fuehrt zu ihm, auch in eine andere Datei.
+ *
+ * Wo ein Name der bedingten Uebersetzung im Projekt schaltet (projekt/Schaltstellen.hpp),
+ * steht als `switch:<Name>` zur Wahl, die Namen des Projekts als `ifnames`. Ein Klick
+ * zeigt die Stelle, auch in einer anderen Datei; ein Doppelklick fuehrt zur
+ * `#if`-Konfiguration der Datei an dieser Kette bzw. zu den Stellen des Namens.
  */
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
+#include "c2d/diagramm/Schaltstellen.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -99,6 +105,10 @@ public:
     static constexpr const char* kNachschlagetabellen = "lookup";
     /// Je Kette #if der Datei, welcher Zweig bei welchen Definitionen gilt.
     static constexpr const char* kKonfiguration = "ifconfig";
+    /// Die Namen, nach denen die Dateien des Projekts fragen.
+    static constexpr const char* kSchalter = "ifnames";
+    /// So beginnt der Name der Tabelle, wo ein Name schaltet: `switch:<Name>`.
+    static constexpr const char* kSchaltstellen = "switch:";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -224,6 +234,13 @@ public:
     /// Namen im Feld Defines wie die Radioknoepfe im Feld Configuration. false = keine solche, oder
     /// der Zweig gilt schon oder laesst sich nicht aus Namen waehlen.
     bool aktiviereZweig(int zeile);
+    /// Wie *Where is NAME switched?* (Kontextmenue der #if-Konfiguration, des Felds Configuration,
+    /// des Quelltexts): die Tabelle `switch:<Name>`, Back fuehrt zurueck. false = kein #if fragt nach
+    /// dem Namen, und nichts legt ihn fest.
+    bool zeigeSchaltstellen(const QString& name);
+    /// Der Name im Quelltext, Zeile `zeile`, Spalte `spalte` (ab 1), wenn die Zeile eine Direktive
+    /// ist (`#if`, `#define` …) und dort ein Bezeichner steht; leer = keiner.
+    [[nodiscard]] QString nameInDirektive(int zeile, int spalte) const;
     /// Wie Rechtsklick im Quelltext, Show in diagram: Zeile `zeile` der Datei im Quelltext. In einer
     /// Funktion: ihr Knoten im gezeigten Ablauf (sonst erst zum Ablauf der Funktion; Back fuehrt
     /// zurueck), im Aufrufgraph die Funktion; in einem Typ: Data types mit ihm. Hervorgehoben (Ring),
@@ -330,6 +347,9 @@ private:
                                                                                          QString* warum = nullptr) const;
     bool aktiviereZweig(c2d::diagramm::KnotenId knoten);
     [[nodiscard]] bool istZuordnung() const;
+    [[nodiscard]] bool istSchaltstellen() const;
+    /// Die Datei und Zeile eines Knotens der Tabelle `switch:`; nullopt = keine Stelle in einer Datei.
+    [[nodiscard]] std::optional<std::pair<std::size_t, int>> schaltstelle(c2d::diagramm::KnotenId knoten) const;
     /// Zur Zuordnung des switch in der Zeile; `von` wie bei gehe(). false = dort keine.
     bool geheZuZuordnung(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
     /// Zur Tabelle einer Zeile: ihre Wahrheitstabelle, sonst ihre Zuordnung.
@@ -482,6 +502,9 @@ private:
     c2d::diagramm::Entscheidungstabelle m_entscheidung;       ///< die gezeigte; leer = keine
     std::vector<c2d::diagramm::Zuordnung> m_zuordnungen;      ///< die gezeigte Zuordnung oder die Nachschlagetabellen
     std::vector<c2d::diagramm::Konfigurationstabelle> m_ketten;  ///< die Konfigurationstabellen: die Ketten #if der Datei
+    c2d::diagramm::Schaltstellen m_schaltstellen;   ///< die gezeigte Tabelle `switch:`
+    c2d::diagramm::Schalteruebersicht m_uebersicht;  ///< die gezeigte Tabelle `ifnames`
+    std::size_t m_schalterZahl = 0;                  ///< wie viele Namen die Dateien des Projekts fragen
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei

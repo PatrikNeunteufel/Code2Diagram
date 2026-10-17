@@ -27,6 +27,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Entscheidungstabelle.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Zuordnung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Konfigurationstabelle.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Schaltstellen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Breite.cpp"
 )
 

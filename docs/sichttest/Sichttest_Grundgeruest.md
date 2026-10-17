@@ -629,6 +629,54 @@ darin (Zeile 13), `#if TAKT_MHZ > 50` (Zeile 18; `TAKT_MHZ` definiert die Datei 
       `#if configuration is not available in mermaid`. Danach Defines wieder leer.
       `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=drawio` `aktion: format_waehlen name=mermaid` `aktion: definitionen_setzen wert=`
 
+## U. Wo schaltet ein Name
+
+Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` der Projektdatei fest
+(`MOTOREN=2`), gefragt in `antrieb/motor.c` Zeile 21 (`#if MOTOREN > 1`); `MIT_DIAGNOSE` definiert
+`inc/config.h` Zeile 6, gefragt in `main.c` Zeile 21 (`#ifdef MIT_DIAGNOSE`); `MIT_LOG` die Projektdatei.
+
+- [ ] **U0 Vorbereiten:** Den Ordner öffnen, `main.c` wählen, Defines leer, Format svg, Vorschau; in
+      Diagram steht *#if names (3)* hinter *#if configuration*.
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: definitionen_setzen wert=` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview` `aktion: diagramm_waehlen name=ifnames`
+- [ ] **U1 Die Namen:** Titel `#if names: 3 in 3 files`, Spalten `name`, `files`, `chains`, `state`,
+      `set by`; Zeilen `MIT_DIAGNOSE 1 1 = 1 header`, `MIT_LOG 1 1 = 1 project`, `MOTOREN 1 1 = 2
+      section`. Keine Zeile getönt (keiner steht in zwei Dateien verschieden).
+- [ ] **U2 Doppelklick:** Doppelklick auf `MOTOREN`: Titel `Where is MOTOREN switched? 2 branches in 1
+      file`, darunter `set by: section antrieb | code2diagram.json | MOTOREN=2`; die Tabelle mit
+      `antrieb/motor.c`, `21`, `#if MOTOREN > 1`, `> 1`, `= 2 (section antrieb)`, `21–26 (4)`, ✓ (getönt),
+      darunter `(no #else)` mit `<= 1` und `–` bei *lines*; zuunterst der Hinweis zu `#define` in Zweigen,
+      die nicht gelten. In Diagram steht *Where is MOTOREN switched?*.
+      `aktion: schaltstellen_zeigen name=MOTOREN`
+- [ ] **U3 Klick in eine andere Datei:** Klick auf die Zeile `21`: der Quelltext zeigt `antrieb/motor.c`,
+      Zeile 21 hinterlegt; gewählt bleibt `main.c` (Diagram unverändert).
+      `aktion: klicken name=antrieb/motor.c:21`
+- [ ] **U4 Doppelklick auf einen Zweig:** Doppelklick auf die Zeile `21`: *#if configuration* von
+      `antrieb/motor.c`, Ring um `#if MOTOREN > 1`. Back: wieder *Where is MOTOREN switched?*; Back:
+      *#if names*.
+- [ ] **U5 Aus der #if-Konfiguration:** `antrieb/motor.c` wählen, *#if configuration*; Rechtsklick auf
+      eine Zeile: *Where is MOTOREN switched?* (je Spalte der Kette ein Eintrag) führt zur Tabelle.
+      `aktion: datei_waehlen pfad=antrieb/motor.c` `aktion: diagramm_waehlen name=ifconfig`
+- [ ] **U6 Aus dem Feld Configuration:** `main.c` wählen; Rechtsklick auf den Haken `MIT_DIAGNOSE
+      (header)`: *Where is MIT_DIAGNOSE switched?*; *set by* `#define | inc/config.h:6 |` (ohne Wert);
+      Klick auf diese Zeile zeigt `inc/config.h` Zeile 6.
+      `aktion: datei_waehlen pfad=main.c` `aktion: schaltstellen_zeigen name=MIT_DIAGNOSE` `aktion: klicken name=inc/config.h:6`
+- [ ] **U7 Aus dem Quelltext:** In `main.c` Rechtsklick auf `MIT_DIAGNOSE` in Zeile 21: *Where is
+      MIT_DIAGNOSE switched?*. Rechtsklick auf `ifdef` derselben Zeile und auf eine Zeile ohne `#`: der
+      Eintrag heißt *Where is a name of an #if switched?* und ist gesperrt.
+- [ ] **U8 Von außen:** Defines `MOTOREN=1` (Enter), dann *Where is MOTOREN switched?*: *set by* bekommt
+      `outside | | MOTOREN=1`, der Stand heißt `= 1 (outside)`, das ✓ steht bei `(no #else)`. Defines
+      wieder leer.
+      `aktion: definitionen_setzen wert=MOTOREN=1` `aktion: schaltstellen_zeigen name=MOTOREN` `aktion: definitionen_setzen wert=`
+- [ ] **U9 Formate:** csv: `set by;file;line;value`, `section antrieb;code2diagram.json;;MOTOREN=2`, eine
+      Leerzeile, dann `file;line;branch;MOTOREN;state in the file;from;to;lines;active` und
+      `antrieb/motor.c;21;#if MOTOREN > 1;> 1;= 2 (section antrieb);21;26;4;yes`; draw.io dieselbe
+      Tabelle; mermaid und dot: `#if switch points is not available in mermaid` (dot entsprechend). Bei
+      *#if names* in mermaid: `#if names is not available in mermaid`.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=drawio` `aktion: format_waehlen name=mermaid`
+- [ ] **U10 Dunkel:** Thema Dark: die getönte Zeile (✓) bleibt von den übrigen zu unterscheiden, die
+      Schrift lesbar. Thema wieder System.
+      `aktion: thema_setzen name=dark` `aktion: thema_setzen name=system`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

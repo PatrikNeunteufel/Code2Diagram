@@ -8,6 +8,7 @@
 #include "AppInfo.hpp"
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/projekt/Schaltstellen.hpp"
 #include "ui/Einstellungen.hpp"
 #include "ui/Konfiguration.hpp"
 #include "ui/Vorschau.hpp"
@@ -55,6 +56,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <set>
 #include <span>
 #include <tuple>
 
@@ -182,6 +184,12 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             ->setEnabled(hatZuordnung(datei, zeile));
         menue->addAction(QStringLiteral("#if configuration of line %1").arg(zeile), this, [this, zeile] { zeigeKonfiguration(zeile); })
             ->setEnabled(hatKonfiguration(datei, zeile));
+        // ein Name in einer Direktive: wo er im Projekt schaltet
+        const QString name = nameInDirektive(zeile, m_quelle->cursorForPosition(ort).positionInBlock() + 1);
+        menue->addAction(name.isEmpty() ? QStringLiteral("Where is a name of an #if switched?")
+                                        : QStringLiteral("Where is %1 switched?").arg(name),
+                         this, [this, name] { zeigeSchaltstellen(name); })
+            ->setEnabled(!name.isEmpty());
         menue->exec(m_quelle->mapToGlobal(ort));
     });
     m_definitionen = new QLineEdit(links);
@@ -327,6 +335,20 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     };
     m_vorschau->beiDoppelklick = [this](c2d::diagramm::KnotenId knoten) {
         if (istWahrheitstabelle()) return;  // eine Zelle fuehrt nirgendwohin
+        if (istSchaltstellen())
+        {
+            // ein Zweig: die #if-Konfiguration seiner Datei, an dieser Kette; eine Setzung fuehrt nirgendwohin
+            const std::size_t gesetzt = m_schaltstellen.gesetzt.size();
+            if (knoten < gesetzt || knoten - gesetzt >= m_schaltstellen.zeilen.size()) return;
+            const c2d::diagramm::Schaltstellen::Zeile& z = m_schaltstellen.zeilen[knoten - gesetzt];
+            if (zeigeZeile(z.datei, z.quellZeile)) zeigeKonfiguration(z.quellZeile);
+            return;
+        }
+        if (m_gezeigt == QLatin1String(kSchalter))
+        {
+            if (knoten < m_uebersicht.zeilen.size()) zeigeSchaltstellen(ausStd(m_uebersicht.zeilen[knoten].name));
+            return;
+        }
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -529,6 +551,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         else
             statusBar()->showMessage(QStringLiteral("Defines written to the project file"), 4000);
     };
+    m_konfiguration->beiSchaltstellen = [this](const QString& name) { zeigeSchaltstellen(name); };
 
     QMenu* hilfe = menuBar()->addMenu(QStringLiteral("&Help"));
     hilfe->addAction(QStringLiteral("&About"), this, [this] {
@@ -689,6 +712,11 @@ void Hauptfenster::liesEin()
         m_projekt = c2d::projekt::liesOrdner(alsWeg(m_ordner), optionen);
     m_typen = c2d::projekt::Typverzeichnis(m_projekt);
     m_struktur = {};
+    // wie viele Namen die Dateien fragen: nur die Zahl, fuer den Eintrag #if names
+    std::set<std::string> schalter;
+    for (const c2d::projekt::Datei& d : m_projekt.dateien)
+        for (const c2d::sprache::Schalter& s : d.ergebnis.schalter) schalter.insert(s.name);
+    m_schalterZahl = schalter.size();
 
     // was vorher galt, verweist nicht mehr sicher in dieses Projekt
     m_datei = kKeine;
@@ -826,6 +854,9 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (!d.ergebnis.weichen.empty())
             m_auswahl->addItem(QStringLiteral("#if configuration (%1)").arg(d.ergebnis.weichen.size()),
                                QString::fromLatin1(kKonfiguration));
+        // die Namen des ganzen Projekts: in jeder Datei zur Wahl
+        if (m_schalterZahl > 0)
+            m_auswahl->addItem(QStringLiteral("#if names (%1)").arg(m_schalterZahl), QString::fromLatin1(kSchalter));
     }
     {
         // die Typen der Datei, vorn alle; gewaehlt ist der erste
@@ -1442,6 +1473,16 @@ bool Hauptfenster::waehleEintrag(const QString& name)
         m_auswahl->addItem(QStringLiteral("Truth table: %1() line %2").arg(rest.left(at)).arg(zeile), name);
         return waehle(m_auswahl, name);
     }
+    if (name.startsWith(QLatin1String(kSchaltstellen)) && m_datei < m_projekt.dateien.size())
+    {
+        // `switch:<Name>` — wenn ein #if nach ihm fragt oder etwas ihn festlegt
+        const std::string n = name.mid(QString::fromLatin1(kSchaltstellen).size()).toStdString();
+        if (n.empty()) return false;
+        const c2d::diagramm::Schaltstellen s = c2d::projekt::schaltstellen(m_projekt, n, definitionenImFeld());
+        if (s.zeilen.empty() && s.gesetzt.empty()) return false;
+        m_auswahl->addItem(QStringLiteral("Where is %1 switched?").arg(ausStd(n)), name);
+        return waehle(m_auswahl, name);
+    }
     // ein Aufrufgraph ab einer Funktion der Datei steht erst da, wenn er gezeigt wird
     const QString praefix = QString::fromLatin1(kAufrufgraph);
     if (!name.startsWith(praefix) || m_datei >= m_projekt.dateien.size()) return false;
@@ -1935,6 +1976,74 @@ bool Hauptfenster::aktiviereZweig(int zeile)
     return false;
 }
 
+bool Hauptfenster::istSchaltstellen() const
+{
+    return m_gezeigt.startsWith(QLatin1String(kSchaltstellen));
+}
+
+std::optional<std::pair<std::size_t, int>> Hauptfenster::schaltstelle(c2d::diagramm::KnotenId knoten) const
+{
+    if (!istSchaltstellen()) return std::nullopt;
+    const auto& gesetzt = m_schaltstellen.gesetzt;
+    if (knoten < gesetzt.size())
+    {
+        // die Projektdatei ist keine Datei des Projekts; von aussen und die Sprache haben keine Stelle
+        const std::size_t d = gesetzt[knoten].zeile > 0 ? m_projekt.finde(gesetzt[knoten].pfad) : kKeine;
+        if (d == kKeine) return std::nullopt;
+        return std::pair{d, gesetzt[knoten].zeile};
+    }
+    knoten -= gesetzt.size();
+    if (knoten >= m_schaltstellen.zeilen.size()) return std::nullopt;
+    return std::pair{m_schaltstellen.zeilen[knoten].datei, m_schaltstellen.zeilen[knoten].quellZeile};
+}
+
+bool Hauptfenster::zeigeSchaltstellen(const QString& name)
+{
+    if (name.isEmpty() || m_datei >= m_projekt.dateien.size()) return false;
+    const QString eintrag = QString::fromLatin1(kSchaltstellen) + name;
+    if (eintrag == m_gezeigt) return true;
+    const Stelle davor = hier();
+    m_ohneVerlauf = true;
+    const bool da = waehleEintrag(eintrag);
+    m_ohneVerlauf = false;
+    if (!da)
+    {
+        statusBar()->showMessage(QStringLiteral("No #if asks for %1, and nothing sets it").arg(name), 4000);
+        return false;
+    }
+    if (!davor.diagramm.isEmpty()) m_verlauf << davor;
+    aktualisiereLeiste();
+    return true;
+}
+
+QString Hauptfenster::nameInDirektive(int zeile, int spalte) const
+{
+    const QTextBlock block = m_quelle->document()->findBlockByNumber(zeile - 1);
+    if (!block.isValid()) return {};
+    const QString text = block.text();
+    if (!text.trimmed().startsWith(QLatin1Char('#')) || text.isEmpty()) return {};
+    const auto teil = [](QChar c) { return c.isLetterOrNumber() || c == QLatin1Char('_'); };
+    qsizetype bei = std::clamp<qsizetype>(spalte - 1, 0, text.size() - 1);
+    if (!teil(text[bei]))
+    {
+        if (bei == 0 || !teil(text[bei - 1])) return {};
+        --bei;  // gleich hinter dem Wort
+    }
+    qsizetype von = bei, bis = bei;
+    while (von > 0 && teil(text[von - 1])) --von;
+    while (bis + 1 < text.size() && teil(text[bis + 1])) ++bis;
+    const QString wort = text.mid(von, bis - von + 1);
+    // die Woerter des Praeprozessors schalten nichts
+    static const QStringList kWoerter{QStringLiteral("if"),      QStringLiteral("ifdef"),   QStringLiteral("ifndef"),
+                                      QStringLiteral("elif"),    QStringLiteral("elifdef"), QStringLiteral("elifndef"),
+                                      QStringLiteral("else"),    QStringLiteral("endif"),   QStringLiteral("define"),
+                                      QStringLiteral("undef"),   QStringLiteral("defined"), QStringLiteral("include"),
+                                      QStringLiteral("pragma"),  QStringLiteral("error"),   QStringLiteral("warning"),
+                                      QStringLiteral("line")};
+    if (wort.isEmpty() || wort[0].isDigit() || kWoerter.contains(wort)) return {};
+    return wort;
+}
+
 bool Hauptfenster::geheZuTabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von)
 {
     return hatWahrheitstabelle(datei, zeile) ? geheZuWahrheitstabelle(datei, zeile, von) : geheZuZuordnung(datei, zeile, von);
@@ -1969,6 +2078,8 @@ bool Hauptfenster::waehleAnsicht(const QString& name)
 
 std::size_t Hauptfenster::dateiVon(c2d::diagramm::KnotenId knoten) const
 {
+    // wo ein Name schaltet: jede Zeile in ihrer Datei
+    if (const std::optional<std::pair<std::size_t, int>> s = schaltstelle(knoten)) return s->first;
     if (knoten < m_fluss.knoten().size())
     {
         // die Einbettung, nicht ein Rahmen einer Bedingung darin, weiss die Datei
@@ -2131,6 +2242,8 @@ void Hauptfenster::baueNeu()
     m_tabellen.clear();
     m_zuordnungen.clear();
     m_ketten.clear();
+    m_schaltstellen = {};
+    m_uebersicht = {};
     // Zuordnung und Nachschlagetabellen: je Zeile ein Knoten (Klick, Show in diagram)
     const auto zeilenAlsKnoten = [&] {
         for (const Zuordnung& t : m_zuordnungen)
@@ -2163,6 +2276,36 @@ void Hauptfenster::baueNeu()
                 k.quellZeile = z.quellZeile;
                 m_fluss.neuerKnoten(std::move(k));
             }
+    }
+    if (istSchaltstellen() && m_datei < m_projekt.dateien.size())
+    {
+        // erst je Setzung, dann je Zeile ein Knoten (Klick, Ring); die Zeilen stehen in vielen Dateien (dateiVon)
+        m_schaltstellen = c2d::projekt::schaltstellen(
+            m_projekt, m_gezeigt.mid(QString::fromLatin1(kSchaltstellen).size()).toStdString(), definitionenImFeld());
+        for (const Schaltstellen::Setzung& s : m_schaltstellen.gesetzt)
+        {
+            Knoten k;
+            k.zeilen = {s.zeile > 0 ? s.pfad + ":" + std::to_string(s.zeile) : s.herkunft, s.wert};
+            k.quellZeile = s.zeile;
+            m_fluss.neuerKnoten(std::move(k));
+        }
+        for (const Schaltstellen::Zeile& z : m_schaltstellen.zeilen)
+        {
+            Knoten k;
+            k.zeilen = {z.pfad + ":" + std::to_string(z.quellZeile), z.zweig};
+            k.quellZeile = z.quellZeile;
+            m_fluss.neuerKnoten(std::move(k));
+        }
+    }
+    if (m_gezeigt == QLatin1String(kSchalter) && m_datei < m_projekt.dateien.size())
+    {
+        m_uebersicht = c2d::projekt::schalteruebersicht(m_projekt, definitionenImFeld());
+        for (const Schalteruebersicht::Zeile& z : m_uebersicht.zeilen)
+        {
+            Knoten k;
+            k.zeilen = {z.name};
+            m_fluss.neuerKnoten(std::move(k));
+        }
     }
     if (m_gezeigt == QLatin1String(kNachschlagetabellen) && m_datei < m_projekt.dateien.size())
     {
@@ -2262,6 +2405,18 @@ void Hauptfenster::zeichne()
         return QString::fromStdString(format->schreibe(diagramm, optionen));
     };
 
+    if (istSchaltstellen())
+    {
+        m_vorschau->zeige(m_schaltstellen);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Schaltstellen, m_schaltstellen));
+        return;
+    }
+    if (m_gezeigt == QLatin1String(kSchalter))
+    {
+        m_vorschau->zeige(m_uebersicht);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Schalteruebersicht, m_uebersicht));
+        return;
+    }
     if (m_gezeigt == QLatin1String(kKonfiguration))
     {
         using c2d::diagramm::Konfigurationstabelle;
@@ -2360,6 +2515,26 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
             aktiv->setEnabled(geht);
             aktiv->setToolTip(geht ? QStringLiteral("Sets the names in Defines so that this branch holds") : warum);
             menue.setToolTipsVisible(true);
+            // je Spalte der Kette: wo der Name im Projekt schaltet
+            for (const Konfigurationstabelle::Spalte& s : m_ketten[konfigurationsZeile(knoten)->first].spalten)
+            {
+                const QString name = ausStd(s.name);
+                menue.addAction(QStringLiteral("Where is %1 switched?").arg(name), this, [this, name] { zeigeSchaltstellen(name); });
+            }
+        }
+        if (istSchaltstellen() && knoten >= m_schaltstellen.gesetzt.size() &&
+            knoten - m_schaltstellen.gesetzt.size() < m_schaltstellen.zeilen.size())
+        {
+            const c2d::diagramm::Schaltstellen::Zeile& z = m_schaltstellen.zeilen[knoten - m_schaltstellen.gesetzt.size()];
+            menue.addAction(QStringLiteral("#if configuration of %1 (line %2)").arg(ausStd(z.pfad)).arg(z.quellZeile), this,
+                            [this, datei = z.datei, zeile = z.quellZeile] {
+                                if (zeigeZeile(datei, zeile)) zeigeKonfiguration(zeile);
+                            });
+        }
+        if (m_gezeigt == QLatin1String(kSchalter) && knoten < m_uebersicht.zeilen.size())
+        {
+            const QString name = ausStd(m_uebersicht.zeilen[knoten].name);
+            menue.addAction(QStringLiteral("Where is %1 switched?").arg(name), this, [this, name] { zeigeSchaltstellen(name); });
         }
         for (const std::string& aufruf : k.aufrufe)
         {

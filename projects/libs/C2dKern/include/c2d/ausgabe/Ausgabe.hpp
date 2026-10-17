@@ -20,6 +20,7 @@
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
+#include "c2d/diagramm/Schaltstellen.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
@@ -50,6 +51,8 @@ enum class Diagrammart
     Entscheidungstabelle,
     Zuordnung,
     Konfiguration,
+    Schaltstellen,
+    Schalteruebersicht,
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
@@ -89,6 +92,10 @@ public:
     /// Die Konfigurationstabellen einer Datei (je Kette `#if` eine), untereinander.
     [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Konfigurationstabelle> tabellen,
                                                const Optionen& optionen) const = 0;
+    /// Wo ein Name im Projekt schaltet.
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Schaltstellen& tabelle, const Optionen& optionen) const = 0;
+    /// Die Namen, nach denen die Dateien des Projekts fragen.
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Schalteruebersicht& tabelle, const Optionen& optionen) const = 0;
 };
 
 /// Alle Formate; das erste ist die Vorgabe.

@@ -452,6 +452,18 @@ public:
         return tabelle(ordneAn(tabellen, o), "#if configuration", o);
     }
 
+    [[nodiscard]] std::string schreibe(const Schaltstellen& t, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        return tabelle(ordneAn(t, o), t.titel, o);
+    }
+
+    [[nodiscard]] std::string schreibe(const Schalteruebersicht& t, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        return tabelle(ordneAn(t, o), t.titel, o);
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const AnordnungOptionen o = anordnung(optionen);

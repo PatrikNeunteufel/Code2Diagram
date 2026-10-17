@@ -47,7 +47,7 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
-| `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint | sprache, modell, das Modell des Aufrufgraphen |
+| `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
 
 Die Trennlinien sind der Punkt: ein Format kennt keine Sprache, ein Leser kennt kein Diagramm,
 kein Diagramm kennt das Projekt.
@@ -288,6 +288,21 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   Tooltip, wo es nicht geht); im Quelltext auf einer Direktive *#if configuration of line n*. SVG,
   draw.io und csv schreiben sie, Mermaid und DOT nicht. `c2d <datei> --konfiguration` (im Projekt mit
   `--datei`). Beispiel: `beispiele/konfiguration.c`.
+- **Wo schaltet ein Name** (im Projekt): *Where is NAME switched?* im Kontextmenü einer Zeile der
+  `#if`-Konfiguration (je Spalte ein Eintrag), eines Namens im Feld Configuration und im Quelltext
+  auf einem Namen in einer Direktive — eine eigene Tabelle `switch:NAME`, Back führt zurück. Oben
+  *set by*: wer ihn festlegt (`project`, `section <ordner>`, `#define`/`#undef` mit Datei und Zeile,
+  `outside` = Defines oder `-D`, `language`); ein `#define` in einem Zweig, der nicht gilt, sieht der
+  Leser nicht. Darunter je Zweig im ganzen Projekt, dessen absolute Forderung den Namen betrifft
+  (auch eine innere Kette unter `#ifdef NAME`), eine Zeile: Datei, Zeile, Zweig, Forderung, der
+  Stand in dieser Datei mit Herkunft (`= 100 (project)`, `def (header cfg.h)`, `undef (line 7)` —
+  was die Datei vor der Kette selbst festlegt, gilt dort), wie viele Zeilen der Zweig umfasst,
+  *active*. Ein Kopf steht einmal, in seiner eigenen Datei. Ein Klick zeigt die Stelle, auch in einer
+  anderen Datei; ein Doppelklick führt zur `#if`-Konfiguration dieser Datei, an diese Kette. Die
+  Übersicht **#if names (n)** in Diagram nennt je Name Dateien, Ketten, Stand (`differs`, getönt,
+  wo er nicht überall gleich ist) und wer ihn festlegt; Vorgegebenes der Sprache grau; Doppelklick
+  führt zu seiner Tabelle. SVG, draw.io und csv schreiben beide, Mermaid und DOT nicht.
+  `c2d <ordner> --schaltet NAME`, `c2d <ordner> --schalter`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -347,14 +362,14 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`,
   `darstellung_waehlen name=<flowchart|nassi-shneiderman|decision-table>`,
   `wahrheitstabelle_zeigen zeile=<n>`, `zuordnung_zeigen zeile=<n>`, `konfiguration_zeigen zeile=<n>`,
-  `zweig_aktivieren zeile=<n>`,
+  `zweig_aktivieren zeile=<n>`, `schaltstellen_zeigen name=<Name>`,
   `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
 
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--breite]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -379,7 +394,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   `mapping f@zeile`, konstante Tabellen als `lookup`, die Ketten `#if` als `ifconfig n chains, …`
 - `--zuordnung [<zeile>]` (mit `--funktion`) schreibt die Zuordnungstabelle des `switch` in dieser
   Zeile, ohne Zeile alle der Funktion; `--nachschlagetabellen` die konstanten Tabellen der Datei;
-  `--konfiguration` je Kette `#if` der Datei die Konfigurationstabelle
+  `--konfiguration` je Kette `#if` der Datei die Konfigurationstabelle; `--schaltet NAME`, wo der
+  Name im Projekt schaltet, `--schalter` die Namen des Projekts
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
   als 1; `-U NAME` (auch `-UNAME`, `-D !NAME`): gilt als nicht definiert, auch wo Projektdatei
   oder ein Kopf ihn definieren; für einen Namen gilt die letzte Angabe; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
@@ -508,8 +524,8 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   falsch-wahr sein, die Tabelle zeigt die Zeile trotzdem. Makros werden nicht aufgelöst (`IS_OK(x)`
   ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche
   in ihrer Grenze bleibt (sonst ein Hinweis).
-- **`#if`-Konfiguration:** nur je Datei, nicht „wo schaltet NAME im ganzen Projekt“ (eigene Frage);
-  Ketten in eingebundenen Köpfen stehen in der Tabelle des Kopfs. Gerechnet wird nur mit den Zahlen
+- **`#if`-Konfiguration:** Ketten in eingebundenen Köpfen stehen in der Tabelle des Kopfs (auch bei
+  *Where is NAME switched?*: einmal, mit dem Stand, mit dem der Kopf selbst gelesen ist). Gerechnet wird nur mit den Zahlen
   der Bedingungen: ein Vergleich zweier Namen, ein Makro mit Parametern (`QT_VERSION_CHECK(6, 0, 0)`)
   oder `__has_attribute` bleibt Text — und weil ein späterer Zweig das Gegenteil eines früheren
   fordert, auch jeder Zweig danach. Über 8 Alternativen eine Zeile Text (lange Ketten wie die

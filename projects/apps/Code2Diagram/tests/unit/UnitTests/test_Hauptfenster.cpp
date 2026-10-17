@@ -119,13 +119,13 @@ TEST_SUITE("Hauptfenster")
                              "void immer(void) {\n#if STUFE > 1\n  laut();\n#endif\n  leise();\n}\n";
         Hauptfenster fenster;
         fenster.zeige(quelle, "v.c");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig", "ifnames"});
         CHECK(fenster.unbekannteNamen() == QStringList{"BOARD_A", "STUFE"});
         CHECK(fenster.waehleDiagramm("immer"));
         CHECK_FALSE(fenster.diagrammText().contains("laut"));
 
         fenster.setzeDefinitionen("BOARD_A, STUFE=2");
-        CHECK(fenster.diagramme() == QStringList{"a", "immer", "calls", "ifconfig"});
+        CHECK(fenster.diagramme() == QStringList{"a", "immer", "calls", "ifconfig", "ifnames"});
         CHECK(fenster.unbekannteNamen().isEmpty());
         CHECK(fenster.diagramm() == "immer");  // das gewaehlte Diagramm bleibt
         CHECK(fenster.diagrammText().contains("laut"));
@@ -134,7 +134,7 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramme() == QStringList{"a", "b", "immer", "calls"});
         fenster.setzeAlleZweige(false);
         fenster.setzeDefinitionen("");
-        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig"});
+        CHECK(fenster.diagramme() == QStringList{"b", "immer", "calls", "ifconfig", "ifnames"});
     }
 
     TEST_CASE("Das Feld Configuration: Haken und Knoepfe schreiben ins Feld Defines, gelesen wird neu")
@@ -271,12 +271,12 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.dateien() == QStringList{"antrieb/motor.c", "antrieb/regler.c", "inc/config.h", "main.c", "sim/regler_sim.c"});
         CHECK(fenster.uebergangeneOrdner() == QStringList{"alt"});
         CHECK(fenster.datei() == "antrieb/motor.c");  // die erste mit einer Funktion
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei", "calls", "ifconfig"});  // MOTOREN aus dem Abschnitt
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "motor_zwei", "calls", "ifconfig", "ifnames"});  // MOTOREN aus dem Abschnitt
         CHECK(fenster.windowTitle().contains("antrieb/motor.c"));
 
         REQUIRE(fenster.waehleDatei("main.c"));
         CHECK_FALSE(fenster.waehleDatei("alt/x.c"));
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose", "calls", "ifconfig"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "main", "diagnose", "calls", "ifconfig", "ifnames"});
         CHECK(fenster.waehleDiagramm("main"));
         CHECK(fenster.diagrammText().contains("diagnose()"));  // MIT_DIAGNOSE aus inc/config.h
 
@@ -324,7 +324,7 @@ TEST_SUITE("Hauptfenster")
         REQUIRE(fenster.waehleDatei("antrieb/motor.c"));
         fenster.setzeDefinitionen("MOTOREN=1");
         CHECK(fenster.datei() == "antrieb/motor.c");
-        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "calls", "ifconfig"});
+        CHECK(fenster.diagramme() == QStringList{"pruefe", "motor_starte", "calls", "ifconfig", "ifnames"});
         fenster.setzeDefinitionen("");
 
         // die Projektdatei: was nicht passt, wird nicht geschrieben
@@ -762,6 +762,53 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("#elif B > 1;!def;> 1;yes"));
         REQUIRE(fenster.waehleFormat("mermaid"));
         CHECK(fenster.diagrammText() == "#if configuration is not available in mermaid");
+
+        // ein Name in einer Direktive (Rechtsklick im Quelltext): nicht die Woerter des Praeprozessors
+        CHECK(fenster.nameInDirektive(3, 7) == "B");
+        CHECK(fenster.nameInDirektive(3, 8) == "B");  // gleich hinter dem Wort
+        CHECK(fenster.nameInDirektive(1, 3).isEmpty());  // ifdef
+        CHECK(fenster.nameInDirektive(2, 5).isEmpty());  // keine Direktive
+    }
+
+    TEST_CASE("Wo schaltet ein Name: aus der #if-Konfiguration, Klick in eine andere Datei, zurueck, die Namen")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            QFile datei(wurzel.filePath(relativ));
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("code2diagram.json", "{\"definitionen\": [\"TAKT=100\"]}\n");
+        lege("a.c", "#if TAKT > 50\nint a;\n#endif\nint f(void) { return 0; }\n");
+        lege("b.c", "#ifdef TAKT\nint b;\n#else\nint c;\n#endif\n");
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        CHECK(fenster.datei() == "a.c");
+        CHECK(fenster.diagramme().contains("ifnames"));
+        CHECK_FALSE(fenster.zeigeSchaltstellen("GIBT_ES_NICHT"));
+        REQUIRE(fenster.waehleDiagramm("ifconfig"));
+        REQUIRE(fenster.zeigeSchaltstellen("TAKT"));
+        CHECK(fenster.diagramm() == "switch:TAKT");
+        CHECK(fenster.diagramme().contains("switch:TAKT"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("project;code2diagram.json;;TAKT=100\n"));
+        CHECK(fenster.diagrammText().contains("a.c;1;#if TAKT > 50;> 50;= 100 (project);1;3;1;yes\n"));
+        CHECK(fenster.diagrammText().contains("b.c;3;#else;!def;= 100 (project);3;5;1;\n"));
+
+        // ein Klick zeigt die Stelle, auch in einer anderen Datei; die gewaehlte Datei bleibt
+        CHECK(fenster.klicke("b.c:3"));
+        CHECK(fenster.gezeigteStelle() == "b.c:3");
+        CHECK(fenster.datei() == "a.c");
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "ifconfig");
+
+        REQUIRE(fenster.waehleDiagramm("ifnames"));
+        CHECK(fenster.diagrammText().contains("TAKT;2;2;= 100;project;\n"));
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText() == "#if names is not available in mermaid");
     }
 
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")

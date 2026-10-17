@@ -8,7 +8,7 @@
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
 //                             [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
-//                             [--breite]
+//                             [--schaltet <name>] [--schalter] [--breite]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
@@ -56,6 +56,11 @@
 //   --nachschlagetabellen  die konstanten Tabellen (const-Arrays) der Datei (im Projekt: --datei)
 //   --konfiguration  je Kette #if der Datei, welcher Zweig bei welchen Definitionen gilt (im
 //                  Projekt: --datei); svg, drawio, csv
+//   --schaltet     wo dieser Name im Projekt schaltet: wer ihn festlegt (Projektdatei, Abschnitte,
+//                  #define/#undef, von aussen) und je Zweig #if, der etwas von ihm fordert, eine Zeile
+//                  mit dem Stand in der Datei; svg, drawio, csv
+//   --schalter     je Name, nach dem eine Datei fragt, eine Zeile: Dateien, Ketten, Stand, wer ihn
+//                  festlegt; svg, drawio, csv
 //   --breite       der Breiten-Test an echtem Code: legt je Datei (im Projekt jede, oder --datei)
 //                  jeden Ablauf, Automaten, die Datentypen und den Aufrufgraph der Datei an, nach
 //                  unten und nach rechts, und nennt jede Anordnung, die mehr als
@@ -74,6 +79,7 @@
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
+#include "c2d/projekt/Schaltstellen.hpp"
 #include "c2d/projekt/Typen.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
@@ -117,7 +123,8 @@ int aufruf()
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
                  "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
-                 "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration] [--breite]\n"
+                 "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
+                 "                         [--schaltet <name>] [--schalter] [--breite]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -189,14 +196,14 @@ bool istAutomat(const c2d::diagramm::Zustandsdiagramm& z, const std::string& nam
 
 int main(int argc, char* argv[])
 {
-    std::string ziel, datei, funktion, automat, typ;
+    std::string ziel, datei, funktion, automat, typ, schaltet;
     std::vector<std::string> einbetten;
     c2d::projekt::ProjektOptionen lesen;
     std::string formatName = "mermaid";
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
     bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
-    bool konfiguration = false, breite = false;
+    bool konfiguration = false, breite = false, schalter = false;
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -212,6 +219,12 @@ int main(int argc, char* argv[])
         else if (a == "--nachschlagetabellen") nachschlagetabellen = true;
         else if (a == "--konfiguration") konfiguration = true;
         else if (a == "--breite") breite = true;
+        else if (a == "--schalter") schalter = true;
+        else if (a == "--schaltet")
+        {
+            schaltet = wert();
+            if (schaltet.empty()) return aufruf();
+        }
         else if (a == "--zuordnung")
         {
             zuordnung = true;
@@ -437,6 +450,24 @@ int main(int argc, char* argv[])
         }
         return schreibe(c2d::ausgabe::Diagrammart::Konfiguration,
                         std::span<const c2d::diagramm::Konfigurationstabelle>(tabellen));
+    }
+
+    // wo ein Name schaltet, und die Namen des Projekts
+    if (!schaltet.empty() || schalter)
+    {
+        if (lesen.alleZweige)
+        {
+            std::cerr << "c2d: --alle-zweige does not evaluate #if - nothing switches\n";
+            return 1;
+        }
+        if (schalter) return schreibe(c2d::ausgabe::Diagrammart::Schalteruebersicht, c2d::projekt::schalteruebersicht(p, lesen.definitionen));
+        const c2d::diagramm::Schaltstellen s = c2d::projekt::schaltstellen(p, schaltet, lesen.definitionen);
+        if (s.zeilen.empty() && s.gesetzt.empty())
+        {
+            std::cerr << "c2d: no #if asks for '" << schaltet << "' and nothing sets it - see --schalter\n";
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Schaltstellen, s);
     }
 
     // --automat: ein Zustandsautomat, erkannt im Code

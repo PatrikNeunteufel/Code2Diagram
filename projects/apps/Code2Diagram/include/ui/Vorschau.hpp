@@ -62,6 +62,10 @@ public:
     void zeige(std::span<const c2d::diagramm::Zuordnung> tabellen);
     /// Konfigurationstabellen untereinander; jede Zeile ist ein Knoten (gezaehlt ueber alle Tabellen).
     void zeige(std::span<const c2d::diagramm::Konfigurationstabelle> tabellen);
+    /// Wo ein Name schaltet; Knoten erst je Setzung, dann je Zeile.
+    void zeige(const c2d::diagramm::Schaltstellen& tabelle);
+    /// Die Namen des Projekts; jede Zeile ist ein Knoten.
+    void zeige(const c2d::diagramm::Schalteruebersicht& tabelle);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.

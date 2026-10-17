@@ -291,8 +291,10 @@ public:
     {
         return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle &&
                art != Diagrammart::Entscheidungstabelle && art != Diagrammart::Zuordnung &&
-               art != Diagrammart::Konfiguration;
+               art != Diagrammart::Konfiguration && art != Diagrammart::Schaltstellen && art != Diagrammart::Schalteruebersicht;
     }
+    [[nodiscard]] std::string schreibe(const Schaltstellen&, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(const Schalteruebersicht&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle>, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Entscheidungstabelle&, const Optionen&) const override { return {}; }

@@ -342,6 +342,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.diagramm());
                      });
 
+    anbindung.aktion(QStringLiteral("schaltstellen_zeigen"),
+                     QStringLiteral("Like Where is NAME switched? (context menu of the #if configuration, Configuration, source)"),
+                     QStringLiteral("name=<a name asked by #if or set by #define / the project file>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         if (!fenster.zeigeSchaltstellen(name))
+                             return st::fehler(QStringLiteral("No #if asks for %1, and nothing sets it").arg(name));
+                         return st::ok(fenster.diagramm());
+                     });
+
     anbindung.aktion(QStringLiteral("zweig_aktivieren"),
                      QStringLiteral("Like Make this branch active on a row of the #if configuration"),
                      QStringLiteral("zeile=<line of the #if, #elif or #else of the row; #endif for (no #else)>"),

@@ -20,6 +20,7 @@
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
+#include "c2d/diagramm/Schaltstellen.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
@@ -219,6 +220,11 @@ inline constexpr std::size_t kAtomZeichen = 30;
 /// Name mit seinem Stand, active), je Zeile ein Knoten — gezaehlt ueber alle Tabellen; Hinweise darunter.
 [[nodiscard]] TabellenAnordnung ordneAn(std::span<const Konfigurationstabelle> tabellen,
                                         const AnordnungOptionen& optionen = {});
+/// Wo ein Name schaltet: Titel, die Tabelle *set by*, darunter je Zweig eine Zeile, Hinweise.
+/// Knoten: erst je Setzung, dann je Zeile (Schaltstellen::gesetzt, dann ::zeilen).
+[[nodiscard]] TabellenAnordnung ordneAn(const Schaltstellen& tabelle, const AnordnungOptionen& optionen = {});
+/// Die Namen des Projekts: je Name eine Zeile und ein Knoten; *differs* getoent, von der Sprache Vorgegebenes grau.
+[[nodiscard]] TabellenAnordnung ordneAn(const Schalteruebersicht& tabelle, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

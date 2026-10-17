@@ -56,6 +56,8 @@ public:
     std::function<void(const QString&)> beiAenderung;
     /// Der Knopf "Save to project file".
     std::function<void()> beimSpeichern;
+    /// Kontextmenue eines Namens, *Where is NAME switched?*; ohne: kein Menue.
+    std::function<void(const QString&)> beiSchaltstellen;
 
     /// Wie der Haken eines Namens; `wert` fuer einen Namen, der einen Wert braucht (leer:
     /// der bisherige, sonst 1). false = gesperrt oder kein solcher Name.

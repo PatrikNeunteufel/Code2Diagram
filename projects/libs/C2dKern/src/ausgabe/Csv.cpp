@@ -47,7 +47,7 @@ public:
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
         return art == Diagrammart::Wahrheitstabelle || art == Diagrammart::Entscheidungstabelle || art == Diagrammart::Zuordnung ||
-               art == Diagrammart::Konfiguration;
+               art == Diagrammart::Konfiguration || art == Diagrammart::Schaltstellen || art == Diagrammart::Schalteruebersicht;
     }
 
     [[nodiscard]] std::string schreibe(const Flussdiagramm&, const Optionen&) const override { return {}; }
@@ -155,6 +155,38 @@ public:
             }
             for (const std::string& h : t.hinweise) aus += zeile({h});
         }
+        return aus;
+    }
+
+    // Titel, die Setzungen, je Zweig eine Zeile (Datei und Zeile in jeder), die Hinweise
+    [[nodiscard]] std::string schreibe(const Schaltstellen& t, const Optionen&) const override
+    {
+        std::string aus = zeile({t.titel});
+        aus += zeile({"set by", "file", "line", "value"});
+        for (const Schaltstellen::Setzung& s : t.gesetzt)
+            aus += zeile({s.herkunft, s.pfad, s.zeile > 0 ? std::to_string(s.zeile) : std::string(), s.wert});
+        aus += '\n';
+        aus += zeile({"file", "line", "branch", t.name, "state in the file", "from", "to", "lines", "active"});
+        for (const Schaltstellen::Zeile& z : t.zeilen)
+        {
+            const bool bekannt = z.bis != 0;
+            aus += zeile({z.pfad, std::to_string(z.quellZeile), z.text ? z.bedingung : z.zweig,
+                          z.forderung == "\xE2\x80\x93" ? std::string("-") : z.forderung, z.stand,
+                          bekannt ? std::to_string(z.von) : std::string(), bekannt ? std::to_string(z.bis) : std::string(),
+                          bekannt ? std::to_string(zeilenDazwischen(z)) : std::string(),
+                          z.geltend ? "yes" : z.nie ? "never" : ""});
+        }
+        for (const std::string& h : t.hinweise) aus += zeile({h});
+        return aus;
+    }
+
+    [[nodiscard]] std::string schreibe(const Schalteruebersicht& t, const Optionen&) const override
+    {
+        std::string aus = zeile({t.titel});
+        aus += zeile({"name", "files", "chains", "state", "set by", "language"});
+        for (const Schalteruebersicht::Zeile& z : t.zeilen)
+            aus += zeile({z.name, std::to_string(z.dateien), std::to_string(z.ketten), z.stand, z.herkunft, z.vorgegeben ? "yes" : ""});
+        for (const std::string& h : t.hinweise) aus += zeile({h});
         return aus;
     }
 };

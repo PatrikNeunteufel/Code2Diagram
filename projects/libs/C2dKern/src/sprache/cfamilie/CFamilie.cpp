@@ -459,6 +459,11 @@ private:
             einheit().makros.push_back(
                 {std::string(name), eineZeile(wert.starts_with('(') ? wert : gestutzt(wert)), t.ort.zeile});
         }
+        else if (wort == "undef")
+        {
+            const std::string_view name = fuehrenderName(rest);
+            if (!name.empty()) einheit().aufhebungen.push_back({std::string(name), t.ort.zeile});
+        }
     }
 
     // -----------------------------------------------------------------------

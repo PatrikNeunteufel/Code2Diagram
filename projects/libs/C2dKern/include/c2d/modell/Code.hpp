@@ -292,12 +292,20 @@ struct Makro
     int zeile = 0;
 };
 
+/// Ein `#undef NAME`, wo der Leser den Text sieht (nicht in einem Zweig, der nicht gilt).
+struct Aufhebung
+{
+    std::string name;
+    int zeile = 0;
+};
+
 /// Eine Uebersetzungseinheit: eine Quelldatei.
 struct Einheit
 {
     std::string name;
     std::vector<Einbindung> einbindungen;
     std::vector<Makro> makros;
+    std::vector<Aufhebung> aufhebungen;
     std::vector<Typ> typen;
     std::vector<Alias> aliase;
     std::vector<Variable> variablen;

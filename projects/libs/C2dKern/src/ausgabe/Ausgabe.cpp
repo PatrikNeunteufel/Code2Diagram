@@ -35,6 +35,8 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Entscheidungstabelle: return "Decision table";
         case Diagrammart::Zuordnung: return "Mapping table";
         case Diagrammart::Konfiguration: return "#if configuration";
+        case Diagrammart::Schaltstellen: return "#if switch points";
+        case Diagrammart::Schalteruebersicht: return "#if names";
     }
     return {};
 }

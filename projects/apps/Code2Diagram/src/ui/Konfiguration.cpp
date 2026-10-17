@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollArea>
@@ -175,6 +176,14 @@ void Konfiguration::baue()
         haken->setChecked(s.definiert);
         haken->setEnabled(!zu);
         haken->setToolTip(warum.isEmpty() ? QStringLiteral("Defined or not (for #if / #ifdef)") : warum);
+        // Rechtsklick: wo der Name im Projekt schaltet — auch bei einem gesperrten Haken
+        haken->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(haken, &QWidget::customContextMenuRequested, this, [this, haken, name](const QPoint& ort) {
+            if (!beiSchaltstellen) return;
+            QMenu menue(haken);
+            menue.addAction(QStringLiteral("Where is %1 switched?").arg(name), this, [this, name] { beiSchaltstellen(name); });
+            menue.exec(haken->mapToGlobal(ort));
+        });
         raster->addWidget(haken, i, 0);
         QLineEdit* wert = nullptr;
         if (s.zahl)

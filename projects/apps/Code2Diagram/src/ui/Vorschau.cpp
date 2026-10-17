@@ -748,6 +748,20 @@ void Vorschau::zeige(std::span<const Konfigurationstabelle> tabellen)
     zeigeTabelle(ordneAn(tabellen, optionen), {});
 }
 
+void Vorschau::zeige(const Schaltstellen& tabelle)
+{
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    zeigeTabelle(ordneAn(tabelle, optionen), {});
+}
+
+void Vorschau::zeige(const Schalteruebersicht& tabelle)
+{
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    zeigeTabelle(ordneAn(tabelle, optionen), {});
+}
+
 void Vorschau::zeigeTabelle(const TabellenAnordnung& a, const std::vector<QString>& tabellen)
 {
     leere();
