@@ -22,6 +22,7 @@
 #include <QTextDocument>
 #include <QWheelEvent>
 
+#include <algorithm>
 #include <cmath>
 
 namespace c2d::ui
@@ -440,9 +441,10 @@ public:
         }
     }
 
-    /// Ein kleines Tabellensymbol: es gibt eine Wahrheitstabelle; ein Klick zeigt sie. Innen rechts oben
-    /// in `r` — bei einer Raute (`spitz`) rechts neben ihrer Spitze, die Ecke von `r` laege neben der Form.
-    void tabellenSymbol(KnotenId id, const QRectF& r, bool spitz = false)
+    /// Ein kleines Tabellensymbol: es gibt eine Tabelle (`tipp` sagt welche); ein Klick zeigt sie. Innen
+    /// rechts oben in `r` — bei einer Raute (`spitz`) rechts neben ihrer Spitze, die Ecke von `r` laege
+    /// neben der Form.
+    void tabellenSymbol(KnotenId id, const QRectF& r, const QString& tipp, bool spitz = false)
     {
         const QRectF feld = spitz ? QRectF(r.right() + 3, r.center().y() - 14, 12, 9) : QRectF(r.right() - 16, r.top() + 3, 12, 9);
         QPen stift(m_verweis.color(), 1);
@@ -453,7 +455,7 @@ public:
         QGraphicsRectItem* treffer = m_szene.addRect(feld.adjusted(-3, -3, 3, 3), Qt::NoPen, Qt::NoBrush);
         treffer->setZValue(6.5);
         treffer->setData(kTabelle, static_cast<qulonglong>(id) + 1);
-        treffer->setToolTip(QStringLiteral("Truth table - click to show it"));
+        treffer->setToolTip(tipp);
         treffer->setCursor(Qt::PointingHandCursor);
     }
 
@@ -594,6 +596,17 @@ void Vorschau::leere()
     m_struktur = false;
 }
 
+QStringList Vorschau::tabellenSymbole() const
+{
+    std::vector<std::pair<double, QString>> symbole;
+    for (const QGraphicsItem* stueck : scene()->items())
+        if (stueck->data(kTabelle).toULongLong() != 0) symbole.emplace_back(stueck->sceneBoundingRect().top(), stueck->toolTip());
+    std::sort(symbole.begin(), symbole.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    QStringList aus;
+    for (const auto& s : symbole) aus << s.second;
+    return aus;
+}
+
 bool Vorschau::markiere(KnotenId knoten)
 {
     if (m_marke != nullptr)
@@ -614,7 +627,7 @@ bool Vorschau::markiere(KnotenId knoten)
 }
 
 void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<std::vector<std::string>>& links,
-                     const std::vector<bool>& mitTabelle)
+                     const std::vector<QString>& tabellen)
 {
     leere();
     AnordnungOptionen optionen;
@@ -641,10 +654,11 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
         z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < links.size() ? links[i] : std::vector<std::string>{});
-    for (std::size_t i = 0; i < a.knoten.size() && i < mitTabelle.size(); ++i)
-        if (mitTabelle[i])
-            z.tabellenSymbol(i, alsRect(a.knoten[i]), diagramm.knoten()[i].art == KnotenArt::Verzweigung ||
-                                                          diagramm.knoten()[i].art == KnotenArt::Variante);
+    for (std::size_t i = 0; i < a.knoten.size() && i < tabellen.size(); ++i)
+        if (!tabellen[i].isEmpty())
+            z.tabellenSymbol(i, alsRect(a.knoten[i]), tabellen[i],
+                             diagramm.knoten()[i].art == KnotenArt::Verzweigung ||
+                                 diagramm.knoten()[i].art == KnotenArt::Variante);
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
@@ -653,7 +667,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
 }
 
 void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links,
-                     const std::vector<bool>& mitTabelle)
+                     const std::vector<QString>& tabellen)
 {
     leere();
     AnordnungOptionen optionen;
@@ -677,7 +691,8 @@ void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector
     for (const FlussAnordnung::Legende& l : a.legende)
         z.legende(alsRect(l.feld), farbeVon(l.farbe), gekuerzt(l.titel), alsPunkt(l.text));
     for (const StruktoAnordnung::Feld& f : a.felder)
-        if (f.block < mitTabelle.size() && mitTabelle[f.block]) z.tabellenSymbol(f.block, alsRect(f.ort));
+        if (f.block < tabellen.size() && !tabellen[f.block].isEmpty())
+            z.tabellenSymbol(f.block, alsRect(f.ort), tabellen[f.block]);
     for (const Rechteck& r : a.bloecke) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
@@ -710,19 +725,30 @@ void Vorschau::zeige(std::span<const Wahrheitstabelle> tabellen)
     m_formen = static_cast<int>(a.zellen.size());
 }
 
-void Vorschau::zeige(const Entscheidungstabelle& tabelle, const std::vector<bool>& mitTabelle)
+void Vorschau::zeige(const Entscheidungstabelle& tabelle, const std::vector<QString>& tabellen)
 {
-    leere();
     AnordnungOptionen optionen;
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
-    const TabellenAnordnung a = ordneAn(tabelle, optionen);
+    zeigeTabelle(ordneAn(tabelle, optionen), tabellen);
+}
+
+void Vorschau::zeige(std::span<const Zuordnung> tabellen)
+{
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    zeigeTabelle(ordneAn(tabellen, optionen), {});
+}
+
+void Vorschau::zeigeTabelle(const TabellenAnordnung& a, const std::vector<QString>& tabellen)
+{
+    leere();
     Zeichner z(*scene(), dunkel());
     for (const TabellenAnordnung::Zelle& zelle : a.zellen)
     {
         z.tabellenZelle(zelle);
         // das Symbol in der ersten Spalte der Zeile
-        if (zelle.links && zelle.knoten < mitTabelle.size() && mitTabelle[zelle.knoten])
-            z.tabellenSymbol(zelle.knoten, alsRect(zelle.ort));
+        if (zelle.links && zelle.knoten < tabellen.size() && !tabellen[zelle.knoten].isEmpty())
+            z.tabellenSymbol(zelle.knoten, alsRect(zelle.ort), tabellen[zelle.knoten]);
     }
     for (const Linienzug& l : a.linien) z.linie(l);
     for (const TabellenAnordnung::Text& t : a.texte)

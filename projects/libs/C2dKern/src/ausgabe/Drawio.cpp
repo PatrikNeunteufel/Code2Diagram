@@ -391,6 +391,12 @@ public:
         return tabelle(ordneAn(t, o), t.funktion, o);
     }
 
+    [[nodiscard]] std::string schreibe(std::span<const Zuordnung> tabellen, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        return tabelle(ordneAn(tabellen, o), tabellen.empty() ? std::string("mapping") : tabellen.front().titel, o);
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const FlussAnordnung a = ordneAn(graph, anordnung(optionen));

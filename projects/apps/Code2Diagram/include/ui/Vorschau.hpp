@@ -8,12 +8,14 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Anordnung.hpp"
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <QGraphicsView>
@@ -35,9 +37,10 @@ public:
 
     /// `links[i]`: die Namen im Text des Knotens i, die irgendwohin fuehren (eine Funktion, ein
     /// Typ) — sie und der Knoten werden hervorgehoben. Darf kuerzer sein als die Knoten.
-    /// `mitTabelle[i]`: Knoten i traegt rechts oben ein Tabellensymbol (beiTabelle).
+    /// `tabellen[i]` nicht leer: Knoten i traegt rechts oben ein Tabellensymbol (beiTabelle), der
+    /// Text ist sein Tooltip.
     void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts,
-               const std::vector<std::vector<std::string>>& links = {}, const std::vector<bool>& mitTabelle = {});
+               const std::vector<std::vector<std::string>>& links = {}, const std::vector<QString>& tabellen = {});
     /// `links[k][e]`: die Namen im Glied e des Kastens k, die zu einem Typ fuehren — sie
     /// werden hervorgehoben. Darf kuerzer sein als die Kaesten.
     void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts,
@@ -49,18 +52,22 @@ public:
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
     void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},
-               const std::vector<bool>& mitTabelle = {});
+               const std::vector<QString>& tabellen = {});
     /// Wahrheitstabellen untereinander; ein Klick auf eine Zelle ist ein Klick auf Knoten 0.
     void zeige(std::span<const c2d::diagramm::Wahrheitstabelle> tabellen);
     /// Eine Entscheidungstabelle; jede Zeile ist ein Knoten (erst die Bedingungen, dann die Aktionen).
-    /// `mitTabelle[k]`: Zeile k traegt das Tabellensymbol.
-    void zeige(const c2d::diagramm::Entscheidungstabelle& tabelle, const std::vector<bool>& mitTabelle = {});
+    /// `tabellen[k]` nicht leer: Zeile k traegt das Tabellensymbol, der Text ist sein Tooltip.
+    void zeige(const c2d::diagramm::Entscheidungstabelle& tabelle, const std::vector<QString>& tabellen = {});
+    /// Zuordnungen untereinander; jede Zeile ist ein Knoten (gezaehlt ueber alle Tabellen).
+    void zeige(std::span<const c2d::diagramm::Zuordnung> tabellen);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.
     [[nodiscard]] int formen() const { return m_formen; }
     /// Wie viele Rahmen (Gruppen) gezeichnet sind.
     [[nodiscard]] int rahmen() const { return m_rahmen; }
+    /// Die Tooltips der gezeichneten Tabellensymbole, von oben nach unten.
+    [[nodiscard]] QStringList tabellenSymbole() const;
     /// Die ganze Szene als Bild, Massstab 1, auf dem Grund der Vorschau.
     [[nodiscard]] QImage alsBild() const;
 
@@ -94,6 +101,8 @@ protected:
     void wheelEvent(QWheelEvent* ereignis) override;
 
 private:
+    /// Eine Tabelle zeichnen (Entscheidungstabelle, Zuordnung): Zellen, Linien, Texte, Knoten je Zeile.
+    void zeigeTabelle(const c2d::diagramm::TabellenAnordnung& a, const std::vector<QString>& tabellen);
     /// Ist das Fenster dunkel? Dann die dunkle Spalte der Farbtabelle (diagramm/Farben.hpp).
     [[nodiscard]] bool dunkel() const;
     /// Knoten und innerste Gruppe an einem Ort der Ansicht.

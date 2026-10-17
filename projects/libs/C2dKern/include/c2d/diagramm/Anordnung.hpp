@@ -22,6 +22,7 @@
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
@@ -184,6 +185,9 @@ inline constexpr std::size_t kAtomZeichen = 30;
 /// Klassisch (DIN 66241): links die Bedingungen, dann die Aktionen (doppelte Linie dazwischen),
 /// je Regel eine Spalte R1, R2 … mit Y/N/–/Wert bzw. X. Knoten: je Zeile.
 [[nodiscard]] TabellenAnordnung ordneAn(const Entscheidungstabelle& tabelle, const AnordnungOptionen& optionen = {});
+/// Zuordnungen untereinander: je Tabelle ihr Titel, ein Kopf (Schluessel, Spalten), je Zeile ein
+/// Knoten — gezaehlt ueber alle Tabellen.
+[[nodiscard]] TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

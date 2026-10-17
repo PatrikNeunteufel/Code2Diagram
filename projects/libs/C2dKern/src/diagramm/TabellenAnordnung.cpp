@@ -139,6 +139,63 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
     return a;
 }
 
+TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOptionen& o)
+{
+    TabellenAnordnung a;
+    const double zeile = o.zeilenHoehe + 6;
+    const auto weite = [&](std::size_t n) { return static_cast<double>(n) * o.zeichenBreite + 2 * kLuft; };
+    double y = kRand;
+    std::size_t knoten = 0;
+    for (std::size_t ti = 0; ti < tabellen.size(); ++ti)
+    {
+        const Zuordnung& t = tabellen[ti];
+        a.texte.push_back({{kRand, y + o.zeilenHoehe / 2}, gekuerzt(t.titel, o.maxZeilenLaenge == 0 ? 0 : 2 * o.maxZeilenLaenge), true, ti});
+        a.breite = std::max(a.breite, kRand + weite(zeichen(a.texte.back().text)) + kRand);
+        y += o.zeilenHoehe + 6;
+
+        // die Spalten: der Schluessel, dann je Wert eine — so breit wie ihr breitester Text
+        std::vector<std::string> kopf{gekuerzt(t.schluessel, o.maxZeilenLaenge)};
+        for (const std::string& s : t.spalten) kopf.push_back(gekuerzt(s, o.maxZeilenLaenge));
+        std::vector<double> breiten;
+        for (const std::string& k : kopf) breiten.push_back(weite(zeichen(k)));
+        std::vector<std::vector<std::string>> inhalt;
+        for (const Zuordnung::Zeile& z : t.zeilen)
+        {
+            std::vector<std::string> r{gekuerzt(z.schluessel, o.maxZeilenLaenge)};
+            for (const std::string& w : z.werte) r.push_back(gekuerzt(w, o.maxZeilenLaenge));
+            for (std::size_t s = 0; s < r.size() && s < breiten.size(); ++s) breiten[s] = std::max(breiten[s], weite(zeichen(r[s])));
+            inhalt.push_back(std::move(r));
+        }
+        double x = kRand;
+        for (std::size_t s = 0; s < kopf.size(); ++s)
+        {
+            a.zellen.push_back({{x, y, breiten[s], zeile}, {kopf[s]}, true, false, s == 0 && kopf[s] != t.schluessel ? t.schluessel : "",
+                                ti, kKeine, s == 0});
+            x += breiten[s];
+        }
+        const double rechts = x;
+        y += zeile;
+        for (std::size_t r = 0; r < inhalt.size(); ++r)
+        {
+            double xr = kRand;
+            for (std::size_t s = 0; s < inhalt[r].size() && s < breiten.size(); ++s)
+            {
+                const std::string ganz = s == 0 ? t.zeilen[r].schluessel : t.zeilen[r].werte[s - 1];
+                a.zellen.push_back({{xr, y, breiten[s], zeile}, {inhalt[r][s]}, false, false, ganz != inhalt[r][s] ? ganz : "",
+                                    ti, knoten, true});
+                xr += breiten[s];
+            }
+            a.knotenOrte.push_back({kRand, y, rechts - kRand, zeile});
+            ++knoten;
+            y += zeile;
+        }
+        a.breite = std::max(a.breite, rechts + kRand);
+        if (ti + 1 < tabellen.size()) y += kAbstand * o.zeilenHoehe;
+    }
+    a.hoehe = y + kRand;
+    return a;
+}
+
 TabellenAnordnung ordneAn(const Entscheidungstabelle& t, const AnordnungOptionen& o)
 {
     TabellenAnordnung a;

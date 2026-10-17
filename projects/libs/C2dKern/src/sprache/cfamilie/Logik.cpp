@@ -266,6 +266,32 @@ void wirkung(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle)
     const auto schreibe = [&](std::string_view name) {
         if (std::find(a.schreibt.begin(), a.schreibt.end(), name) == a.schreibt.end()) a.schreibt.emplace_back(name);
     };
+    // genau eine Zuweisung `ziel = wert` auf oberster Ebene: beide Seiten (fuer Zuordnungen)
+    {
+        int tiefe = 0;
+        std::size_t stelle = 0;
+        std::size_t zuweisungen = 0;
+        for (std::size_t i = 0; i < t.size() && t[i].art != TokenArt::Ende; ++i)
+        {
+            if (oeffnet(t[i])) ++tiefe;
+            else if (schliesst(t[i])) --tiefe;
+            else if (tiefe == 0 && istZuweisung(t[i]))
+            {
+                ++zuweisungen;
+                stelle = i;
+            }
+        }
+        if (zuweisungen == 1 && t[stelle].text == "=" && stelle > 0 && t[stelle + 1].art != TokenArt::Ende)
+        {
+            const auto ab = [&](std::size_t i) { return static_cast<std::size_t>(t[i].text.data() - a.text.data()); };
+            std::string_view links = std::string_view(a.text).substr(0, ab(stelle));
+            while (!links.empty() && links.back() == ' ') links.remove_suffix(1);
+            std::string_view rechts = std::string_view(a.text).substr(ab(stelle + 1));
+            while (!rechts.empty() && (rechts.back() == ' ' || rechts.back() == ';')) rechts.remove_suffix(1);
+            a.ziel = std::string(links);
+            a.wert = std::string(rechts);
+        }
+    }
     std::size_t anfang = 0;  // wo der laufende Teilausdruck beginnt (nach `(`, `,`, `;` oder einer Zuweisung)
     for (std::size_t i = 0; i < t.size() && t[i].art != TokenArt::Ende; ++i)
     {

@@ -259,6 +259,19 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   Zeile `… (again, line n)`. Über 32 Regeln keine Tabelle, nur ein Hinweis. Klick auf eine Zeile
   zeigt sie im Quelltext; SVG, draw.io und csv schreiben sie, Mermaid und DOT nicht.
   `c2d --funktion f --entscheidungstabelle`, im Fenster `--entscheidungstabelle`.
+- **Zuordnungstabellen:** ein `switch`, in dem jeder Fall nur einen Wert liefert — ein
+  `return <Ausdruck>`, oder Zuweisungen an dieselben Namen in jedem Fall, dann `break` —, ist eine
+  Tabelle: links der Wert des Falls, rechts je Name eine Spalte (oder `return`). Geteilte Fälle je
+  eine Zeile, `default` zuletzt; fehlt es, eine Zeile `otherwise` mit `—`. Werte stehen als Text der
+  Quelle, gerechnet wird nichts. Der Knoten des `switch` trägt das Tabellensymbol, das Kontextmenü
+  *Mapping table (line n)*, im Quelltext *Mapping table of line n*. Dazu die **konstanten Tabellen**
+  einer Datei (`const`-Arrays mit `{ … }`), in Diagram als *Lookup tables (n)*: Index → Wert,
+  benannte Indizes (`[ROT] =`) und weitergezählte (`ROT + 1`), bei Strukturen je Glied eine Spalte
+  (auch `.glied =`); den Strukturtyp sucht sie in der Datei, dann wie die Links auf Typen in den
+  eingebundenen Köpfen und im Projekt (mehrdeutig oder unbekannt: Spalten `1`, `2`, …). Ein Klick
+  auf eine Zeile zeigt sie im Quelltext. SVG, draw.io und csv schreiben sie, Mermaid und DOT nicht.
+  `c2d --funktion f --zuordnung [<zeile>]`, `c2d <datei> --nachschlagetabellen` (im Projekt mit
+  `--datei`). Beispiel: `beispiele/zuordnung.c`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -317,7 +330,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
   `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`,
   `darstellung_waehlen name=<flowchart|nassi-shneiderman|decision-table>`,
-  `wahrheitstabelle_zeigen zeile=<n>`,
+  `wahrheitstabelle_zeigen zeile=<n>`, `zuordnung_zeigen zeile=<n>`,
   `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
 
@@ -345,7 +358,10 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   Mehrdeutige Aufrufe nennt die Fehlerausgabe mit Datei und Zeile
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
-  Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat
+  Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat; Zuordnungen als
+  `mapping f@zeile`, konstante Tabellen als `lookup`
+- `--zuordnung [<zeile>]` (mit `--funktion`) schreibt die Zuordnungstabelle des `switch` in dieser
+  Zeile, ohne Zeile alle der Funktion; `--nachschlagetabellen` die konstanten Tabellen der Datei
 - `-D NAME` oder `-D NAME=wert` (auch `-DNAME`): gilt beim Auswerten als definiert, ohne Wert
   als 1; `-U NAME` (auch `-UNAME`, `-D !NAME`): gilt als nicht definiert, auch wo Projektdatei
   oder ein Kopf ihn definieren; für einen Namen gilt die letzte Angabe; `--alle-zweige` wertet nicht aus; `--varianten` zeigt ein `#if` im Rumpf als Varianten;
@@ -456,8 +472,13 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
 - **Wahrheitstabellen:** Atome gelten als unabhängig — `x > 5` und `x > 10` können nicht beide
   falsch-wahr sein, die Tabelle zeigt die Zeile trotzdem. Makros werden nicht aufgelöst (`IS_OK(x)`
   ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche
-  in ihrer Grenze bleibt (sonst ein Hinweis). Entscheidungstabelle einer Funktion,
-  `switch`-Zuordnung und `#if`-Konfiguration fehlen noch (eigene Fragen).
+  in ihrer Grenze bleibt (sonst ein Hinweis). Die `#if`-Konfigurationstabelle fehlt noch (eigene
+  Fragen).
+- **Zuordnungstabellen:** nur `switch` (keine `if`-Kette); ein Fall, der noch etwas anderes tut
+  (rufen, durchfallen, andere Namen setzen), macht den `switch` zu keiner Tabelle. Konstante
+  Tabellen nur auf Dateiebene, nicht `const`-Arrays in einer Funktion; bei mehrdimensionalen
+  Arrays wird die innere Liste zu Spalten `1`, `2`, …. Makros werden nicht ersetzt (`EMPTY_DISPATCH` steht als Wert
+  in der ersten Spalte).
 - **Entscheidungstabellen:** das Innere von Schleifen, `catch`-Blöcke und nicht geltende
   `#if`-Varianten stehen nicht darin (Hinweise). Ob eine Anweisung eine Bedingung ändern kann,
   wird an ihren Namen erkannt: ein Alias, den kein Name verrät (ein globaler Zeiger auf eine lokale

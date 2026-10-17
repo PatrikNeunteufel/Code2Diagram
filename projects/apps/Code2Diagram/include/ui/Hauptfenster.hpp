@@ -39,6 +39,7 @@
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
@@ -90,6 +91,10 @@ public:
     static constexpr const char* kEntscheidungstabelle = "decision-table";
     /// So beginnt der Name einer Wahrheitstabelle: `truth:<Funktion>@<Zeile>`.
     static constexpr const char* kWahrheitstabelle = "truth:";
+    /// So beginnt der Name einer Zuordnungstabelle (ein switch): `mapping:<Funktion>@<Zeile>`.
+    static constexpr const char* kZuordnung = "mapping:";
+    /// Die konstanten Tabellen der Datei.
+    static constexpr const char* kNachschlagetabellen = "lookup";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -204,6 +209,9 @@ public:
     /// Wie Rechtsklick im Quelltext, Truth table of line n: die Wahrheitstabelle der Bedingung in Zeile
     /// `zeile` der Datei im Quelltext, als eigenes Diagramm (Back fuehrt zurueck). false = dort keine.
     bool zeigeWahrheitstabelle(int zeile);
+    /// Wie Rechtsklick im Quelltext, Mapping table of line n: der switch in Zeile `zeile`, wenn er nur
+    /// Werte zuordnet. false = dort keiner.
+    bool zeigeZuordnung(int zeile);
     /// Wie Rechtsklick im Quelltext, Show in diagram: Zeile `zeile` der Datei im Quelltext. In einer
     /// Funktion: ihr Knoten im gezeigten Ablauf (sonst erst zum Ablauf der Funktion; Back fuehrt
     /// zurueck), im Aufrufgraph die Funktion; in einem Typ: Data types mit ihm. Hervorgehoben (Ring),
@@ -266,6 +274,8 @@ public:
     [[nodiscard]] QString diagrammText() const;
     /// Wie viele Knoten oder Kaesten die Vorschau zeichnet.
     [[nodiscard]] int vorschauFormen() const;
+    /// Die Tooltips der Tabellensymbole in der Vorschau, von oben nach unten.
+    [[nodiscard]] QStringList tabellenSymbole() const;
     /// Das ganze gezeichnete Diagramm, in Originalgroesse — auch was das Fenster nicht zeigt.
     [[nodiscard]] QImage vorschauBild() const;
     /// Wie viele Meldungen das Lesen der gewaehlten Datei hinterlassen hat.
@@ -294,8 +304,17 @@ private:
     [[nodiscard]] std::size_t funktionZurZeile(std::size_t datei, int zeile) const;
     /// Steht in dieser Zeile eine Bedingung mit Wahrheitstabelle?
     [[nodiscard]] bool hatWahrheitstabelle(std::size_t datei, int zeile) const;
-    /// Die Zeilen eines Knotens (beim Buendeln mehrere), in denen eine Tabelle steht.
+    /// Steht in dieser Zeile ein switch, der nur Werte zuordnet?
+    [[nodiscard]] bool hatZuordnung(std::size_t datei, int zeile) const;
+    [[nodiscard]] bool istZuordnung() const;
+    /// Zur Zuordnung des switch in der Zeile; `von` wie bei gehe(). false = dort keine.
+    bool geheZuZuordnung(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
+    /// Zur Tabelle einer Zeile: ihre Wahrheitstabelle, sonst ihre Zuordnung.
+    bool geheZuTabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
+    /// Die Zeilen eines Knotens (beim Buendeln mehrere), in denen eine Tabelle steht (Wahrheit, Zuordnung).
     [[nodiscard]] std::vector<int> tabellenZeilen(c2d::diagramm::KnotenId knoten) const;
+    /// Der Tooltip des Tabellensymbols am Knoten: welche Tabelle ein Klick zeigt; leer = keine.
+    [[nodiscard]] QString tabellenHinweis(c2d::diagramm::KnotenId knoten) const;
     /// Zur Wahrheitstabelle der Zeile; `von` wie bei gehe(). false = dort keine.
     bool geheZuWahrheitstabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
     /// Was mit Farben der Palette gezeichnet ist, neu: Vorschau, Marke, Zeile im Quelltext.
@@ -438,6 +457,7 @@ private:
     c2d::diagramm::Struktogramm m_struktogramm;  ///< das gezeigte Struktogramm; leer = keines
     std::vector<c2d::diagramm::Wahrheitstabelle> m_tabellen;  ///< die gezeigte Wahrheitstabelle
     c2d::diagramm::Entscheidungstabelle m_entscheidung;       ///< die gezeigte; leer = keine
+    std::vector<c2d::diagramm::Zuordnung> m_zuordnungen;      ///< die gezeigte Zuordnung oder die Nachschlagetabellen
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei

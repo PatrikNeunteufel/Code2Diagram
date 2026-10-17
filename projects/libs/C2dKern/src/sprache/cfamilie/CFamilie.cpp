@@ -115,7 +115,65 @@ private:
         std::string name;
         std::string zusatz;
         std::size_t basisEnde = 0;  ///< bis hierher reicht der Typ, den weitere Deklaratoren teilen
+        Bereich anfang{0, 0};       ///< die Token des Anfangswerts (hinter `=`, oder ab `{`); leer = keiner
     };
+
+    /// Wo der Anfangswert eines Deklarators [a, b) steht: hinter `=`, oder ab `{` (C++).
+    [[nodiscard]] Bereich anfangIn(std::size_t a, std::size_t b) const
+    {
+        const std::size_t ende = std::min(sucheD(a, {"=", "{"}), b);
+        if (ende >= b) return {0, 0};
+        return m_t[ende].istOp("=") ? Bereich{ende + 1, b} : Bereich{ende, b};
+    }
+
+    /// Ein Anfangswert [a, b) als Baum: eine Liste `{ … }` mit ihren Teilen, je Teil sein Bezeichner.
+    [[nodiscard]] modell::Initialisierer initialisierer(std::size_t a, std::size_t b) const
+    {
+        modell::Initialisierer i;
+        i.text = textVon(a, b);
+        i.zeile = a < m_t.size() ? m_t[a].ort.zeile : 0;
+        if (b - a < 2 || !m_t[a].istOp("{") || nachKlammer(a) != b) return i;
+        i.liste = true;
+        for (Bereich s : teile(a + 1, b - 1))
+        {
+            std::string index;
+            std::string glied;
+            // [X] = …  oder  .feld = …
+            if (m_t[s.first].istOp("["))
+            {
+                const std::size_t zu = nachKlammer(s.first);
+                if (zu < s.second && m_t[zu].istOp("="))
+                {
+                    index = textVon(s.first + 1, zu - 1);
+                    s.first = zu + 1;
+                }
+            }
+            else if (m_t[s.first].istOp(".") && s.first + 2 < s.second && m_t[s.first + 1].art == TokenArt::Bezeichner &&
+                     m_t[s.first + 2].istOp("="))
+            {
+                glied = std::string(m_t[s.first + 1].text);
+                s.first += 3;
+            }
+            if (s.first >= s.second) continue;
+            modell::Initialisierer teil = initialisierer(s.first, s.second);
+            teil.index = std::move(index);
+            teil.glied = std::move(glied);
+            i.teile.push_back(std::move(teil));
+        }
+        return i;
+    }
+
+    /// Ist der Typ konstant (das Wort `const` darin)?
+    [[nodiscard]] static bool istKonstant(const std::string& typ)
+    {
+        for (std::size_t p = typ.find("const"); p != std::string::npos; p = typ.find("const", p + 1))
+        {
+            const bool vorn = p == 0 || typ[p - 1] == ' ' || typ[p - 1] == '*';
+            const bool hinten = p + 5 >= typ.size() || typ[p + 5] == ' ' || typ[p + 5] == '*';
+            if (vorn && hinten) return true;
+        }
+        return false;
+    }
 
     Einheit& einheit() { return m_aus.einheit; }
 
@@ -429,7 +487,7 @@ private:
             for (std::size_t k = i + 2; k < ende; ++k)
             {
                 if (m_t[k].art == TokenArt::Bezeichner)
-                    return {textVon(a, k), std::string(m_t[k].text), textVon(k + 1, ende), basisVor(a, k)};
+                    return {textVon(a, k), std::string(m_t[k].text), textVon(k + 1, ende), basisVor(a, k), anfangIn(a, b)};
                 if (!m_t[k].istOp("*") && m_t[k].art != TokenArt::Schluesselwort) break;
             }
             break;
@@ -450,7 +508,7 @@ private:
             }
             ++i;
         }
-        const Deklarator ohneNamen{textVon(a, ende), {}, {}, ende};
+        const Deklarator ohneNamen{textVon(a, ende), {}, {}, ende, {0, 0}};
         if (grenze <= a || m_t[grenze - 1].art != TokenArt::Bezeichner) return ohneNamen;
 
         // Der letzte Bezeichner ist der Name, mit dem, was ihn qualifiziert
@@ -464,7 +522,7 @@ private:
         while (davor < anfang && istVorsatz(m_t[davor])) ++davor;
         if (davor == anfang || istTypWort(m_t[anfang - 1])) return ohneNamen;
 
-        return {textVon(a, anfang), textVon(anfang, grenze), textVon(grenze, ende), basisVor(a, anfang)};
+        return {textVon(a, anfang), textVon(anfang, grenze), textVon(grenze, ende), basisVor(a, anfang), anfangIn(a, b)};
     }
 
     /// Wo vor dem Namen an Stelle `name` der Typ endet, den weitere Deklaratoren teilen.
@@ -488,10 +546,10 @@ private:
         const std::size_t ende = std::min(sucheD(a, {"=", "{"}), b);
         std::size_t name = a;
         while (name < ende && m_t[name].art != TokenArt::Bezeichner) ++name;
-        if (name >= ende) return {basis, {}, {}, a};
+        if (name >= ende) return {basis, {}, {}, a, {0, 0}};
         std::string typ = basis;
         if (name > a) typ += (typ.empty() ? "" : " ") + textVon(a, name);
-        return {std::move(typ), std::string(m_t[name].text), textVon(name + 1, ende), a};
+        return {std::move(typ), std::string(m_t[name].text), textVon(name + 1, ende), a, anfangIn(a, b)};
     }
 
     /// Die Deklaratoren [a, b) zu einem schon gelesenen Typ (hinter dessen `}`).
@@ -528,7 +586,11 @@ private:
     void lege(const Rahmen& r, Deklarator d, int zeile)
     {
         if (r.typ == kKeiner)
-            einheit().variablen.push_back({std::move(d.typ), std::move(d.name), std::move(d.zusatz), zeile});
+        {
+            modell::Variable v{std::move(d.typ), std::move(d.name), std::move(d.zusatz), zeile, std::nullopt};
+            if (istKonstant(v.typ) && d.anfang.second > d.anfang.first) v.anfang = initialisierer(d.anfang.first, d.anfang.second);
+            einheit().variablen.push_back(std::move(v));
+        }
         else
             einheit().typen[r.typ].felder.push_back(
                 {std::move(d.typ), std::move(d.name), std::move(d.zusatz), r.sicht, zeile});

@@ -564,6 +564,37 @@ Zeile 19 drei Teile mit `pruefe_sensor(k)`), `ueberwache` (eine Schleife, eine Z
       mermaid: `Decision table is not available in mermaid`. Feld zurück auf *Flowchart*.
       `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=mermaid` `aktion: darstellung_waehlen name=flowchart`
 
+## S. Zuordnungstabellen
+
+Am Beispiel `beispiele/zuordnung.c`: `dauer_ms` (Zeile 18, `switch` mit `return`, ohne `default`),
+`setze` (Zeile 33, Zuweisungen an `r` und `g`), die Tabellen `dauer` und `daten` (Zeilen 9 und 10).
+
+- [ ] **S0 Vorbereiten:** Die Datei öffnen, `dauer_ms`, Vorschau, Format svg, Feld auf *Flowchart*.
+      `aktion: datei_oeffnen pfad=beispiele/zuordnung.c` `aktion: diagramm_waehlen name=dauer_ms` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview` `aktion: darstellung_waehlen name=flowchart`
+- [ ] **S1 Das Symbol:** Rechts neben der Spitze der Raute `phase` das kleine Tabellensymbol, Tooltip
+      *Mapping table - click to show it*. Rechtsklick auf die Raute: *Mapping table (line 18)*.
+- [ ] **S2 Die Tabelle:** Klick auf das Symbol: Diagram steht auf *Mapping table: dauer_ms() line 18*.
+      Oben `dauer_ms(): switch (phase)`, Spalten `phase` und `return`; Zeilen `ROT 5000`,
+      `GRUEN 4000`, `ROT_GELB 1000`, `GELB 1000`, `otherwise —`. Die erste Spalte linksbündig.
+      `aktion: zuordnung_zeigen zeile=18`
+- [ ] **S3 Klick und Back:** Klick auf `GELB`: im Quelltext ist Zeile 24 hinterlegt. **Back**: wieder
+      der Ablauf von `dauer_ms`.
+      `aktion: klicken name=GELB` `aktion: zurueck`
+- [ ] **S4 Aus dem Quelltext:** Rechtsklick im Quelltext auf Zeile 33, *Mapping table of line 33*:
+      `setze(): switch (phase)`, Spalten `phase`, `r`, `g`; `ROT 1 0`, `GRUEN 0 1`, `default 0 0`.
+      `aktion: zuordnung_zeigen zeile=33`
+- [ ] **S5 Lookup tables:** In Diagram *Lookup tables (2)*: `static const unsigned short dauer[4]` mit
+      `index`/`value`, `0…3`; darunter `static const PhasenDaten daten[]` mit `index`, `dauer_ms`,
+      `blinkt` und den Zeilen `ROT`, `GRUEN`, `GRUEN + 1` (bei `GRUEN` steht `4000` unter
+      `dauer_ms`, obwohl `.blinkt` in der Quelle zuerst kommt). Klick auf `GRUEN`: Zeile 12.
+      `aktion: diagramm_waehlen name=lookup` `aktion: klicken name=GRUEN`
+- [ ] **S6 Formate:** csv: `daten[]`-Block mit `index;dauer_ms;blinkt`; draw.io zeigt dieselben
+      Tabellen; mermaid: `Mapping table is not available in mermaid`.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=drawio` `aktion: format_waehlen name=mermaid`
+- [ ] **S7 Typ im Kopf:** Einen Ordner öffnen, in dem die Struktur einer Tabelle in einem
+      eingebundenen Kopf steht (etwa LLC, `Serial_Commands.c`): *Lookup tables* zeigt die Glieder
+      des Kopfs als Spalten (`Template`, `Groupe`, …), nicht `1`, `2`, ….
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

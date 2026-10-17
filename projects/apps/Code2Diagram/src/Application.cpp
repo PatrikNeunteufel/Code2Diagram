@@ -320,6 +320,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.diagramm());
                      });
 
+    anbindung.aktion(QStringLiteral("zuordnung_zeigen"),
+                     QStringLiteral("Like right-click in the source, Mapping table of line n"),
+                     QStringLiteral("zeile=<line of a switch in the file shown in the source>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         if (zeile <= 0) return st::ungueltig(QStringLiteral("zeile is missing"));
+                         if (!fenster.zeigeZuordnung(zeile))
+                             return st::fehler(QStringLiteral("Line %1 has no switch that only maps values").arg(zeile));
+                         return st::ok(fenster.diagramm());
+                     });
+
     anbindung.aktion(QStringLiteral("darstellung_waehlen"),
                      QStringLiteral("How a function is shown: flowchart, Nassi-Shneiderman or decision table"),
                      QStringLiteral("name=<flowchart | nassi-shneiderman | decision-table>"),

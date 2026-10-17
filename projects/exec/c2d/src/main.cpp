@@ -7,11 +7,13 @@
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
+//                             [--zuordnung [<zeile>]] [--nachschlagetabellen]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
 //                  das Strukturdiagramm
-//   --liste        nennt, was die Datei (das Projekt: jede Datei) enthaelt, und endet
+//   --liste        nennt, was die Datei (das Projekt: jede Datei) enthaelt (auch Automaten,
+//                  Zuordnungen "mapping" und konstante Tabellen "lookup"), und endet
 //   --datei        im Projekt: die Datei, um die es geht (relativ zum Ordner)
 //   --funktion     das Flussdiagramm dieser Funktion (Name allein oder mit Bereich); im
 //                  Projekt muss sie eindeutig sein, sonst --datei
@@ -47,6 +49,9 @@
 //                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv
 //   --entscheidungstabelle  mit --funktion: die Entscheidungstabelle (DIN 66241) der Funktion;
 //                  svg, drawio, csv
+//   --zuordnung    mit --funktion: die Zuordnungstabelle des switch in dieser Zeile (ohne Zeile: alle
+//                  der Funktion, die Zuordnungen sind); svg, drawio, csv
+//   --nachschlagetabellen  die konstanten Tabellen (const-Arrays) der Datei (im Projekt: --datei)
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
 // Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
@@ -55,8 +60,10 @@
 #include "c2d/diagramm/Ableitung.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
+#include "c2d/projekt/Typen.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
@@ -98,6 +105,7 @@ int aufruf()
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
                  "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
+                 "                         [--zuordnung [<line>]] [--nachschlagetabellen]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -116,8 +124,9 @@ std::string orte(const Projekt& p, const std::vector<Fundstelle>& stellen)
     return aus;
 }
 
-void liste(const c2d::projekt::Datei& d)
+void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Typverzeichnis& typen)
 {
+    const c2d::projekt::Datei& d = p.dateien[i];
     const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
     for (const c2d::modell::Funktion& f : einheit.funktionen)
         std::cout << (f.rumpf ? "function  " : "prototype ") << f.signatur() << (f.intern ? "  [static]" : "") << '\n';
@@ -133,6 +142,15 @@ void liste(const c2d::projekt::Datei& d)
     for (const c2d::diagramm::Zustandsdiagramm& z : c2d::diagramm::automatenVon(einheit))
         std::cout << "automaton " << z.titel << " (" << z.zustaende.size() << " states, " << z.uebergaenge.size()
                   << " transitions)\n";
+    for (const c2d::modell::Funktion& f : einheit.funktionen)
+        for (const int zeile : c2d::diagramm::zeilenMitZuordnung(f))
+            if (const std::optional<c2d::diagramm::Zuordnung> z = c2d::diagramm::zuordnungVon(f, zeile))
+                std::cout << "mapping   " << f.name << '@' << zeile << " (" << z->zeilen.size() << " rows, "
+                          << z->spalten.size() << " columns)\n";
+    for (const c2d::diagramm::Zuordnung& t : c2d::diagramm::nachschlagetabellenVon(
+             einheit, [&](std::string_view name) { return typen.eindeutig(i, name); }))
+        std::cout << "lookup    " << t.titel << " (" << t.zeilen.size() << " rows, " << t.spalten.size()
+                  << " columns)\n";
 }
 
 /// Passt der Name auf den Automaten: die Variable, ihr letztes Glied, oder der Titel?
@@ -153,7 +171,7 @@ int main(int argc, char* argv[])
     std::string formatName = "mermaid";
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
-    bool wahrheitstabelle = false, entscheidungstabelle = false;
+    bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -166,6 +184,12 @@ int main(int argc, char* argv[])
         else if (a == "--roh") roh = true;
         else if (a == "--struktogramm") struktogramm = true;
         else if (a == "--entscheidungstabelle") entscheidungstabelle = true;
+        else if (a == "--nachschlagetabellen") nachschlagetabellen = true;
+        else if (a == "--zuordnung")
+        {
+            zuordnung = true;
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') tabellenZeile = std::atoi(argv[++i]);
+        }
         else if (a == "--wahrheitstabelle")
         {
             wahrheitstabelle = true;
@@ -277,11 +301,12 @@ int main(int argc, char* argv[])
 
     if (zeigeListe)
     {
+        const c2d::projekt::Typverzeichnis typen(p);
         for (std::size_t i = 0; i < p.dateien.size(); ++i)
         {
             if (gewaehlteDatei != c2d::projekt::kKeine && i != gewaehlteDatei) continue;
             if (ordner) std::cout << "== " << p.dateien[i].pfad << '\n';
-            liste(p.dateien[i]);
+            liste(p, i, typen);
         }
         return 0;
     }
@@ -297,6 +322,26 @@ int main(int argc, char* argv[])
         std::cout << format->schreibe(diagramm, optionen);
         return 0;
     };
+
+    // die konstanten Tabellen einer Datei
+    if (nachschlagetabellen)
+    {
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: --nachschlagetabellen needs --datei in a folder\n";
+            return 1;
+        }
+        const c2d::projekt::Typverzeichnis typen(p);
+        const std::vector<c2d::diagramm::Zuordnung> tabellen = c2d::diagramm::nachschlagetabellenVon(
+            p.dateien[gewaehlteDatei].ergebnis.einheit,
+            [&](std::string_view name) { return typen.eindeutig(gewaehlteDatei, name); });
+        if (tabellen.empty())
+        {
+            std::cerr << "c2d: no constant table in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Zuordnung, std::span<const c2d::diagramm::Zuordnung>(tabellen));
+    }
 
     // --automat: ein Zustandsautomat, erkannt im Code
     if (!automat.empty())
@@ -393,6 +438,19 @@ int main(int argc, char* argv[])
             for (const Hinweis& h : s.hinweise)
                 std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << h.zeile << ": " << h.text << '\n';
             return schreibe(c2d::ausgabe::Diagrammart::Struktogramm, s);
+        }
+        if (zuordnung)
+        {
+            std::vector<Zuordnung> tabellen;
+            for (const int z : tabellenZeile == 0 ? zeilenMitZuordnung(wahl) : std::vector<int>{tabellenZeile})
+                if (std::optional<Zuordnung> t = zuordnungVon(wahl, z)) tabellen.push_back(std::move(*t));
+            if (tabellen.empty())
+            {
+                std::cerr << "c2d: no switch that only maps values in " << wahl.name << "()"
+                          << (tabellenZeile == 0 ? std::string() : " at line " + std::to_string(tabellenZeile)) << '\n';
+                return 1;
+            }
+            return schreibe(c2d::ausgabe::Diagrammart::Zuordnung, std::span<const Zuordnung>(tabellen));
         }
         if (entscheidungstabelle)
         {

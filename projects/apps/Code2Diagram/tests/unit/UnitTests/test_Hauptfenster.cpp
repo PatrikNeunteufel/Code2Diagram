@@ -654,6 +654,7 @@ TEST_SUITE("Hauptfenster")
                                      "}\n"),
                       QStringLiteral("t.c"));
         REQUIRE(fenster.waehleDiagramm("f"));
+        CHECK(fenster.tabellenSymbole() == QStringList(2, QStringLiteral("Truth table - click to show it")));
         CHECK_FALSE(fenster.zeigeWahrheitstabelle(4));  // keine Bedingung mit zwei Atomen
         REQUIRE(fenster.zeigeWahrheitstabelle(3));
         CHECK(fenster.diagramm() == "truth:f@3");
@@ -699,6 +700,38 @@ TEST_SUITE("Hauptfenster")
         REQUIRE(fenster.zurueck());
         CHECK(fenster.darstellung() == Hauptfenster::kEntscheidungstabelle);
         CHECK(fenster.diagramm() == "f");
+    }
+
+    TEST_CASE("Zuordnungen: der switch als Tabelle, Lookup tables der Datei, Klick auf eine Zeile")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("static const int t[2] = {7, 9};\n"  // 1
+                                     "int f(int p)\n"                      // 2
+                                     "{\n"                                 // 3
+                                     "    switch (p) {\n"                  // 4
+                                     "    case 0: return 1;\n"             // 5
+                                     "    default: return 2;\n"            // 6
+                                     "    }\n"                             // 7
+                                     "}\n"),
+                      QStringLiteral("t.c"));
+        CHECK(fenster.diagramme().contains("lookup"));
+        REQUIRE(fenster.waehleDiagramm("f"));
+        CHECK(fenster.tabellenSymbole() == QStringList{QStringLiteral("Mapping table - click to show it")});
+        CHECK_FALSE(fenster.zeigeZuordnung(5));
+        REQUIRE(fenster.zeigeZuordnung(4));
+        CHECK(fenster.diagramm() == "mapping:f@4");
+        CHECK(fenster.vorschauFormen() == 2);
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText() == "f(): switch (p)\np;return\n0;1\ndefault;2\n");
+        CHECK(fenster.klicke("default"));
+        CHECK(fenster.gezeigteStelle() == "t.c:6");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "f");
+
+        REQUIRE(fenster.waehleDiagramm("lookup"));
+        CHECK(fenster.diagrammText() == "static const int t[2]\nindex;value\n0;7\n1;9\n");
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText() == "Mapping table is not available in mermaid");
     }
 
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")

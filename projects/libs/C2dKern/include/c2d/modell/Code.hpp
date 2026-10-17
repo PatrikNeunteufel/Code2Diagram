@@ -102,6 +102,9 @@ struct Anweisung
     std::vector<std::string> schreibt;
     bool schreibtDurchZeiger = false;
     bool ruft = false;
+    /// Nur Einfach, genau eine Zuweisung `ziel = wert` (nicht `+=`): beide Seiten — fuer Zuordnungen.
+    std::string ziel;
+    std::string wert;
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;
@@ -252,12 +255,26 @@ struct Alias
     int zeile = 0;
 };
 
+/// Der Anfangswert einer Variablen: ein Wert oder eine Liste `{ … }`, deren Teile einen Bezeichner
+/// tragen koennen (`[ROT] = …` einen Index, `.feld = …` ein Glied).
+struct Initialisierer
+{
+    std::string index;  ///< `[ROT] =` -> `ROT`; leer = nach Reihenfolge
+    std::string glied;  ///< `.feld =` -> `feld`
+    std::string text;   ///< wie er in der Quelle steht (auch eine Liste, als Ganzes)
+    bool liste = false;
+    std::vector<Initialisierer> teile;  ///< nur Liste
+    int zeile = 0;
+};
+
 struct Variable
 {
     std::string typ;
     std::string name;
     std::string zusatz;
     int zeile = 0;
+    /// Nur bei `const`: der Anfangswert — fuer Nachschlagetabellen.
+    std::optional<Initialisierer> anfang;
 };
 
 struct Einbindung

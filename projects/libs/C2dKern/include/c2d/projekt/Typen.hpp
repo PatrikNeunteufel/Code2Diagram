@@ -50,6 +50,8 @@ public:
 
     /// Welche Typen der Name (allein oder mit Bereich) aus der Datei `ausDatei` meinen kann.
     [[nodiscard]] std::vector<TypStelle> kandidaten(std::size_t ausDatei, std::string_view name) const;
+    /// Der Typ, wenn der Name genau einen meint; sonst nullptr (keine stille Wahl).
+    [[nodiscard]] const modell::Typ* eindeutig(std::size_t ausDatei, std::string_view name) const;
     /// Die Namen eines Texts (modell::bezeichnerIn), die Typen meinen, in der Reihenfolge des Texts.
     [[nodiscard]] std::vector<TypVerweis> verweiseIn(std::size_t ausDatei, std::string_view text) const;
 

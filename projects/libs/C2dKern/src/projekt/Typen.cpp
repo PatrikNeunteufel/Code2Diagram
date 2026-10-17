@@ -84,6 +84,12 @@ std::vector<TypStelle> Typverzeichnis::suche(std::size_t ausDatei, std::string_v
     return aus;
 }
 
+const modell::Typ* Typverzeichnis::eindeutig(std::size_t ausDatei, std::string_view name) const
+{
+    const std::vector<TypStelle> k = kandidaten(ausDatei, name);
+    return k.size() == 1 && m_projekt != nullptr ? &typ(*m_projekt, k.front()) : nullptr;
+}
+
 std::vector<TypStelle> Typverzeichnis::kandidaten(std::size_t ausDatei, std::string_view name) const
 {
     return suche(ausDatei, name, 0);

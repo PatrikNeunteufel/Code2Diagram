@@ -18,6 +18,7 @@
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
@@ -46,6 +47,7 @@ enum class Diagrammart
     Struktogramm,
     Wahrheitstabelle,
     Entscheidungstabelle,
+    Zuordnung,
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
@@ -78,6 +80,9 @@ public:
     [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Wahrheitstabelle> tabellen,
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Entscheidungstabelle& tabelle,
+                                               const Optionen& optionen) const = 0;
+    /// Eine oder mehrere Zuordnungen (ein switch, die konstanten Tabellen einer Datei), untereinander.
+    [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Zuordnung> tabellen,
                                                const Optionen& optionen) const = 0;
 };
 
