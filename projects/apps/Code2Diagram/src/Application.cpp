@@ -14,6 +14,8 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QPainter>
+#include <QPixmap>
 
 namespace
 {
@@ -350,6 +352,7 @@ struct Application::Impl
     QString szene;    ///< --szene: wohin das ganze Diagramm der Vorschau als PNG kommt
     QString format;
     QString ansicht;
+    bool einstellungen = false;  ///< --einstellungen: File > Settings beim Start offen
 };
 
 Application::Application() : m_impl{std::make_unique<Impl>()} {}
@@ -425,6 +428,7 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--tiefe")) tiefe = wert();
         else if (a == QLatin1String("--hoechstens")) hoechstens = wert();
         else if (a == QLatin1String("--thema")) wert();  // schon oben gesetzt
+        else if (a == QLatin1String("--einstellungen")) m_impl->einstellungen = true;
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
         else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
         else if (a == QLatin1String("--ohne-fremde")) ohneFremde = true;
@@ -464,6 +468,7 @@ bool Application::init(int argc, char* argv[])
     if (!m_impl->ansicht.isEmpty()) fenster.waehleAnsicht(m_impl->ansicht);
 
     fenster.show();
+    if (m_impl->einstellungen) fenster.zeigeEinstellungen();
     m_initialized = true;
     return true;
 }
@@ -476,7 +481,18 @@ int Application::run()
         // --bild / --szene: das Fenster oder das ganze Diagramm ablegen und enden (Exit 0 = abgelegt)
         QCoreApplication::processEvents();
         bool abgelegt = true;
-        if (!m_impl->bild.isEmpty()) abgelegt = m_impl->fenster->grab().save(m_impl->bild) && abgelegt;
+        if (!m_impl->bild.isEmpty())
+        {
+            // ein offener Dialog Settings liegt mittig ueber dem Fenster, wie man ihn saehe
+            QPixmap bild = m_impl->fenster->grab();
+            if (m_impl->einstellungen)
+            {
+                const QPixmap dialog = m_impl->fenster->zeigeEinstellungen()->grab();
+                QPainter maler(&bild);
+                maler.drawPixmap((bild.width() - dialog.width()) / 2, (bild.height() - dialog.height()) / 2, dialog);
+            }
+            abgelegt = bild.save(m_impl->bild) && abgelegt;
+        }
         if (!m_impl->szene.isEmpty()) abgelegt = m_impl->fenster->vorschauBild().save(m_impl->szene) && abgelegt;
         return abgelegt ? 0 : 2;
     }

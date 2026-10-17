@@ -46,6 +46,19 @@ void Flussdiagramm::verbinde(KnotenId von, KnotenId nach, std::string_view besch
     m_kanten.push_back({von, nach, std::string(beschriftung)});
 }
 
+void Flussdiagramm::ergaenzeZeile(KnotenId knoten, std::string_view zeile, bool vorn)
+{
+    if (knoten >= m_knoten.size()) throw std::out_of_range("Flussdiagramm::ergaenzeZeile: no such node");
+    std::vector<std::string>& zeilen = m_knoten[knoten].zeilen;
+    zeilen.emplace(vorn ? zeilen.begin() : zeilen.end(), zeile);
+}
+
+void Flussdiagramm::markiereUnerreichbar(KnotenId knoten)
+{
+    if (knoten >= m_knoten.size()) throw std::out_of_range("Flussdiagramm::markiereUnerreichbar: no such node");
+    m_knoten[knoten].unerreichbar = true;
+}
+
 std::size_t Flussdiagramm::neueGruppe(Gruppe gruppe)
 {
     m_gruppen.push_back(std::move(gruppe));

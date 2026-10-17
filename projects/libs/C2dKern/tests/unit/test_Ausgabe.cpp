@@ -12,6 +12,7 @@
 #include "Beispiele.hpp"
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Farben.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
 using namespace c2d::diagramm;
@@ -273,5 +274,46 @@ TEST_SUITE("SVG")
         const std::string s = c2d::ausgabe::svg().schreibe(d, {});
         CHECK(zaehle(s, "<rect class=\"rahmen\"") == 1);
         CHECK(s.find("font-style=\"italic\">g(void)</text>") != std::string::npos);
+    }
+
+    TEST_CASE("Code, der nie erreicht wird: grau und gestrichelt in allen Formaten")
+    {
+        const c2d::modell::Einheit e = lies("void f(void) { for (;;) { a(); } b(); }", "t.c");
+        REQUIRE(!e.funktionen.empty());
+        const Flussdiagramm d = flussVon(e.funktionen.front());
+        const std::string svg = c2d::ausgabe::svg().schreibe(d, {});
+        CHECK(svg.find("<g class=\"tot\">") != std::string::npos);
+        CHECK(svg.find(".tot .flaeche, .tot .getoent, .tot .linie { stroke-dasharray: 5 4; }") != std::string::npos);
+        const std::string m = mermaid().schreibe(d, {});
+        CHECK(m.find("classDef tot fill:#f2f2f2,stroke:#8a8a8a,stroke-dasharray:5 4") != std::string::npos);
+        CHECK(m.find("tot\n") != std::string::npos);
+        CHECK(dot().schreibe(d, {}).find("style=\"dashed,filled\"") != std::string::npos);
+        const c2d::ausgabe::Format* drawio = c2d::ausgabe::format("drawio");
+        REQUIRE(drawio != nullptr);
+        CHECK(drawio->schreibe(d, {}).find("dashed=1;fillColor=#f2f2f2") != std::string::npos);
+        // ohne toten Code nichts davon
+        const Flussdiagramm ohne = flussVon(lies("void g(void) { a(); }", "u.c").funktionen.front());
+        CHECK(mermaid().schreibe(ohne, {}).find("classDef tot") == std::string::npos);
+        CHECK(c2d::ausgabe::svg().schreibe(ohne, {}).find("<g class=\"tot\">") == std::string::npos);
+    }
+
+    TEST_CASE("Farben: eine Tabelle; SVG schreibt hell und dunkel aus ihr, die Vorschau nimmt dieselbe")
+    {
+        const auto& tabelle = farbTabelle();
+        for (std::size_t i = 0; i < tabelle.size(); ++i)
+        {
+            CHECK(static_cast<std::size_t>(tabelle[i].farbe) == i);  // in der Reihenfolge von Farbe
+            CHECK(tabelle[i].hell.size() == 7);
+            CHECK(tabelle[i].dunkel.size() == 7);
+        }
+        CHECK(farbe(Farbe::Getoent) == "#e8e8e8");
+        CHECK(farbe(Farbe::Getoent, true) == "#3d3d3d");
+
+        const std::string s = c2d::ausgabe::svg().schreibe(vierFormen(), {});
+        const std::size_t dunkelAb = s.find("@media (prefers-color-scheme: dark)");
+        REQUIRE(dunkelAb != std::string::npos);
+        CHECK(s.find(".getoent { fill: #e8e8e8; }") < dunkelAb);
+        CHECK(s.find(".getoent { fill: #3d3d3d; }") > dunkelAb);
+        CHECK(s.find("text { fill: " + std::string(farbe(Farbe::Text, true)) + "; }") > dunkelAb);
     }
 }

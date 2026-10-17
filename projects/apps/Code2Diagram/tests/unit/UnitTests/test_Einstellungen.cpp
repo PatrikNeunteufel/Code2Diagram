@@ -4,6 +4,7 @@
  */
 #include <doctest.h>
 
+#include "c2d/diagramm/Farben.hpp"
 #include "ui/Einstellungen.hpp"
 #include "ui/Hauptfenster.hpp"
 #include "ui/Thema.hpp"
@@ -92,28 +93,37 @@ TEST_SUITE("Einstellungen")
         thema::wende(thema::Thema::System);
     }
 
-    TEST_CASE("Wechselt die Palette, zeichnet die Vorschau in den neuen Farben")
+    TEST_CASE("Wechselt die Palette, zeichnet die Vorschau in der passenden Spalte der Farbtabelle")
     {
-        Hauptfenster fenster;
-        fenster.zeigeBeispiel();
-        const QPalette vorher = QApplication::palette();
-        const QColor grundVorher = fenster.vorschauBild().pixelColor(0, 0);
-        REQUIRE(grundVorher != QColor(20, 20, 20));
-
-        QPalette dunkel = vorher;
-        dunkel.setColor(QPalette::Base, QColor(20, 20, 20));
-        dunkel.setColor(QPalette::Text, QColor(230, 230, 230));
-        QApplication::setPalette(dunkel);
+        using c2d::diagramm::Farbe;
+        const auto ausTabelle = [](Farbe f, bool dunkel) {
+            return QColor(QString::fromLatin1(c2d::diagramm::farbe(f, dunkel).data()));
+        };
         // farbenNeu() ist angestossen, waehrend die Ereignisse laufen: eine Runde mehr
         const auto ereignisse = [] {
             for (int runde = 0; runde < 3; ++runde) QCoreApplication::processEvents();
         };
+        const QPalette vorher = QApplication::palette();
+        QPalette hell = vorher;
+        hell.setColor(QPalette::Base, QColor(250, 250, 250));
+        QPalette dunkel = vorher;
+        dunkel.setColor(QPalette::Base, QColor(20, 20, 20));
+
+        Hauptfenster fenster;
+        QApplication::setPalette(hell);
         ereignisse();
-        CHECK(fenster.vorschauBild().pixelColor(0, 0) == QColor(20, 20, 20));
+        fenster.zeigeBeispiel();
+        CHECK(fenster.vorschauBild().pixelColor(0, 0) == ausTabelle(Farbe::Grund, false));
+
+        QApplication::setPalette(dunkel);
+        ereignisse();
+        CHECK(fenster.vorschauBild().pixelColor(0, 0) == ausTabelle(Farbe::Grund, true));
         CHECK(fenster.vorschauFormen() > 0);
 
+        QApplication::setPalette(hell);
+        ereignisse();
+        CHECK(fenster.vorschauBild().pixelColor(0, 0) == ausTabelle(Farbe::Grund, false));
         QApplication::setPalette(vorher);
         ereignisse();
-        CHECK(fenster.vorschauBild().pixelColor(0, 0) == grundVorher);
     }
 }

@@ -74,7 +74,12 @@ Regeln stehen als Tabellen im Code, nicht in Konfigurationsdateien (siehe
 - Funktionen mit Rumpf und Prototypen, auch `ISR(TIMER1_vect) { … }` und Köpfe mit
   `__attribute__((…))`
 - `if`/`else`, `while`, `do`-`while`, `for`, `switch` mit `case`/`default` und Durchfallen,
-  `break`, `continue`, `return`, `goto` und Marken
+  `break`, `continue`, `return`, `goto` und Marken. Führt kein Weg vom Start zu einem `return`
+  oder ans Ende des Rumpfs (eine Hauptschleife `for (;;)`), hat der Ablauf kein `End`; der Start
+  trägt darunter `(never returns)`. Eine Schleifenbedingung, die immer wahr ist (`1`, `true`,
+  `0x1`, `1u` …), hat keinen Weg `no` hinaus; ein Makro wie `TRUE` wird nicht aufgelöst. Code, zu
+  dem kein Weg führt (hinter einer Hauptschleife), bleibt: unter dem Ablauf, grau und
+  gestrichelt, mit `(unreachable)`; Fenster und `c2d` melden die Zeile, ab der er steht.
 - `struct`, `union`, `enum` — verschachtelt, ohne Etikett, mit Bitfeldern, Feldern,
   Funktionszeigern, gepackt mit Makro-Wörtern (`typedef struct PACKED name { … }`)
 - `typedef`, globale Variablen (mehrere Deklaratoren teilen den Typ), `#include`, `#define`,
@@ -135,7 +140,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark] [--einstellungen]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -150,10 +155,13 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 - **File > Settings…** (Strg + ,): links die Seiten, rechts ihre Felder; OK, Cancel, Apply. Heute
   eine Seite, *Appearance*, mit **Theme**: *System* (folgt dem hellen oder dunklen Modus des
   Betriebssystems, auch während des Laufs), *Light*, *Dark*. Gesetzt wird es über Qt
-  (`QStyleHints::setColorScheme`); die Vorschau zeichnet bei jedem Wechsel in den Farben der
-  Palette neu. Unter Windows 10 wechselt das Fenster dafür auf den Stil Fusion. Gespeichert unter
+  (`QStyleHints::setColorScheme`); die Vorschau zeichnet bei jedem Wechsel neu. Die Farben des
+  Diagramms stehen in einer Tabelle im Kern (`c2d/diagramm/Farben.hpp`), je hell und dunkel: die
+  Vorschau nimmt die Spalte zur Palette, SVG schreibt beide, Mermaid, DOT und draw.io die helle.
+  Der Stil ist Fusion, hell wie dunkel, mit einer eigenen Palette je Thema. Gespeichert unter
   `aussehen/thema` (`system`, `light`, `dark`). `--thema` setzt es nur für diesen Lauf (für
-  Bilder), ohne es zu speichern. Exportierte SVG folgen dem Browser, nicht dem Thema.
+  Bilder), ohne es zu speichern; `--einstellungen` öffnet den Dialog beim Start (mit `--bild`
+  liegt er im Bild mittig über dem Fenster). Exportierte SVG folgen dem Browser, nicht dem Thema.
 - **Die Projektdatei** `code2diagram.json` im Ordner trägt die Projektparameter (Beispiel und
   Regeln: `projects/libs/C2dKern/include/c2d/projekt/Projektdatei.hpp`, ein ganzes Projekt:
   `beispiele/projekt/`):

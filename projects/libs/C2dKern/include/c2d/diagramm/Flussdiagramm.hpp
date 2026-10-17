@@ -50,6 +50,9 @@ struct Knoten
     /// Auch bei Knoten anderer Art (`x = lies(a)`, `if (pruefe(x))`).
     std::vector<std::string> aufrufe;
     std::size_t gruppe = kKeine;  ///< die innerste Gruppe, in der der Knoten liegt
+    /// Kein Weg vom Start fuehrt hierher (Code hinter einer Hauptschleife): grau und
+    /// gestrichelt gezeichnet, unter dem Ablauf.
+    bool unerreichbar = false;
 };
 
 struct Kante
@@ -89,6 +92,11 @@ public:
     KnotenId neuerKnoten(Knoten knoten);
     /// Wirft std::out_of_range, wenn eine der Kennungen keinen Knoten benennt.
     void verbinde(KnotenId von, KnotenId nach, std::string_view beschriftung = {});
+    /// Eine Zeile unter (`vorn`: ueber) den Text eines Knotens setzen — etwa der Start einer
+    /// Funktion, die nie zurueckkehrt, oder der Hinweis auf Code, der nie erreicht wird.
+    void ergaenzeZeile(KnotenId knoten, std::string_view zeile, bool vorn = false);
+    /// Den Knoten als unerreichbar kennzeichnen (Knoten::unerreichbar).
+    void markiereUnerreichbar(KnotenId knoten);
     std::size_t neueGruppe(Gruppe gruppe);
 
     [[nodiscard]] const std::string& titel() const noexcept { return m_titel; }

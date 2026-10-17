@@ -246,7 +246,8 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
                     const std::vector<std::vector<std::size_t>>& gruppenVon = {},
                     const std::vector<double>& schildLaenge = {},
                     const std::vector<std::size_t>& bandVon = {},
-                    const std::vector<double>& bandBreite = {})
+                    const std::vector<double>& bandBreite = {},
+                    const std::vector<bool>& zuUnterst = {})
 {
     const std::size_t n = groesse.size();
     Schichtung s;
@@ -291,23 +292,47 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         }
     }
 
-    // 2. Rang = laengster Weg ueber die Kanten, die nicht zurueckfuehren.
-    std::vector<std::size_t> offen(n, 0);
-    for (std::size_t e = 0; e < kanten.size(); ++e)
-        if (!s.zurueck[e]) ++offen[kanten[e].second];
-    std::vector<std::size_t> bereit;
-    for (const std::size_t v : besuch)
-        if (offen[v] == 0) bereit.push_back(v);
-    for (std::size_t i = 0; i < bereit.size(); ++i)
-    {
-        const std::size_t v = bereit[i];
-        for (const std::size_t e : hinaus[v])
+    // `zuUnterst[v]`: Knoten v steht unter allen anderen (Code, der nie erreicht wird). Eine Kante
+    // von dort nach oben laeuft wie eine zurueck aussen herum.
+    const bool mitUnten =
+        zuUnterst.size() >= n && std::find(zuUnterst.begin(), zuUnterst.begin() + static_cast<std::ptrdiff_t>(n),
+                                           true) != zuUnterst.begin() + static_cast<std::ptrdiff_t>(n);
+    if (mitUnten)
+        for (std::size_t e = 0; e < kanten.size(); ++e)
+            if (zuUnterst[kanten[e].first] && !zuUnterst[kanten[e].second]) s.zurueck[e] = true;
+
+    // 2. Rang = laengster Weg ueber die Kanten, die nicht zurueckfuehren — ab den Startwerten.
+    const auto range = [&](const std::vector<int>& anfang) {
+        s.rang = anfang;
+        std::vector<std::size_t> offen(n, 0);
+        for (std::size_t e = 0; e < kanten.size(); ++e)
+            if (!s.zurueck[e]) ++offen[kanten[e].second];
+        std::vector<std::size_t> bereit;
+        for (const std::size_t v : besuch)
+            if (offen[v] == 0) bereit.push_back(v);
+        for (std::size_t i = 0; i < bereit.size(); ++i)
         {
-            if (s.zurueck[e]) continue;
-            const std::size_t w = kanten[e].second;
-            s.rang[w] = std::max(s.rang[w], s.rang[v] + 1);
-            if (--offen[w] == 0) bereit.push_back(w);
+            const std::size_t v = bereit[i];
+            for (const std::size_t e : hinaus[v])
+            {
+                if (s.zurueck[e]) continue;
+                const std::size_t w = kanten[e].second;
+                s.rang[w] = std::max(s.rang[w], s.rang[v] + 1);
+                if (--offen[w] == 0) bereit.push_back(w);
+            }
         }
+    };
+    range(std::vector<int>(n, 0));
+    if (mitUnten)
+    {
+        // was unten steht, beginnt eine Schicht unter dem Tiefsten der anderen
+        int tiefste = 0;
+        for (std::size_t v = 0; v < n; ++v)
+            if (!zuUnterst[v]) tiefste = std::max(tiefste, s.rang[v]);
+        std::vector<int> anfang(n, 0);
+        for (std::size_t v = 0; v < n; ++v)
+            if (zuUnterst[v]) anfang[v] = tiefste + 1;
+        range(anfang);
     }
 
     // 3. Stuetzpunkte: die Knoten n, n+1, ... ; `masse` und `rang` gelten fuer alle.
@@ -781,8 +806,10 @@ FlussAnordnung ordneFluss(const Flussdiagramm& diagramm, const AnordnungOptionen
     for (std::size_t v = 0; v < gruppenVon.size(); ++v)
         for (std::size_t g = knoten[v].gruppe; g < diagramm.gruppen().size(); g = diagramm.gruppen()[g].eltern)
             gruppenVon[v].push_back(g);
+    std::vector<bool> unten(knoten.size(), false);
+    for (std::size_t v = 0; v < knoten.size(); ++v) unten[v] = knoten[v].unerreichbar;
     const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon, schildLaenge, bandVon,
-                                  drehen ? std::vector<double>() : bandBreite);
+                                  drehen ? std::vector<double>() : bandBreite, unten);
     a.knoten = s.orte;
 
     const Wege wege = fuehreKanten(s, a.knoten, paare, stuetzBreite, schildLaenge);

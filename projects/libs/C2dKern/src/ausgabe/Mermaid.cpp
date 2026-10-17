@@ -8,6 +8,7 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/Farben.hpp"
 
 namespace c2d::ausgabe
 {
@@ -191,6 +192,13 @@ public:
             const std::string f(rahmenFarbe(farben[g]));
             aus += "    style g" + std::to_string(g) + " fill:" + f + ",fill-opacity:0.08,stroke:" + f + ",color:" + f + '\n';
         }
+        // nie erreicht: grau und gestrichelt
+        std::string tot;
+        for (std::size_t id = 0; id < knoten.size(); ++id)
+            if (knoten[id].unerreichbar) tot += (tot.empty() ? "" : ",") + ("n" + std::to_string(id));
+        if (!tot.empty())
+            aus += "    classDef tot fill:" + std::string(c2d::diagramm::farbe(Farbe::Fremd)) + ",stroke:" +
+                   std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + ",stroke-dasharray:5 4\n    class " + tot + " tot\n";
         for (const Kante& k : diagramm.kanten())
         {
             aus += "    n" + std::to_string(k.von) + " -->";
@@ -317,9 +325,12 @@ public:
         for (std::size_t e = 0; e < farben.size(); ++e)
             if (farben[e] != kKeine)
                 aus += "    linkStyle " + std::to_string(e) + " stroke:" + std::string(rahmenFarbe(farben[e])) + '\n';
-        aus += "    classDef fremd fill:#f2f2f2,stroke:#8a8a8a,font-style:italic\n"
-               "    classDef makro fill:#f2f2f2,stroke:#8a8a8a,stroke-dasharray:4 3,font-style:italic\n"
-               "    classDef wurzel fill:#ececec,stroke-width:2.4px\n";
+        // die hellen Farben der Tabelle: Mermaid kennt keine dunkle Fassung
+        const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+        const std::string fremd = "fill:" + hell(Farbe::Fremd) + ",stroke:" + hell(Farbe::FremdStrich);
+        aus += "    classDef fremd " + fremd + ",font-style:italic\n"
+               "    classDef makro " + fremd + ",stroke-dasharray:4 3,font-style:italic\n"
+               "    classDef wurzel fill:" + hell(Farbe::Getoent) + ",stroke-width:2.4px\n";
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
         {
             const AufrufKnoten& k = graph.knoten[id];

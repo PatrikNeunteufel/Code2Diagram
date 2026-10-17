@@ -2,14 +2,14 @@
  * @file Thema.hpp
  * @brief Hell, dunkel oder wie das System: das Farbschema der Anwendung
  *
- * Gesetzt wird es ueber Qt (QStyleHints::setColorScheme): Qt faerbt die
- * Standard-Widgets, und "System" folgt dem Betriebssystem auch waehrend des
- * Laufs. Was selbst zeichnet (die Vorschau), liest seine Farben aus der Palette
- * und zeichnet neu, wenn sie wechselt (QEvent::PaletteChange) — eine eigene
- * Farbtabelle gibt es hier nicht.
- *
- * Unter Windows 10 kennt der Stil `windowsvista` kein Farbschema; dort wird auf
- * Fusion gewechselt (nicht, wenn QT_STYLE_OVERRIDE gesetzt ist).
+ * Der Stil ist Fusion, hell wie dunkel, unter Windows 10 und 11 gleich (nicht,
+ * wenn QT_STYLE_OVERRIDE gesetzt ist): der Stil von Windows 11 zeichnet hell
+ * Auswahl- und Zahlenfelder ohne sichtbaren Rand. Die Palette je hell und dunkel
+ * steht als Tabelle in Thema.cpp. Das Farbschema geht zusaetzlich an Qt
+ * (QStyleHints::setColorScheme) — die Titelleiste folgt ihm —, und bei "System"
+ * folgt die Palette dem Betriebssystem auch waehrend des Laufs
+ * (QStyleHints::colorSchemeChanged). Was selbst zeichnet (die Vorschau),
+ * zeichnet neu, wenn die Palette wechselt (QEvent::PaletteChange).
  */
 #pragma once
 
@@ -40,7 +40,7 @@ struct Art
 [[nodiscard]] std::optional<Thema> ausId(const QString& id);
 [[nodiscard]] QString idVon(Thema thema);
 
-/// Das Farbschema setzen; Qt faerbt neu und schickt den Widgets PaletteChange.
+/// Stil, Farbschema und Palette setzen; Qt schickt den Widgets PaletteChange.
 void wende(Thema thema);
 /// Was zuletzt gesetzt wurde (vor dem ersten wende(): System).
 [[nodiscard]] Thema gilt();

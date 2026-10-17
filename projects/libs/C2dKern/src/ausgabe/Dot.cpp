@@ -5,6 +5,7 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/Farben.hpp"
 
 namespace c2d::ausgabe
 {
@@ -90,6 +91,9 @@ public:
         const auto schreibeKnoten = [&](std::size_t id, const std::string& einzug) {
             aus += einzug + "n" + std::to_string(id) + " [";
             aus += formVon(knoten[id].art);
+            if (knoten[id].unerreichbar)  // nie erreicht: grau und gestrichelt
+                aus += ", style=\"dashed,filled\", fillcolor=\"" + std::string(c2d::diagramm::farbe(Farbe::Fremd)) + "\", color=\"" +
+                       std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + "\"";
             aus += ", label=\"";
             bool erste = true;
             for (const std::string& zeile : knoten[id].zeilen)
@@ -196,19 +200,21 @@ public:
         // eine Funktion mit doppeltem Rand, Fremd grau, ein Makro dazu gestrichelt; mit Rahmen je Datei ein cluster
         const auto schreibeKnoten = [&](std::size_t id, std::string_view einzug) {
             const AufrufKnoten& k = graph.knoten[id];
+            // die hellen Farben der Tabelle: DOT kennt keine dunkle Fassung
+            const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+            const std::string fremd = "fillcolor=\"" + hell(Farbe::Fremd) + "\", color=\"" + hell(Farbe::FremdStrich) + "\"";
             aus += std::string(einzug) + "n" + std::to_string(id) + " [";
             switch (k.art)
             {
                 case AufrufKnotenArt::Funktion:
-                    aus += k.wurzel ? "shape=box, peripheries=2, style=\"filled,bold\", fillcolor=\"#ececec\""
-                                    : "shape=box, peripheries=2";
+                    aus += k.wurzel ? "shape=box, peripheries=2, style=\"filled,bold\", fillcolor=\"" + hell(Farbe::Getoent) + "\""
+                                    : std::string("shape=box, peripheries=2");
                     break;
                 case AufrufKnotenArt::Fremd:
-                    aus += "shape=box, style=filled, fillcolor=\"#f2f2f2\", color=\"#8a8a8a\", fontname=\"Helvetica-Oblique\"";
+                    aus += "shape=box, style=filled, " + fremd + ", fontname=\"Helvetica-Oblique\"";
                     break;
                 case AufrufKnotenArt::Makro:
-                    aus += "shape=box, style=\"filled,dashed\", fillcolor=\"#f2f2f2\", color=\"#8a8a8a\", "
-                           "fontname=\"Helvetica-Oblique\"";
+                    aus += "shape=box, style=\"filled,dashed\", " + fremd + ", fontname=\"Helvetica-Oblique\"";
                     break;
             }
             aus += ", label=\"" + maskiere(kuerze(knotenText(k), optionen.maxZeilenLaenge)) + "\"];\n";

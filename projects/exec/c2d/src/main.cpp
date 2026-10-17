@@ -354,7 +354,11 @@ int main(int argc, char* argv[])
             Flussdiagramm d = flussVon(f);
             return roh ? d : fasseAnweisungsfolgenZusammen(d);
         };
-        Flussdiagramm d = ablauf(c2d::projekt::funktion(p, *gewaehlt));
+        const c2d::modell::Funktion& wahl = c2d::projekt::funktion(p, *gewaehlt);
+        Flussdiagramm d = ablauf(wahl);
+        if (const int ab = unerreichbarAb(d); ab > 0)
+            std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << ab << ": " << wahl.name
+                      << "(): code from here on is never reached\n";
         // --einbetten: hinter den ersten Knoten, der die Funktion ruft und noch keine Einbettung traegt;
         // was der Aufruf meint, entscheidet das Projekt (erst die eigene Datei, dann was nicht static ist)
         for (const std::string& name : einbetten)

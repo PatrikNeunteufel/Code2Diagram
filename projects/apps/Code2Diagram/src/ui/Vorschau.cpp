@@ -6,6 +6,7 @@
 #include "ui/Vorschau.hpp"
 
 #include "c2d/diagramm/Anordnung.hpp"
+#include "c2d/diagramm/Farben.hpp"
 
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -63,19 +64,29 @@ QColor farbeVon(std::size_t farbe)
     return QColor(QString::fromLatin1(f.data(), static_cast<qsizetype>(f.size())));
 }
 
-/// Zeichnet auf eine Szene, mit den Farben der Palette (hell wie dunkel lesbar).
+/// Eine Farbe der Tabelle (Farben.hpp), hell oder dunkel.
+QColor ausTabelle(Farbe welche, bool dunkel)
+{
+    const std::string_view f = farbe(welche, dunkel);
+    return QColor(QString::fromLatin1(f.data(), static_cast<qsizetype>(f.size())));
+}
+
+/// Zeichnet auf eine Szene, mit den Farben der Tabelle — dieselben wie in der SVG-Datei.
 class Zeichner
 {
 public:
-    Zeichner(QGraphicsScene& szene, const QPalette& palette) : m_szene(szene)
+    Zeichner(QGraphicsScene& szene, bool dunkel) : m_szene(szene)
     {
         m_schrift = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         m_schrift.setPixelSize(12);
-        m_strich = QPen(palette.color(QPalette::Text), 1.2);
-        m_flaeche = palette.color(QPalette::Base);
-        m_getoent = palette.color(QPalette::AlternateBase);
-        m_verweis = QPen(palette.color(QPalette::Highlight), 2.2);
-        m_rahmen = QPen(palette.color(QPalette::Mid), 1.2, Qt::DashLine);
+        m_strich = QPen(ausTabelle(Farbe::Strich, dunkel), 1.2);
+        m_text = ausTabelle(Farbe::Text, dunkel);
+        m_flaeche = ausTabelle(Farbe::Flaeche, dunkel);
+        m_getoent = ausTabelle(Farbe::Getoent, dunkel);
+        m_fremd = ausTabelle(Farbe::Fremd, dunkel);
+        m_fremdStrich = ausTabelle(Farbe::FremdStrich, dunkel);
+        m_verweis = QPen(ausTabelle(Farbe::Verweis, dunkel), 2.2);
+        m_rahmen = QPen(ausTabelle(Farbe::Rahmen, dunkel), 1.2, Qt::DashLine);
     }
 
     /// Text, mittig im Rechteck.
@@ -85,7 +96,7 @@ public:
         schrift.setBold(fett);
         schrift.setItalic(kursiv);
         QGraphicsSimpleTextItem* stueck = m_szene.addSimpleText(inhalt, schrift);
-        stueck->setBrush(m_strich.color());
+        stueck->setBrush(m_text);
         const QRectF masse = stueck->boundingRect();
         stueck->setPos(in.center().x() - masse.width() / 2, in.center().y() - masse.height() / 2);
         stueck->setZValue(3);
@@ -97,7 +108,7 @@ public:
         QFont schrift = m_schrift;
         schrift.setItalic(kursiv);
         QGraphicsSimpleTextItem* stueck = m_szene.addSimpleText(inhalt, schrift);
-        stueck->setBrush(m_strich.color());
+        stueck->setBrush(m_text);
         stueck->setPos(ort);
         stueck->setZValue(3);
         return stueck;
@@ -142,7 +153,15 @@ public:
                 break;
         }
         const bool rand = k.art == KnotenArt::Start || k.art == KnotenArt::Ende;
-        QGraphicsPathItem* stueck = m_szene.addPath(form, verweis ? m_verweis : m_strich, rand ? m_getoent : m_flaeche);
+        QPen stift = verweis ? m_verweis : m_strich;
+        QColor pinsel = rand ? m_getoent : m_flaeche;
+        if (k.unerreichbar)
+        {
+            // nie erreicht: grau und gestrichelt, wie ein Aufruf ohne Rumpf
+            stift = QPen(m_fremdStrich, 1.2, Qt::DashLine);
+            pinsel = m_fremd;
+        }
+        QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
         stueck->setZValue(2);
         if (verweis) stueck->setToolTip(QStringLiteral("Click: show in the source. Double-click: go to the function or type it names. Right-click: more."));
@@ -168,7 +187,7 @@ public:
 
     /// Ein Knoten des Aufrufgraphen: eine Funktion wie ein Aufruf im Ablauf (der Ausgangspunkt
     /// getoent und kraeftig umrandet), Fremd grau und kursiv, ein Makro dazu gestrichelt.
-    void aufrufKnoten(KnotenId id, const AufrufKnoten& k, const QRectF& r, const QColor& grau)
+    void aufrufKnoten(KnotenId id, const AufrufKnoten& k, const QRectF& r)
     {
         QPainterPath form;
         form.addRect(r);
@@ -189,8 +208,8 @@ public:
         }
         else
         {
-            stift = QPen(grau, 1.2, k.art == AufrufKnotenArt::Makro ? Qt::DashLine : Qt::SolidLine);
-            pinsel = m_getoent;
+            stift = QPen(m_fremdStrich, 1.2, k.art == AufrufKnotenArt::Makro ? Qt::DashLine : Qt::SolidLine);
+            pinsel = m_fremd;
         }
         QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
@@ -391,7 +410,7 @@ public:
         auto* stueck = new QGraphicsTextItem;
         stueck->document()->setDocumentMargin(0);
         stueck->setFont(m_schrift);
-        stueck->setDefaultTextColor(m_strich.color());
+        stueck->setDefaultTextColor(m_text);
         stueck->setHtml(QStringLiteral("<span style=\"white-space:pre\">%1</span>").arg(html));
         stueck->setPos(ort);
         stueck->setZValue(3);
@@ -408,8 +427,11 @@ private:
     QPen m_strich;
     QPen m_verweis;
     QPen m_rahmen;
+    QColor m_text;
     QColor m_flaeche;
     QColor m_getoent;
+    QColor m_fremd;
+    QColor m_fremdStrich;
 };
 
 }  // namespace
@@ -420,8 +442,14 @@ Vorschau::Vorschau(QWidget* parent) : QGraphicsView(parent)
     setRenderHint(QPainter::Antialiasing);
     setDragMode(QGraphicsView::ScrollHandDrag);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-    setBackgroundBrush(palette().color(QPalette::Base));
+    setBackgroundBrush(ausTabelle(Farbe::Grund, dunkel()));
     setAlignment(Qt::AlignCenter);
+}
+
+bool Vorschau::dunkel() const
+{
+    // nach der Palette, nicht nach dem gewaehlten Thema: so folgt die Vorschau auch dem System
+    return palette().color(QPalette::Base).lightness() < 128;
 }
 
 QImage Vorschau::alsBild() const
@@ -438,6 +466,7 @@ QImage Vorschau::alsBild() const
 void Vorschau::leere()
 {
     scene()->clear();  // nimmt auch die Marke mit
+    setBackgroundBrush(ausTabelle(Farbe::Grund, dunkel()));  // das Thema kann gewechselt haben
     scene()->setSceneRect(QRectF());
     m_formen = 0;
     m_rahmen = 0;
@@ -459,7 +488,7 @@ bool Vorschau::markiere(KnotenId knoten)
     if (knoten >= m_orte.size()) return false;
     // ein Ring um den Knoten, ueber allem: woher man kam, oder wo gerufen wird
     const QRectF ring = m_orte[knoten].adjusted(-7, -7, 7, 7);
-    m_marke = scene()->addRect(ring, QPen(palette().color(QPalette::Highlight), 3, Qt::SolidLine), Qt::NoBrush);
+    m_marke = scene()->addRect(ring, QPen(ausTabelle(Farbe::Verweis, dunkel()), 3, Qt::SolidLine), Qt::NoBrush);
     m_marke->setZValue(6);
     m_markiert = knoten;
     centerOn(ring.center());
@@ -474,7 +503,7 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
     const FlussAnordnung a = ordneAn(diagramm, optionen);
 
-    Zeichner z(*scene(), palette());
+    Zeichner z(*scene(), dunkel());
     const std::vector<std::size_t> farben = farbenDerRahmen(diagramm);
     const auto farbe = [&](std::size_t g) { return farbeVon(farben[g]); };
     for (std::size_t g = 0; g < a.gruppen.size(); ++g)
@@ -508,7 +537,7 @@ void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
     const FlussAnordnung a = ordneAn(diagramm, optionen);
 
-    Zeichner z(*scene(), palette());
+    Zeichner z(*scene(), dunkel());
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
         z.kante(a.kanten[e], gekuerzt(diagramm.uebergaenge[e].bedingung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i) z.zustand(diagramm.zustaende[i], alsRect(a.knoten[i]));
@@ -525,7 +554,7 @@ void Vorschau::zeige(const Aufrufgraph& graph, bool nachRechts)
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
     const FlussAnordnung a = ordneAn(graph, optionen);
 
-    Zeichner z(*scene(), palette());
+    Zeichner z(*scene(), dunkel());
     // je Datei ein Rahmen mit ihrem Pfad; nach unten hat das Band ihm Platz gelassen
     for (std::size_t d = 0; d < a.gruppen.size() && d < graph.dateien.size(); ++d)
     {
@@ -541,13 +570,12 @@ void Vorschau::zeige(const Aufrufgraph& graph, bool nachRechts)
     for (std::size_t e = 0; e < a.kanten.size(); ++e)
     {
         const AufrufKante& k = graph.kanten[e];
-        QPen stift(farben[e] == kKeine ? palette().color(QPalette::Text) : farbeVon(farben[e]), 1.2);
+        QPen stift(farben[e] == kKeine ? z.strich().color() : farbeVon(farben[e]), 1.2);
         if (!k.gilt) stift.setStyle(Qt::DotLine);
         else if (k.art == AufrufKantenArt::Mehrdeutig) stift.setStyle(Qt::DashLine);
         z.kante(a.kanten[e], gekuerzt(beschriftung(k)), a.beschriftungen[e], stift);
     }
-    const QColor grau = palette().color(QPalette::Mid);
-    for (std::size_t i = 0; i < a.knoten.size(); ++i) z.aufrufKnoten(i, graph.knoten[i], alsRect(a.knoten[i]), grau);
+    for (std::size_t i = 0; i < a.knoten.size(); ++i) z.aufrufKnoten(i, graph.knoten[i], alsRect(a.knoten[i]));
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
@@ -565,7 +593,7 @@ void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts,
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
     const StrukturAnordnung a = ordneAn(diagramm, optionen);
 
-    Zeichner z(*scene(), palette());
+    Zeichner z(*scene(), dunkel());
     for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
     {
         const Linienzug& linie = a.beziehungen[e];

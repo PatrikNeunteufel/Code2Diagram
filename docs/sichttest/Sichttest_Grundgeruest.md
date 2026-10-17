@@ -117,6 +117,10 @@ in [mermaid.live](https://mermaid.live) einfügen), E bis G die gezeichnete Vors
 - [ ] **E9 Zeile im Quelltext:** Ein Klick auf `return 1` hinterlegt links die Zeile mit
       `return 1;` und holt sie in die Mitte. Ein Doppelklick darauf tut nichts weiter (kein Ziel).
       `aktion: klicken name=return 1`
+- [ ] **E9a Unerreichbarer Code:** Ordner `beispiele/projekt`, `main.c`, `main()`: unter dem
+      Ablauf, links, ein grauer gestrichelter Kasten `(unreachable)` / `return 0`, ohne Kante; die
+      Statuszeile sagt `main(): code from line 25 on is never reached`. Die Raute `1` hat nur `yes`.
+      `aktion: ordner_oeffnen pfad=beispiele/projekt` `aktion: datei_waehlen pfad=main.c` `aktion: diagramm_waehlen name=main`
 - [ ] **E10 Nach rechts:** Richtung `Left-right` — der Ablauf wächst nach rechts, der Start
       steht links; nichts überdeckt sich.
 
@@ -488,6 +492,8 @@ zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiel
 - [ ] **O4 Bleibt über Neustarts:** Code2Diagram schließen und neu starten: dunkel. Dann `Light`,
       **OK**: hell, der Dialog ist zu.
       `aktion: thema_setzen name=light`
+- [ ] **O4a Fusion:** Hell haben Auswahl-, Zahlen- und Eingabefelder einen sichtbaren Rand;
+      dunkel sind leere Kästchen leer (nicht blau gefüllt), angehakte tragen ein Häkchen.
 - [ ] **O5 System folgt dem Betriebssystem:** `System`, OK. In Windows unter *Einstellungen >
       Personalisierung > Farben* den Modus wechseln: Code2Diagram folgt, ohne Neustart, die
       Vorschau mit.

@@ -36,6 +36,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Ableitung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Anordnung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Aufrufgraph.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/diagramm/Farben.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Flussdiagramm.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Ausgabe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Dot.cpp"

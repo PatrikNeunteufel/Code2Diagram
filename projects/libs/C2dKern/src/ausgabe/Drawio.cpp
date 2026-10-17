@@ -10,6 +10,7 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/Farben.hpp"
 #include "c2d/diagramm/Anordnung.hpp"
 
 #include <cmath>
@@ -189,8 +190,12 @@ public:
                 if (!inhalt.empty()) inhalt += "<br>";
                 inhalt += html(kuerze(zeile, optionen.maxZeilenLaenge));
             }
+            // nie erreicht: grau und gestrichelt
+            const std::string tot = k.unerreichbar ? "dashed=1;fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Fremd)) +
+                                                         ";strokeColor=" + std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + ";"
+                                                   : std::string();
             aus += ecke("n" + std::to_string(id), inhalt,
-                        std::string(formVon(k.art)) + "whiteSpace=wrap;html=1;" + std::string(kSchrift),
+                        std::string(formVon(k.art)) + tot + "whiteSpace=wrap;html=1;" + std::string(kSchrift),
                         eltern(k.gruppe), in(k.gruppe, a.knoten[id]));
         }
         for (std::size_t e = 0; e < diagramm.kanten().size(); ++e)
@@ -292,16 +297,18 @@ public:
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
         {
             const AufrufKnoten& k = graph.knoten[id];
+            // die hellen Farben der Tabelle: draw.io kennt keine dunkle Fassung
+            const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+            const std::string fremd =
+                "rounded=0;fillColor=" + hell(Farbe::Fremd) + ";strokeColor=" + hell(Farbe::FremdStrich) + ";fontStyle=2;";
             std::string stil;
             switch (k.art)
             {
                 case AufrufKnotenArt::Funktion:
-                    stil = k.wurzel ? "shape=process;fillColor=#ececec;strokeWidth=2;" : "shape=process;";
+                    stil = k.wurzel ? "shape=process;fillColor=" + hell(Farbe::Getoent) + ";strokeWidth=2;" : "shape=process;";
                     break;
-                case AufrufKnotenArt::Fremd: stil = "rounded=0;fillColor=#f2f2f2;strokeColor=#8a8a8a;fontStyle=2;"; break;
-                case AufrufKnotenArt::Makro:
-                    stil = "rounded=0;fillColor=#f2f2f2;strokeColor=#8a8a8a;fontStyle=2;dashed=1;";
-                    break;
+                case AufrufKnotenArt::Fremd: stil = fremd; break;
+                case AufrufKnotenArt::Makro: stil = fremd + "dashed=1;"; break;
             }
             Rechteck ort = a.knoten[id];
             std::string eltern = "1";

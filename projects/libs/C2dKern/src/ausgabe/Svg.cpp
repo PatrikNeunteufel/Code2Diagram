@@ -11,6 +11,7 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/Farben.hpp"
 #include "c2d/diagramm/Anordnung.hpp"
 
 #include <algorithm>
@@ -62,6 +63,23 @@ std::size_t zeichen(std::string_view text)
     return n;
 }
 
+/// Die Farben der Klassen aus der Tabelle (Farben.hpp), hell oder dunkel.
+std::string farbRegeln(bool dunkel, std::string_view einzug)
+{
+    const auto f = [dunkel](Farbe welche) { return std::string(c2d::diagramm::farbe(welche, dunkel)); };
+    const std::string e(einzug);
+    return e + ".grund { fill: " + f(Farbe::Grund) + "; }\n" +
+           e + ".flaeche, .hohl, .schild { fill: " + f(Farbe::Flaeche) + "; }\n" +
+           e + ".getoent { fill: " + f(Farbe::Getoent) + "; }\n" +
+           e + ".flaeche, .getoent, .linie, .spitze, .hohl { stroke: " + f(Farbe::Strich) + "; }\n" +
+           e + ".spitze { fill: " + f(Farbe::Strich) + "; }\n" +
+           e + ".rahmen { stroke: " + f(Farbe::Rahmen) + "; }\n" +
+           e + ".fremd { fill: " + f(Farbe::Fremd) + "; stroke: " + f(Farbe::FremdStrich) + "; }\n" +
+           e + "text { fill: " + f(Farbe::Text) + "; }\n" +
+           e + ".tot .flaeche, .tot .getoent { fill: " + f(Farbe::Fremd) + "; }\n" +
+           e + ".tot .flaeche, .tot .getoent, .tot .linie { stroke: " + f(Farbe::FremdStrich) + "; }\n";
+}
+
 std::string kopf(std::string_view titel, double breite, double hoehe)
 {
     const std::string b = zahl(breite);
@@ -70,21 +88,12 @@ std::string kopf(std::string_view titel, double breite, double hoehe)
            " " + h + "\" font-family=\"Consolas, 'Courier New', monospace\" font-size=\"12\">\n"
            "  <title>" + xml(titel) + "</title>\n"
            "  <style>\n"
-           "    .grund, .flaeche, .hohl, .schild { fill: #ffffff; }\n"
-           "    .getoent { fill: #ececec; }\n"
-           "    .flaeche, .getoent, .linie, .spitze, .hohl { stroke: #202020; stroke-width: 1.2; }\n"
            "    .linie { fill: none; }\n"
-           "    .spitze { fill: #202020; }\n"
-           "    .rahmen { fill: none; stroke: #8a8a8a; stroke-width: 1.2; stroke-dasharray: 5 4; }\n"
-           "    .fremd { fill: #f2f2f2; stroke: #8a8a8a; stroke-width: 1.2; }\n"
-           "    text { fill: #202020; }\n"
-           "    @media (prefers-color-scheme: dark) {\n"
-           "      .grund, .flaeche, .hohl, .schild { fill: #2b2b2b; }\n"
-           "      .getoent { fill: #3a3a3a; }\n"
-           "      .flaeche, .getoent, .linie, .spitze, .hohl { stroke: #dcdcdc; }\n"
-           "      .spitze { fill: #dcdcdc; }\n"
-           "      .fremd { fill: #333333; stroke: #9a9a9a; }\n"
-           "      text { fill: #dcdcdc; }\n"
+           "    .flaeche, .getoent, .linie, .spitze, .hohl { stroke-width: 1.2; }\n"
+           "    .rahmen { fill: none; stroke-width: 1.2; stroke-dasharray: 5 4; }\n"
+           "    .fremd { stroke-width: 1.2; }\n"
+           "    .tot .flaeche, .tot .getoent, .tot .linie { stroke-dasharray: 5 4; }\n" +
+           farbRegeln(false, "    ") + "    @media (prefers-color-scheme: dark) {\n" + farbRegeln(true, "      ") +
            "    }\n"
            "  </style>\n"
            "  <rect class=\"grund\" width=\"100%\" height=\"100%\"/>\n";
@@ -215,7 +224,9 @@ std::string knoten(const Knoten& k, const Rechteck& r, const AnordnungOptionen& 
     }
     std::vector<std::string> zeilen;
     for (const std::string& z : k.zeilen) zeilen.push_back(kuerze(z, o.maxZeilenLaenge));
-    return aus + textMittig(zeilen, r.mitte(), o.zeilenHoehe);
+    aus += textMittig(zeilen, r.mitte(), o.zeilenHoehe);
+    // nie erreicht: grau und gestrichelt (Klasse tot)
+    return k.unerreichbar ? "  <g class=\"tot\">\n" + aus + "  </g>\n" : aus;
 }
 
 std::string kasten(const Kasten& k, const Rechteck& r, const AnordnungOptionen& o)

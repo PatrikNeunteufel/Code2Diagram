@@ -8,8 +8,10 @@
 
 #include "Beispiele.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Anordnung.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 using namespace c2d::diagramm;
@@ -161,6 +163,96 @@ ende:
         CHECK(hatKante(d, 1, 2, "1"));
         CHECK(hatKante(d, 1, 3, "otherwise"));
         CHECK(hatKante(d, 2, 3));
+    }
+
+    TEST_CASE("Kehrt eine Funktion nie zurueck, hat ihr Ablauf kein Ende; der Start sagt es")
+    {
+        // eine Hauptschleife; das return dahinter wird nie erreicht
+        const Flussdiagramm d = fluss("int main(void) { init(); for (;;) { takt(); } return 0; }");
+        CHECK(std::none_of(d.knoten().begin(), d.knoten().end(), [](const Knoten& k) { return k.art == KnotenArt::Ende; }));
+        REQUIRE(d.knoten()[0].zeilen.size() == 2);
+        CHECK(d.knoten()[0].zeilen[1] == kKehrtNieZurueck);
+
+        // for (;;) ohne break ebenso; mit break gibt es ein Ende, ohne Zusatz
+        CHECK(fluss("void f(void) { for (;;) { a(); } }").knoten()[0].zeilen.size() == 2);
+        const Flussdiagramm mitBreak = fluss("void f(void) { for (;;) { if (x) break; } }");
+        CHECK(mitBreak.knoten()[0].zeilen.size() == 1);
+        CHECK(mitBreak.knoten().back().art == KnotenArt::Ende);
+
+        // ein return in der Schleife fuehrt hinaus
+        const Flussdiagramm mitReturn = fluss("int f(void) { for (;;) { if (x) return 1; } }");
+        CHECK(mitReturn.knoten().back().art == KnotenArt::Ende);
+        CHECK(mitReturn.knoten()[0].zeilen.size() == 1);
+    }
+
+    TEST_CASE("Code, der nie erreicht wird, bleibt — gekennzeichnet, ohne Kante ins Ende")
+    {
+        const Flussdiagramm d = fluss(
+            "int f(void)\n"         // 1
+            "{\n"                   // 2
+            "    if (x) return 1;\n"  // 3
+            "    for (;;) { a(); }\n"  // 4
+            "    b();\n"            // 5
+            "    return 0;\n"       // 6
+            "}\n");
+        std::vector<KnotenId> tot;
+        for (KnotenId k = 0; k < d.knoten().size(); ++k)
+            if (d.knoten()[k].unerreichbar) tot.push_back(k);
+        REQUIRE(tot.size() == 2);  // b() und return 0
+        CHECK(d.knoten()[tot[0]].zeilen == std::vector<std::string>{std::string(kUnerreichbar), "b()"});
+        CHECK(d.knoten()[tot[1]].zeilen == std::vector<std::string>{"return 0"});
+        CHECK(unerreichbarAb(d) == 5);
+        // ein Ende gibt es (return 1), aber nicht vom toten Code
+        const KnotenId ende = d.knoten().size() - 1;
+        REQUIRE(d.knoten()[ende].art == KnotenArt::Ende);
+        CHECK(std::none_of(d.kanten().begin(), d.kanten().end(),
+                           [&](const Kante& k) { return k.nach == ende && d.knoten()[k.von].unerreichbar; }));
+        CHECK(d.knoten()[0].zeilen.size() == 1);  // kehrt zurueck: kein (never returns)
+
+        // gebuendelt bleibt es gekennzeichnet; in der Anordnung steht es unter allem anderen
+        const Flussdiagramm b = fasseAnweisungsfolgenZusammen(d);
+        const FlussAnordnung a = ordneAn(b, {});
+        double tiefsteErreichte = 0;
+        double hoechsteTote = 1e9;
+        for (KnotenId k = 0; k < b.knoten().size(); ++k)
+        {
+            if (b.knoten()[k].unerreichbar)
+                hoechsteTote = std::min(hoechsteTote, a.knoten[k].y);
+            else
+                tiefsteErreichte = std::max(tiefsteErreichte, a.knoten[k].y + a.knoten[k].hoehe);
+        }
+        CHECK(std::any_of(b.knoten().begin(), b.knoten().end(), [](const Knoten& k) { return k.unerreichbar; }));
+        CHECK(hoechsteTote > tiefsteErreichte);
+
+        // ohne toten Code: nichts gekennzeichnet
+        CHECK(unerreichbarAb(fluss("int g(void) { return 1; }")) == 0);
+    }
+
+    TEST_CASE("Eine Schleifenbedingung, die immer wahr ist, hat keinen Weg no hinaus")
+    {
+        const auto nein = [](const Flussdiagramm& d) {
+            return std::count_if(d.kanten().begin(), d.kanten().end(), [](const Kante& k) { return k.beschriftung == "no"; });
+        };
+        for (const char* immer : {"1", "(1)", "true", "0x1", "1u", "2UL", " 1 "})
+        {
+            CAPTURE(immer);
+            const Flussdiagramm d = fluss(std::string("void f(void) { while (") + immer + ") { a(); } }");
+            CHECK(nein(d) == 0);
+            CHECK(d.knoten()[0].zeilen.size() == 2);  // never returns
+        }
+        // do-while und for ebenso
+        CHECK(nein(fluss("void f(void) { do { a(); } while (1); }")) == 0);
+        CHECK(nein(fluss("void f(void) { for (i = 0; 1; i++) { a(); } }")) == 0);
+        // was nicht sicher immer wahr ist, behaelt no; ein Makro wird nicht aufgeloest
+        for (const char* offen : {"0", "x", "TRUE", "1 == 1", "0x0", "1.0", "10x"})
+        {
+            CAPTURE(offen);
+            CHECK(nein(fluss(std::string("void f(void) { while (") + offen + ") { a(); } }")) == 1);
+        }
+        // mit break bleibt ein Ende, aber kein no
+        const Flussdiagramm mitBreak = fluss("void f(void) { while (1) { if (x) break; } }");
+        CHECK(nein(mitBreak) == 1);  // nur das no des if
+        CHECK(mitBreak.knoten().back().art == KnotenArt::Ende);
     }
 
     TEST_CASE("Eine Funktion ohne Rumpf gibt ein leeres Diagramm")

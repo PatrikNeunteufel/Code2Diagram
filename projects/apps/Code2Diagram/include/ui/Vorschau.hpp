@@ -78,6 +78,8 @@ protected:
     void wheelEvent(QWheelEvent* ereignis) override;
 
 private:
+    /// Ist das Fenster dunkel? Dann die dunkle Spalte der Farbtabelle (diagramm/Farben.hpp).
+    [[nodiscard]] bool dunkel() const;
     /// Knoten und innerste Gruppe an einem Ort der Ansicht.
     void trefferBei(const QPoint& ort, c2d::diagramm::KnotenId& knoten, std::size_t& gruppe) const;
     /// Kasten und Glied an einem Ort der Ansicht (je kKeine = keiner).

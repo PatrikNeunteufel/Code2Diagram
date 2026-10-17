@@ -58,6 +58,35 @@ using modell::aufrufeIn;
 /// Offene Enden: Kanten, die noch kein Ziel haben — (von, Beschriftung).
 using Enden = std::vector<std::pair<KnotenId, std::string>>;
 
+/// Ist die Bedingung einer Schleife immer wahr — `1` (jede Zahl ausser 0, auch `0x1`, `1u`) oder
+/// `true`, auch in Klammern? Dann gibt es keinen Weg `no` hinaus. Makros (`TRUE`) werden nicht aufgeloest.
+bool immerWahr(std::string_view bedingung)
+{
+    const auto leer = [](char c) { return c == ' ' || c == '\t'; };
+    while (!bedingung.empty() && leer(bedingung.front())) bedingung.remove_prefix(1);
+    while (!bedingung.empty() && leer(bedingung.back())) bedingung.remove_suffix(1);
+    if (bedingung.size() >= 2 && bedingung.front() == '(' && bedingung.back() == ')')
+        return immerWahr(bedingung.substr(1, bedingung.size() - 2));
+    if (bedingung == "true") return true;
+    // eine ganze Zahl: Ziffern (hex mit 0x), dann nur Endungen u/l
+    std::size_t i = 0;
+    const bool hex = bedingung.size() > 2 && bedingung[0] == '0' && (bedingung[1] == 'x' || bedingung[1] == 'X');
+    if (hex) i = 2;
+    bool ziffer = false;
+    bool nichtNull = false;
+    for (; i < bedingung.size(); ++i)
+    {
+        const char c = bedingung[i];
+        const bool istZiffer = (c >= '0' && c <= '9') || (hex && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')));
+        if (!istZiffer) break;
+        ziffer = true;
+        nichtNull = nichtNull || c != '0';
+    }
+    for (; i < bedingung.size(); ++i)
+        if (bedingung[i] != 'u' && bedingung[i] != 'U' && bedingung[i] != 'l' && bedingung[i] != 'L') return false;
+    return ziffer && nichtNull;
+}
+
 void haengeAn(Enden& ziel, Enden quelle)
 {
     for (auto& ende : quelle) ziel.push_back(std::move(ende));
@@ -77,12 +106,58 @@ public:
         for (const auto& [marke, enden] : m_spruenge)
             if (const auto ziel = m_marken.find(marke); ziel != m_marken.end()) verbinde(enden, ziel->second);
 
+        // ein Ende nur, wenn ein Weg vom Start hinfuehrt — sonst behauptete es einen Ausgang, den es
+        // nicht gibt (die Hauptschleife einer Firmware; ein `return` hinter `while (1)` zaehlt nicht)
+        const std::vector<bool> erreicht = erreichbarAb(start);
+        markiereUnerreichbares(erreicht);
+        // ins Ende nur, was erreicht wird: toter Code fuehrt nirgendwohin
+        Enden hinaus;
+        for (const Enden* enden : {&offen, &m_ruecksprunge})
+            for (const auto& e : *enden)
+                if (erreicht[e.first]) hinaus.push_back(e);
+        if (hinaus.empty())
+        {
+            m_d.ergaenzeZeile(start, kKehrtNieZurueck);
+            return;
+        }
         const KnotenId ende = m_d.neuerKnoten(KnotenArt::Ende, "End");
-        verbinde(offen, ende);
-        verbinde(m_ruecksprunge, ende);
+        verbinde(hinaus, ende);
     }
 
 private:
+    /// Was nicht erreicht wird, kennzeichnen; wo es beginnt, die Zeile kUnerreichbar vorn.
+    void markiereUnerreichbares(const std::vector<bool>& erreicht)
+    {
+        std::vector<bool> hatEingang(m_d.knoten().size(), false);
+        for (const Kante& k : m_d.kanten()) hatEingang[k.nach] = true;
+        for (KnotenId k = 0; k < m_d.knoten().size(); ++k)
+        {
+            if (erreicht[k]) continue;
+            m_d.markiereUnerreichbar(k);
+            if (!hatEingang[k]) m_d.ergaenzeZeile(k, kUnerreichbar, true);
+        }
+    }
+
+    /// Welche Knoten auf einem Weg ab `start` liegen.
+    [[nodiscard]] std::vector<bool> erreichbarAb(KnotenId start) const
+    {
+        std::vector<bool> erreicht(m_d.knoten().size(), false);
+        std::vector<KnotenId> offen{start};
+        erreicht[start] = true;
+        while (!offen.empty())
+        {
+            const KnotenId k = offen.back();
+            offen.pop_back();
+            for (const Kante& kante : m_d.kanten())
+                if (kante.von == k && !erreicht[kante.nach])
+                {
+                    erreicht[kante.nach] = true;
+                    offen.push_back(kante.nach);
+                }
+        }
+        return erreicht;
+    }
+
     void verbinde(const Enden& enden, KnotenId ziel)
     {
         for (const auto& [von, text] : enden) m_d.verbinde(von, ziel, text);
@@ -166,7 +241,8 @@ private:
                 Schleife schleife(*this);
                 verbinde(baue(*a.kinder[0], {{kopf, "yes"}}), kopf);
                 verbinde(schleife.fortsetzung, kopf);
-                Enden aus{{kopf, "no"}};
+                Enden aus;
+                if (!immerWahr(a.text)) aus.emplace_back(kopf, "no");
                 haengeAn(aus, std::move(schleife.abbruch));
                 return aus;
             }
@@ -179,7 +255,8 @@ private:
                 haengeAn(aus, std::move(schleife.fortsetzung));
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, aus);
                 m_d.verbinde(kopf, erster, "yes");  // ein leerer Rumpf: erster == kopf
-                Enden danach{{kopf, "no"}};
+                Enden danach;
+                if (!immerWahr(a.text)) danach.emplace_back(kopf, "no");
                 haengeAn(danach, std::move(schleife.abbruch));
                 return danach;
             }
@@ -195,7 +272,8 @@ private:
                     haengeAn(aus, std::move(schleife.fortsetzung));
                     if (!a.schritt.empty()) aus = {{knoten(KnotenArt::Anweisung, a.schritt, a.zeile, aus), {}}};
                     verbinde(aus, kopf);
-                    Enden danach{{kopf, "no"}};
+                    Enden danach;
+                    if (!immerWahr(a.text)) danach.emplace_back(kopf, "no");
                     haengeAn(danach, std::move(schleife.abbruch));
                     return danach;
                 }
@@ -421,6 +499,14 @@ Flussdiagramm flussVon(const modell::Funktion& funktion)
     Flussdiagramm diagramm(funktion.name);
     if (funktion.rumpf) FlussBauer(diagramm).baue(funktion);
     return diagramm;
+}
+
+int unerreichbarAb(const Flussdiagramm& diagramm)
+{
+    int ab = 0;
+    for (const Knoten& k : diagramm.knoten())
+        if (k.unerreichbar && k.quellZeile > 0 && (ab == 0 || k.quellZeile < ab)) ab = k.quellZeile;
+    return ab;
 }
 
 Strukturdiagramm strukturVon(const modell::Einheit& einheit)

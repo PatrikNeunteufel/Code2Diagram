@@ -1822,6 +1822,10 @@ void Hauptfenster::baueNeu()
         {
             if (!f.rumpf || f.vollerName() != name) continue;
             m_fluss = fasseAnweisungsfolgenZusammen(flussVon(f));
+            // nichts still: Code, der nie erreicht wird, steht unten — und hier mit seiner Zeile
+            if (const int ab = c2d::diagramm::unerreichbarAb(m_fluss); ab > 0)
+                statusBar()->showMessage(
+                    QStringLiteral("%1(): code from line %2 on is never reached").arg(ausStd(f.name)).arg(ab), 8000);
             break;
         }
     }
@@ -2053,7 +2057,6 @@ void Hauptfenster::farbenNeu()
 {
     m_farbenAusstehend = false;
     faerbeSymbole();
-    m_vorschau->setBackgroundBrush(m_vorschau->palette().color(QPalette::Base));
     // dasselbe Bild in anderen Farben: Marke und Ausschnitt bleiben
     const c2d::diagramm::KnotenId marke = m_vorschau->markiert();
     const QPointF mitte = m_vorschau->mapToScene(m_vorschau->viewport()->rect().center());
