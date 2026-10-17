@@ -52,21 +52,23 @@ std::vector<Fall> faelleVon(const Anweisung& sw)
     return faelle;
 }
 
-/// Was ein Fall liefert: ein return mit Wert, oder Zuweisungen (Ziel, Wert) und dann break.
+/// Was ein Fall liefert: ein return mit Wert, oder Zuweisungen (Ziel, Wert) und dann break — ohne
+/// Durchfallen (match) ohne break.
 struct Lieferung
 {
     bool rueck = false;
     std::vector<std::pair<std::string, std::string>> paare;
 };
 
-std::optional<Lieferung> lieferung(const Fall& f)
+std::optional<Lieferung> lieferung(const Fall& f, bool ohneDurchfall)
 {
     const std::vector<const Anweisung*>& s = f.anweisungen;
     if (s.size() == 1 && s[0]->art == AnweisungArt::Ruecksprung && !s[0]->text.empty())
         return Lieferung{true, {{"return", s[0]->text}}};
-    if (s.size() < 2 || s.back()->art != AnweisungArt::Abbruch) return std::nullopt;
+    const std::size_t zuweisungen = ohneDurchfall ? s.size() : s.size() - (s.empty() ? 0 : 1);
+    if (ohneDurchfall ? s.empty() : (s.size() < 2 || s.back()->art != AnweisungArt::Abbruch)) return std::nullopt;
     Lieferung l;
-    for (std::size_t i = 0; i + 1 < s.size(); ++i)
+    for (std::size_t i = 0; i < zuweisungen; ++i)
     {
         if (s[i]->art != AnweisungArt::Einfach || s[i]->ziel.empty()) return std::nullopt;
         l.paare.emplace_back(s[i]->ziel, s[i]->wert);
@@ -89,7 +91,7 @@ std::optional<Zuordnung> auswerten(const Anweisung& sw, const std::string& funkt
     std::vector<Lieferung> lieferungen;
     for (const Fall& f : faelle)
     {
-        std::optional<Lieferung> l = lieferung(f);
+        std::optional<Lieferung> l = lieferung(f, sw.ohneDurchfall);
         if (!l) return std::nullopt;
         lieferungen.push_back(std::move(*l));
     }
@@ -98,7 +100,7 @@ std::optional<Zuordnung> auswerten(const Anweisung& sw, const std::string& funkt
         if (l.rueck != lieferungen.front().rueck || ziele(l) != ziele(lieferungen.front())) return std::nullopt;
 
     Zuordnung z;
-    z.titel = funktion + "(): switch (" + sw.text + ")";
+    z.titel = funktion + "(): " + (sw.kopf.empty() ? "switch (" + sw.text + ")" : sw.kopf);
     z.quellZeile = sw.zeile;
     z.schluessel = sw.text;
     for (const auto& [ziel, wert] : lieferungen.front().paare) z.spalten.push_back(ziel);

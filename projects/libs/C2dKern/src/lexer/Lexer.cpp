@@ -89,10 +89,104 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
     const auto melde = [&](quelle::Schwere schwere, const quelle::Position& ort, std::string was) {
         meldungen.push_back({schwere, ort, std::move(was)});
     };
+    // Zeilenende und Einrueckung (Sprachtabelle::zeilenEnde, einrueckung)
+    int klammern = 0;            // offene ( [ { — darin endet keine Zeile
+    bool zeileOffen = false;     // die laufende logische Zeile hat schon Inhalt
+    std::size_t zeilenBeginn = 0;  // wo die laufende physische Zeile beginnt
+    std::vector<int> stufen{0};  // die offenen Einrueckungen, aussen zuerst
+    const auto leeresToken = [&](TokenArt art, const quelle::Position& ort) {
+        aus.push_back({art, text.substr(ort.versatz, 0), ort, true});
+    };
+    /// Vor dem ersten Token einer logischen Zeile: wie tief sie eingerueckt ist.
+    const auto beginneZeile = [&](const quelle::Position& ort) {
+        zeileOffen = true;
+        if (!sprache.einrueckung) return;
+        int breite = 0;
+        for (std::size_t k = zeilenBeginn; k < ort.versatz; ++k)
+        {
+            if (text[k] == '\t')
+                breite = (breite / 8 + 1) * 8;
+            else if (text[k] == '\f')
+                breite = 0;
+            else
+                ++breite;
+        }
+        if (breite > stufen.back())
+        {
+            stufen.push_back(breite);
+            leeresToken(TokenArt::Einzug, ort);
+            return;
+        }
+        while (breite < stufen.back())
+        {
+            stufen.pop_back();
+            leeresToken(TokenArt::Auszug, ort);
+        }
+        if (breite != stufen.back())
+            melde(quelle::Schwere::Fehler, ort, "indentation does not match any outer level");
+    };
     const auto gib = [&](TokenArt art, const quelle::Position& ort) {
+        if (sprache.zeilenEnde && art != TokenArt::Kommentar)
+        {
+            if (!zeileOffen) beginneZeile(ort);
+            if (art == TokenArt::Operator)
+            {
+                const std::string_view t = text.substr(ort.versatz, i - ort.versatz);
+                if (t == "(" || t == "[" || t == "{") ++klammern;
+                if ((t == ")" || t == "]" || t == "}") && klammern > 0) --klammern;
+            }
+        }
         aus.push_back({art, text.substr(ort.versatz, i - ort.versatz), ort, abstand});
         abstand = false;
         zeilenanfang = false;
+    };
+
+    /// i steht auf dem Begrenzer eines Literals (ort davor: ein Vorsatz): das Literal bis zu seinem Ende.
+    const auto liesLiteral = [&](const quelle::Position& ort, bool kette) {
+        const char c = text[i];
+        bool zu = false;
+        const std::string drei(3, c);
+        if (sprache.dreifachZeichenketten && text.substr(i, 3) == drei)
+        {
+            vor(3);
+            while (i < text.size())
+            {
+                if (text[i] == '\\' && i + 1 < text.size())
+                {
+                    vor(2);
+                    continue;
+                }
+                if (text.substr(i, 3) == drei)
+                {
+                    vor(3);
+                    zu = true;
+                    break;
+                }
+                vor(1);
+            }
+        }
+        else
+        {
+            vor(1);
+            while (i < text.size() && text[i] != '\n')
+            {
+                if (text[i] == '\\' && i + 1 < text.size())
+                {
+                    const std::size_t n = zeilenFortsetzung();
+                    vor(n != 0 ? n : 2);
+                    continue;
+                }
+                const bool ende = text[i] == c;
+                vor(1);
+                if (ende)
+                {
+                    zu = true;
+                    break;
+                }
+            }
+        }
+        if (!zu) melde(quelle::Schwere::Fehler, ort, "literal is not closed");
+        gib(kette ? TokenArt::Zeichenkette : TokenArt::Zeichen, ort);
     };
 
     while (i < text.size())
@@ -100,7 +194,13 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         const char c = text[i];
         if (c == '\n')
         {
+            if (sprache.zeilenEnde && zeileOffen && klammern == 0)
+            {
+                leeresToken(TokenArt::Zeilenende, {i, zeile, spalte});
+                zeileOffen = false;
+            }
             vor(1);
+            zeilenBeginn = i;
             zeilenanfang = true;
             abstand = true;
             continue;
@@ -177,6 +277,20 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
 
         if (istBezeichnerStart(c))
         {
+            // ein Vorsatz vor einer Zeichenkette (`rb"…"`) gehoert zu ihr
+            std::size_t j = i;
+            while (j < text.size() && istBezeichnerTeil(text[j])) ++j;
+            if (j < text.size() && sprache.zeichenkettenBegrenzer.find(text[j]) != std::string_view::npos)
+            {
+                std::string vorsatz(text.substr(i, j - i));
+                for (char& v : vorsatz) v = static_cast<char>(v >= 'A' && v <= 'Z' ? v - 'A' + 'a' : v);
+                if (enthaelt(sprache.zeichenkettenVorsaetze, vorsatz))
+                {
+                    vor(j - i);
+                    liesLiteral(ort, true);
+                    continue;
+                }
+            }
             while (i < text.size() && istBezeichnerTeil(text[i])) vor(1);
             const std::string_view wort = text.substr(ort.versatz, i - ort.versatz);
             gib(enthaelt(sprache.schluesselwoerter, wort) ? TokenArt::Schluesselwort : TokenArt::Bezeichner,
@@ -206,26 +320,7 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         const bool kette = sprache.zeichenkettenBegrenzer.find(c) != std::string_view::npos;
         if (kette || sprache.zeichenBegrenzer.find(c) != std::string_view::npos)
         {
-            bool zu = false;
-            vor(1);
-            while (i < text.size() && text[i] != '\n')
-            {
-                if (text[i] == '\\' && i + 1 < text.size())
-                {
-                    const std::size_t n = zeilenFortsetzung();
-                    vor(n != 0 ? n : 2);
-                    continue;
-                }
-                const bool ende = text[i] == c;
-                vor(1);
-                if (ende)
-                {
-                    zu = true;
-                    break;
-                }
-            }
-            if (!zu) melde(quelle::Schwere::Fehler, ort, "literal is not closed");
-            gib(kette ? TokenArt::Zeichenkette : TokenArt::Zeichen, ort);
+            liesLiteral(ort, kette);
             continue;
         }
 
@@ -245,6 +340,12 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         gib(TokenArt::Unbekannt, ort);
     }
 
+    if (sprache.zeilenEnde)
+    {
+        const quelle::Position ende{i, zeile, spalte};
+        if (zeileOffen) leeresToken(TokenArt::Zeilenende, ende);
+        for (std::size_t k = 1; k < stufen.size(); ++k) leeresToken(TokenArt::Auszug, ende);
+    }
     aus.push_back({TokenArt::Ende, text.substr(text.size()), {i, zeile, spalte}, abstand});
     return aus;
 }

@@ -29,7 +29,10 @@ enum class BlockArt
     Kopfschleife,        ///< while, for, range-for: eine Spalte, der Rumpf
     Fussschleife,        ///< do ... while
     Endlosschleife,      ///< immer wahr (`for (;;)`, `while (1)`): `forever`
-    Versuch,             ///< try: Spalte `try`, je catch eine Spalte `catch (...)`
+    Versuch,             ///< try: Spalte `try`, je catch eine Spalte `catch (...)`, dann `else`, `finally`
+    /// Ein Abschnitt unter einem Kopf (with; das else einer Schleife): eine Spalte, Titel = der Kopf —
+    /// gezeichnet wie ein Abschnitt von try
+    Abschnitt,
     Varianten,           ///< #if als Varianten: je Zweig eine Spalte mit seiner Bedingung
     Bedingt,             ///< der geltende Zweig eines #if (Rahmen): eine Spalte; text = die Bedingung
 };

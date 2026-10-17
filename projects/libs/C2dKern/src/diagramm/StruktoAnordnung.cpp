@@ -134,6 +134,7 @@ public:
                 return {std::max(text, kEinzug + rumpf.breite), m_zeile + rumpf.hoehe};
             }
             case BlockArt::Versuch:
+            case BlockArt::Abschnitt:
             {
                 Mass m;
                 for (const Spalte& s : b.spalten)
@@ -205,6 +206,7 @@ public:
                 legeFolge(rumpf(b), x + kEinzug, y, w - kEinzug, h - m_zeile);
                 return;
             case BlockArt::Versuch:
+            case BlockArt::Abschnitt:
             {
                 f.art = FeldArt::Kopf;
                 f.zeilen.clear();  // die Koepfe der Abschnitte stehen als Beschriftungen

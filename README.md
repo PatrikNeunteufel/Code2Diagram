@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++ | weitere: je Sprache eine Tabelle und ein Leser |
+| **Sprachen** | C, C++, Python | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: JavaScript/TypeScript, C#, Java, Kotlin) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -42,9 +42,9 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | Schicht (`projects/libs/C2dKern/…/c2d/`) | Inhalt | kennt |
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
-| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten) | quelle |
+| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`) | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), Python hat seinen eigenen (`python/`). Für alle gleich: die Basis `Leser` und die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`), gesteuert von den `Ausdrucksregeln` der Sprache | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -130,6 +130,30 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   (dieselbe Bedingung in derselben Funktion: dieselbe Farbe), rechts oben eine Legende. Passt
   ein Titel nicht in seinen Rahmen, wird er gekürzt; ganz steht er in der Legende (und in der
   Vorschau im Tooltip).
+
+**Python** (`.py`, `.pyi`, `.pyw`; Version 3.12):
+
+- Funktionen (`def`, `async def`), auch in Funktionen (voller Name `aussen::innen`; im Rumpf der
+  äußeren steht `def innen(…)`), Parameter wie in der Quelle (`x: int`, `*args`, `**kw`; ohne
+  Vorgabewert, wie in der C-Familie)
+- Klassen mit Basen (ohne `metaclass=`), Felder aus dem Rumpf (`x: int = 0`, `x = 1`) und aus
+  `self.x = …` in Methoden, Methoden (`@staticmethod`, `@abstractmethod`); eine Klasse mit Basis
+  `Enum`, `IntEnum`, `StrEnum`, `Flag`, `IntFlag` ist eine Aufzählung
+- `if`/`elif`/`else`, `while` und `for` mit `else` (es läuft, wenn die Schleife ohne `break`
+  endet), `try`/`except`/`except*`/`else`/`finally` (`finally` auf jedem Weg hinaus, auch nach
+  `return`, `raise`, `break`, `continue` — danach geht es mit ihnen beschriftet weiter), `with`,
+  `match`/`case` (ohne Durchfallen; `case _` ist der Standardfall), `return`, `raise`, `break`,
+  `continue`; mehrere Anweisungen mit `;`, ein Rumpf auf der Zeile des Kopfs (`if x: return 1`)
+- `and`, `or`, `not` (bindet schwächer als ein Vergleich: `not a == b` ist `not (a == b)`) und
+  `a if c else b` für Wahrheits- und Entscheidungstabellen; `while True` hat keinen Weg `no`
+- `import`/`from … import` als Einbindung, Zuweisungen auf oberster Ebene als Variablen; was auf
+  oberster Ebene **abläuft** (nicht nur `def`, `class`, `import` und Zuweisungen), ist die Funktion
+  `<module>` — so heißt sie auch in Pythons eigenen Meldungen
+- Köpfe stehen in Ablauf, Struktogramm und Tabellen so, wie sie in der Quelle stehen (`while x > 0`,
+  `for k, v in d.items()`, `except OSError as e`, `raise`, `match x`) — nicht in der Form der
+  C-Familie
+- Ohne Präprozessor: für Python-Dateien gibt es keine `#if`-Diagramme und keinen Eintrag
+  `#if names`. Beispiel: `beispiele/lager.py`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -531,7 +555,7 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   oder `__has_attribute` bleibt Text — und weil ein späterer Zweig das Gegenteil eines früheren
   fordert, auch jeder Zweig danach. Über 8 Alternativen eine Zeile Text (lange Ketten wie die
   Compiler-Erkennung von CMake). Mit „All #if branches“ gibt es keine Tabelle.
-- **Zuordnungstabellen:** nur `switch` (keine `if`-Kette); ein Fall, der noch etwas anderes tut
+- **Zuordnungstabellen:** nur `switch` und `match` (keine `if`-Kette); ein Fall, der noch etwas anderes tut
   (rufen, durchfallen, andere Namen setzen), macht den `switch` zu keiner Tabelle. Konstante
   Tabellen nur auf Dateiebene, nicht `const`-Arrays in einer Funktion; bei mehrdimensionalen
   Arrays wird die innere Liste zu Spalten `1`, `2`, …. Makros werden nicht ersetzt (`EMPTY_DISPATCH` steht als Wert
@@ -543,6 +567,14 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
 - **Struktogramm:** kein Einbetten (vorgemerkt); eine lange Zeile wird gekürzt, nicht
   umgebrochen; ein `switch` mit vielen Fällen und tiefe Schachtelung werden breit. Anweisungen vor
   dem ersten `case` stehen nicht darin (Meldung).
+- **Python:** `import` wird im Projekt noch nicht aufgelöst — ein Aufruf über Dateien hinweg
+  findet seine Funktion nur am Namen (wie in C ohne Kopf). Rückgabetypen (`-> T`) und
+  Vorgabewerte von Parametern stehen nicht im Diagramm, andere Dekoratoren als `@staticmethod` und
+  `@abstractmethod` wirken nicht. Lambdas und Comprehensions sind Text ihrer Anweisung,
+  `yield`/`await` ebenso. Ein Feld mit dem Typ einer Klasse gilt als *enthalten* (wie in C++), auch
+  wenn Python nur verweist. Andere Anweisungen im Rumpf einer Klasse als Felder und Methoden stehen
+  nicht im Diagramm (Hinweis). In der Entscheidungstabelle steht das `else` einer Schleife nicht
+  (Hinweis), `finally` nur auf den Regeln, die den `try` normal verlassen.
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

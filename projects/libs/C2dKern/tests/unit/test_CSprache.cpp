@@ -96,7 +96,7 @@ TEST_SUITE("C")
     {
         CHECK(c2d::sprache::spracheFuer("a/b/main.c") == &c2d::sprache::c());
         CHECK(c2d::sprache::spracheFuer("KOPF.H") == &c2d::sprache::c());
-        CHECK(c2d::sprache::spracheFuer("main.py") == nullptr);
+        CHECK(c2d::sprache::spracheFuer("main.rs") == nullptr);
         CHECK(c2d::sprache::spracheFuer("Makefile") == nullptr);
     }
 

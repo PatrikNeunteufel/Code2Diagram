@@ -706,3 +706,39 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       Personalisierung > Farben* den Modus wechseln: Code2Diagram folgt, ohne Neustart, die
       Vorschau mit.
       `aktion: thema_setzen name=system`
+
+## V. Python
+
+- [ ] **V0 Vorbereiten:** `beispiele/lager.py` öffnen, Vorschau, Thema System.
+      `aktion: datei_oeffnen pfad=beispiele/lager.py` `aktion: ansicht_waehlen name=preview` `aktion: thema_setzen name=system`
+- [ ] **V1 Gelesen:** Die Statuszeile nennt `lager.py, read as Python` ohne Meldungen. Diagram bietet
+      `Lager::__init__()`, `Lager::lege_ab()`, `Lager::zustand()`, `Lager::suche()`, `lade()`,
+      `<module>()`, `Data types (3)`, `Call graph of this file` — **kein** `#if names`. Das Feld
+      Configuration ist leer. File > Open source file… bietet `Python files (*.py *.pyi *.pyw)`.
+- [ ] **V2 try mit finally:** `lade()`: von `try` gehen drei Kanten aus — ohne Beschriftung in den
+      Block mit `with open(…) as datei`, `except FileNotFoundError`, `except json.JSONDecodeError as fehler`.
+      Alle Wege laufen durch `print("geladen:", pfad)` (finally), auch `return lager` aus dem except und
+      `raise`; von dort geht es weiter nach `return lager` und mit `return` bzw. `throw` ins Ende.
+      `aktion: diagramm_waehlen name=lade`
+- [ ] **V3 Schleife mit else:** `Lager::suche()`: `done` führt zu `return None`, das `break` (Kante `yes`
+      aus `teil in name`) an ihm vorbei zu `return self.posten[name]`.
+      `aktion: diagramm_waehlen name=Lager::suche`
+- [ ] **V4 match:** `Lager::zustand()`: ein Kopf `gesamt` mit den Kanten `0`, `n if n < self.grenze`,
+      `default`; kein Fall läuft in den nächsten. Das Tabellensymbol am Kopf öffnet die Zuordnung
+      `Lager::zustand(): match gesamt` mit drei Zeilen.
+      `aktion: diagramm_waehlen name=Lager::zustand`
+- [ ] **V5 Struktogramm:** `lade()` als Nassi-Shneiderman: `try` mit den Abschnitten `with open(…) as datei`
+      (eingerückt `daten = json.load(datei)`), `except FileNotFoundError`, `except json.JSONDecodeError as fehler`,
+      `else` (mit `for name, menge in daten.items()`), `finally`; die Köpfe so, wie sie in der Quelle
+      stehen, nicht `catch (…)`/`for (…)`.
+      `aktion: diagramm_waehlen name=lade` `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **V6 Wahrheitstabelle:** `Lager::lege_ab()` als Flowchart, Tabellensymbol an `menge <= 0 or not name`:
+      Atome `A: menge <= 0`, `B: name`, Ergebnis wahr in drei von vier Zeilen.
+      `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=Lager::lege_ab` `aktion: wahrheitstabelle_zeigen zeile=27`
+- [ ] **V7 Datentypen:** `Data types`, Typ `Lager`: Felder `grenze`, `posten: dict[str, Posten]` (aus
+      `self.…` in `__init__`), Methoden mit Parametern wie in der Quelle (`lege_ab(self, name: str, menge: int)`);
+      eine Kante `posten` zu `Posten` (`name: str`, `menge: int = 0`). `Zustand` ist eine Aufzählung
+      (`LEER = 0` …). Doppelklick auf `Posten` im Feld zeigt diesen Typ.
+      `aktion: diagramm_waehlen name=types:Lager`
+- [ ] **V8 Klick:** Ein Klick auf `raise` (in `lade()`) markiert im Quelltext Zeile 66.
+      `aktion: diagramm_waehlen name=lade`

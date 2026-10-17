@@ -29,6 +29,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Konfigurationstabelle.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Schaltstellen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Breite.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Python.cpp"
 )
 
 set(_local_headers

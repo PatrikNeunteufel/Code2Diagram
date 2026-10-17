@@ -925,6 +925,7 @@ TEST_SUITE("Hauptfenster")
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
         CHECK(Hauptfenster::dateiFilter() ==
-              "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;All files (*)");
+              "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;"
+              "Python files (*.py *.pyi *.pyw);;All files (*)");
     }
 }

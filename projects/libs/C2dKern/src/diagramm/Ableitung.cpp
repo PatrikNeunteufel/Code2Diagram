@@ -17,7 +17,7 @@ namespace c2d::diagramm
 
 std::string Eintrag::text() const
 {
-    return modell::deklaration(typ, name, zusatz);
+    return modell::deklaration(typ, name, zusatz, typHinten);
 }
 
 std::string Methode::text() const
@@ -60,7 +60,7 @@ using modell::aufrufeIn;
 using Enden = std::vector<std::pair<KnotenId, std::string>>;
 
 /// Ist die Bedingung einer Schleife immer wahr — `1` (jede Zahl ausser 0, auch `0x1`, `1u`) oder
-/// `true`, auch in Klammern? Dann gibt es keinen Weg `no` hinaus. Makros (`TRUE`) werden nicht aufgeloest.
+/// `true` (Python `True`), auch in Klammern? Dann gibt es keinen Weg `no` hinaus. Makros (`TRUE`) werden nicht aufgeloest.
 bool immerWahr(std::string_view bedingung)
 {
     const auto leer = [](char c) { return c == ' ' || c == '\t'; };
@@ -68,7 +68,7 @@ bool immerWahr(std::string_view bedingung)
     while (!bedingung.empty() && leer(bedingung.back())) bedingung.remove_suffix(1);
     if (bedingung.size() >= 2 && bedingung.front() == '(' && bedingung.back() == ')')
         return immerWahr(bedingung.substr(1, bedingung.size() - 2));
-    if (bedingung == "true") return true;
+    if (bedingung == "true" || bedingung == "True") return true;
     // eine ganze Zahl: Ziffern (hex mit 0x), dann nur Endungen u/l
     std::size_t i = 0;
     const bool hex = bedingung.size() > 2 && bedingung[0] == '0' && (bedingung[1] == 'x' || bedingung[1] == 'X');
@@ -239,13 +239,16 @@ private:
             case AnweisungArt::Solange:
             {
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
-                Schleife schleife(*this);
-                verbinde(baue(*a.kinder[0], {{kopf, "yes"}}), kopf);
-                verbinde(schleife.fortsetzung, kopf);
+                Enden abbruch;
+                {
+                    Schleife schleife(*this);
+                    verbinde(baue(*a.kinder[0], {{kopf, "yes"}}), kopf);
+                    verbinde(schleife.fortsetzung, kopf);
+                    abbruch = std::move(schleife.abbruch);
+                }
                 Enden aus;
                 if (!immerWahr(a.text)) aus.emplace_back(kopf, "no");
-                haengeAn(aus, std::move(schleife.abbruch));
-                return aus;
+                return nachSchleife(a, std::move(aus), std::move(abbruch));
             }
 
             case AnweisungArt::TueSolange:
@@ -290,10 +293,12 @@ private:
             case AnweisungArt::Auswahl:
             {
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
-                // ein continue im switch gehoert der Schleife darum: nur break wird hier gefangen
+                // ein continue im switch gehoert der Schleife darum: nur break wird hier gefangen —
+                // ohne Durchfallen (match) auch break nicht
                 Enden abbruch;
-                m_abbruch.push_back(&abbruch);
+                if (!a.ohneDurchfall) m_abbruch.push_back(&abbruch);
                 Enden offen;
+                Enden fertig;  // ohne Durchfallen: die Enden der Faelle davor
                 bool hatStandard = false;
                 bool davorFall = false;
                 const Anweisung& rumpf = *a.kinder[0];
@@ -310,14 +315,18 @@ private:
                     if (davorFall)
                         offen.back().second += ", " + wert;
                     else
+                    {
+                        if (a.ohneDurchfall) haengeAn(fertig, std::exchange(offen, {}));
                         offen.emplace_back(kopf, wert);
+                    }
                     davorFall = true;
                 };
                 if (rumpf.art == AnweisungArt::Block)
                     for (const modell::AnweisungPtr& s : rumpf.kinder) schritt(*s);
                 else
                     schritt(rumpf);
-                m_abbruch.pop_back();
+                if (!a.ohneDurchfall) m_abbruch.pop_back();
+                haengeAn(offen, std::move(fertig));
                 haengeAn(offen, std::move(abbruch));
                 if (!hatStandard) offen.emplace_back(kopf, "otherwise");
                 return offen;
@@ -326,29 +335,52 @@ private:
             case AnweisungArt::FuerJedes:
             {
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
-                Schleife schleife(*this);
-                verbinde(baue(*a.kinder[0], {{kopf, "each"}}), kopf);
-                verbinde(schleife.fortsetzung, kopf);
-                Enden aus{{kopf, "done"}};
-                haengeAn(aus, std::move(schleife.abbruch));
-                return aus;
+                Enden abbruch;
+                {
+                    Schleife schleife(*this);
+                    verbinde(baue(*a.kinder[0], {{kopf, "each"}}), kopf);
+                    verbinde(schleife.fortsetzung, kopf);
+                    abbruch = std::move(schleife.abbruch);
+                }
+                return nachSchleife(a, {{kopf, "done"}}, std::move(abbruch));
             }
 
             case AnweisungArt::Versuch:
             {
-                // ein Knoten `try`: ohne Beschriftung in den Block, je Fang eine Kante in dessen Block
+                // ein Knoten `try`: ohne Beschriftung in den Block, je Fang eine Kante in dessen Block;
+                // else hinter dem Block; finally auf jedem Weg hinaus, auch nach return, throw, break, continue
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, "try", a.zeile, eingang);
+                const Anweisung* schluss = nullptr;
+                if (!a.kinder.empty() && a.kinder.back()->art == AnweisungArt::Schluss && !a.kinder.back()->kinder.empty())
+                    schluss = a.kinder.back()->kinder[0].get();
                 Enden aus;
+                Umweg umweg(*this, schluss != nullptr);
                 for (std::size_t i = 0; i < a.kinder.size(); ++i)
                 {
                     const Anweisung& kind = *a.kinder[i];
                     if (i == 0)
-                        haengeAn(aus, baue(kind, {{kopf, {}}}));
+                    {
+                        Enden ohneAusnahme = baue(kind, {{kopf, {}}});
+                        if (a.sonst) ohneAusnahme = baue(*a.sonst, std::move(ohneAusnahme));
+                        haengeAn(aus, std::move(ohneAusnahme));
+                    }
                     else if (kind.art == AnweisungArt::Fang && !kind.kinder.empty())
-                        haengeAn(aus, baue(*kind.kinder[0], {{kopf, "catch (" + kind.text + ")"}}));
+                        haengeAn(aus, baue(*kind.kinder[0],
+                                           {{kopf, kind.kopf.empty() ? "catch (" + kind.text + ")" : kind.kopf}}));
                 }
-                return aus;
+                if (schluss == nullptr) return aus;
+                umweg.beende();
+                return durchSchluss(*schluss, std::move(aus), umweg);
             }
+
+            case AnweisungArt::Mit:  // der verwaltete Gegenstand, dann der Rumpf
+            {
+                const KnotenId kopf = knoten(KnotenArt::Anweisung, a.kopf.empty() ? a.text : a.kopf, a.zeile, eingang);
+                return a.kinder.empty() ? Enden{{kopf, {}}} : baue(*a.kinder[0], {{kopf, {}}});
+            }
+
+            case AnweisungArt::Schluss:  // ausserhalb eines try: wie ein Block
+                return a.kinder.empty() ? eingang : baue(*a.kinder[0], std::move(eingang));
 
             case AnweisungArt::Varianten:
             {
@@ -374,13 +406,14 @@ private:
                 return baueFolge(a.kinder, std::move(eingang));
 
             case AnweisungArt::Wurf:  // verlaesst die Funktion wie ein return
-                m_ruecksprunge.emplace_back(
-                    knoten(KnotenArt::Anweisung, a.text.empty() ? "throw" : "throw " + a.text, a.zeile, eingang),
-                    std::string());
+            {
+                const std::string text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "throw" : "throw " + a.text;
+                m_wuerfe.back()->emplace_back(knoten(KnotenArt::Anweisung, text, a.zeile, eingang), std::string());
                 return {};
+            }
 
             case AnweisungArt::Ruecksprung:
-                m_ruecksprunge.emplace_back(
+                m_rueck.back()->emplace_back(
                     knoten(KnotenArt::Anweisung, a.text.empty() ? "return" : "return " + a.text, a.zeile, eingang),
                     std::string());
                 return {};
@@ -410,6 +443,76 @@ private:
                 break;
         }
         return eingang;
+    }
+
+    /// Nach einer Schleife: wo sie ohne break endet, laeuft ihr else (Python); dann die breaks dazu.
+    Enden nachSchleife(const Anweisung& a, Enden normal, Enden abbruch)
+    {
+        if (a.sonst) normal = baue(*a.sonst, std::move(normal));
+        haengeAn(normal, std::move(abbruch));
+        return normal;
+    }
+
+    /// Faengt, solange es lebt (oder bis beende()), was einen try mit finally verlaesst — return,
+    /// throw, break, continue —, damit es durch den finally-Block geht.
+    struct Umweg
+    {
+        Umweg(FlussBauer& bauer, bool aktiv) : m_bauer(bauer), m_aktiv(aktiv)
+        {
+            if (!m_aktiv) return;
+            m_bauer.m_rueck.push_back(&rueck);
+            m_bauer.m_wuerfe.push_back(&wuerfe);
+            // break und continue nur, wo es eine Schleife (bzw. einen switch) gibt, die sie meinen
+            m_mitAbbruch = !m_bauer.m_abbruch.empty();
+            m_mitFortsetzung = !m_bauer.m_fortsetzung.empty();
+            if (m_mitAbbruch) m_bauer.m_abbruch.push_back(&abbruch);
+            if (m_mitFortsetzung) m_bauer.m_fortsetzung.push_back(&fortsetzung);
+        }
+        ~Umweg() { beende(); }
+        Umweg(const Umweg&) = delete;
+        Umweg& operator=(const Umweg&) = delete;
+
+        void beende()
+        {
+            if (!m_aktiv) return;
+            m_aktiv = false;
+            m_bauer.m_rueck.pop_back();
+            m_bauer.m_wuerfe.pop_back();
+            if (m_mitAbbruch) m_bauer.m_abbruch.pop_back();
+            if (m_mitFortsetzung) m_bauer.m_fortsetzung.pop_back();
+        }
+
+        Enden rueck;
+        Enden wuerfe;
+        Enden abbruch;
+        Enden fortsetzung;
+
+    private:
+        FlussBauer& m_bauer;
+        bool m_aktiv;
+        bool m_mitAbbruch = false;
+        bool m_mitFortsetzung = false;
+    };
+
+    /// Der finally-Block einmal, auf allen Wegen hinein; hinaus geht es dorthin weiter, wohin jeder
+    /// wollte: gleich danach (ohne Beschriftung), und je Art des Verlassens mit ihr beschriftet.
+    Enden durchSchluss(const Anweisung& schluss, Enden normal, Umweg& umweg)
+    {
+        Enden hinein = std::move(normal);
+        const bool weiter = !hinein.empty();
+        for (const Enden* e : {&umweg.rueck, &umweg.wuerfe, &umweg.abbruch, &umweg.fortsetzung})
+            for (const auto& ende : *e) hinein.push_back(ende);
+        if (hinein.empty()) return {};
+        const Enden hinaus = baue(schluss, std::move(hinein));
+        const auto weiterNach = [&](const Enden& gefangen, Enden* ziel, const char* text) {
+            if (gefangen.empty() || ziel == nullptr) return;
+            for (const auto& e : hinaus) ziel->emplace_back(e.first, text);
+        };
+        weiterNach(umweg.rueck, m_rueck.back(), "return");
+        weiterNach(umweg.wuerfe, m_wuerfe.back(), "throw");
+        weiterNach(umweg.abbruch, m_abbruch.empty() ? nullptr : m_abbruch.back(), "break");
+        weiterNach(umweg.fortsetzung, m_fortsetzung.empty() ? nullptr : m_fortsetzung.back(), "continue");
+        return weiter ? hinaus : Enden{};
     }
 
     /// Faengt break und continue einer Schleife, solange das Objekt lebt.
@@ -446,6 +549,9 @@ private:
     std::vector<Enden*> m_abbruch;
     std::vector<Enden*> m_fortsetzung;
     Enden m_ruecksprunge;
+    /// Wohin return bzw. throw gehen: ins Ende, oder in den Umweg eines finally.
+    std::vector<Enden*> m_rueck{&m_ruecksprunge};
+    std::vector<Enden*> m_wuerfe{&m_ruecksprunge};
     std::map<std::string, KnotenId> m_marken;
     std::vector<std::pair<std::string, Enden>> m_spruenge;
 };
@@ -526,7 +632,7 @@ public:
             }
             case AnweisungArt::Solange:
                 schleife(immerWahr(a.text) ? BlockArt::Endlosschleife : BlockArt::Kopfschleife,
-                         immerWahr(a.text) ? std::string(kImmer) : "while (" + a.text + ")", a, ziel);
+                         immerWahr(a.text) ? std::string(kImmer) : kopfVon(a, "while (" + a.text + ")"), a, ziel);
                 break;
             case AnweisungArt::TueSolange:
                 schleife(immerWahr(a.text) ? BlockArt::Endlosschleife : BlockArt::Fussschleife,
@@ -541,7 +647,18 @@ public:
                 break;
             }
             case AnweisungArt::FuerJedes:
-                schleife(BlockArt::Kopfschleife, "for (" + a.text + ")", a, ziel);
+                schleife(BlockArt::Kopfschleife, kopfVon(a, "for (" + a.text + ")"), a, ziel);
+                break;
+            case AnweisungArt::Mit:
+            {
+                Block b = block(BlockArt::Abschnitt, kopfVon(a, "with " + a.text), a.zeile);
+                b.spalten.push_back({b.text, {}, false});
+                if (!a.kinder.empty()) baue(*a.kinder[0], b.spalten.back().bloecke);
+                ziel.push_back(std::move(b));
+                break;
+            }
+            case AnweisungArt::Schluss:  // ausserhalb eines try: wie ein Block
+                if (!a.kinder.empty()) baue(*a.kinder[0], ziel);
                 break;
             case AnweisungArt::Auswahl:
                 auswahl(a, ziel);
@@ -550,7 +667,7 @@ public:
                 ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "return" : "return " + a.text, a.zeile));
                 break;
             case AnweisungArt::Wurf:
-                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "throw" : "throw " + a.text, a.zeile));
+                ziel.push_back(block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "throw" : "throw " + a.text), a.zeile));
                 break;
             case AnweisungArt::Abbruch:
                 ziel.push_back(block(BlockArt::Aussprung, "break", a.zeile));
@@ -578,9 +695,19 @@ public:
                     }
                     else if (kind.art == AnweisungArt::Fang && !kind.kinder.empty())
                     {
-                        b.spalten.push_back({"catch (" + kind.text + ")", {}, false});
+                        b.spalten.push_back({kopfVon(kind, "catch (" + kind.text + ")"), {}, false});
                         baue(*kind.kinder[0], b.spalten.back().bloecke);
                     }
+                }
+                if (a.sonst)
+                {
+                    b.spalten.push_back({"else", {}, false});
+                    baue(*a.sonst, b.spalten.back().bloecke);
+                }
+                if (!a.kinder.empty() && a.kinder.back()->art == AnweisungArt::Schluss && !a.kinder.back()->kinder.empty())
+                {
+                    b.spalten.push_back({"finally", {}, false});
+                    baue(*a.kinder.back()->kinder[0], b.spalten.back().bloecke);
                 }
                 ziel.push_back(std::move(b));
                 break;
@@ -613,6 +740,7 @@ public:
 
 private:
     static constexpr std::string_view kImmer = "forever";
+    static constexpr std::string_view kOhneBreak = "else (no break)";
 
     static Block block(BlockArt art, std::string text, int zeile)
     {
@@ -624,12 +752,26 @@ private:
         return b;
     }
 
+    /// Der Kopf, wie er in der Quelle steht (Anweisung::kopf), sonst `sonst` in der Form der C-Familie.
+    static std::string kopfVon(const Anweisung& a, std::string sonst)
+    {
+        return a.kopf.empty() ? std::move(sonst) : a.kopf;
+    }
+
     void schleife(BlockArt art, std::string kopf, const Anweisung& a, std::vector<Block>& ziel)
     {
         Block b = block(art, std::move(kopf), a.zeile);
         b.spalten.push_back({});
         baue(*a.kinder[0], b.spalten.back().bloecke);
         ziel.push_back(std::move(b));
+        if (a.sonst)
+        {
+            // das else einer Schleife (Python): laeuft, wenn sie ohne break endet
+            Block s = block(BlockArt::Abschnitt, std::string(kOhneBreak), a.sonst->zeile);
+            s.spalten.push_back({s.text, {}, false});
+            baue(*a.sonst, s.spalten.back().bloecke);
+            ziel.push_back(std::move(s));
+        }
     }
 
     /// Verlaesst die Anweisung ihre Folge sicher — ein Sprung, auch als letzte eines Blocks?
@@ -696,12 +838,14 @@ private:
         {
             Fall& fall = faelle[i];
             Spalte spalte{fall.titel, {}, false};
-            // ein break am Ende eines Falls ist Syntax, kein Ablauf
-            const bool mitBreak = !fall.anweisungen.empty() && fall.anweisungen.back()->art == AnweisungArt::Abbruch;
+            // ein break am Ende eines Falls ist Syntax, kein Ablauf — ohne Durchfallen (match) gehoert er
+            // der Schleife darum, und kein Fall laeuft in den naechsten
+            const bool mitBreak = !a.ohneDurchfall && !fall.anweisungen.empty() &&
+                                  fall.anweisungen.back()->art == AnweisungArt::Abbruch;
             if (mitBreak) fall.anweisungen.pop_back();
             for (const Anweisung* s : fall.anweisungen) baue(*s, spalte.bloecke);
             const bool letzter = i + 1 == faelle.size();
-            if (!mitBreak && !letzter && !fall.anweisungen.empty() && !springt(*fall.anweisungen.back()))
+            if (!a.ohneDurchfall && !mitBreak && !letzter && !fall.anweisungen.empty() && !springt(*fall.anweisungen.back()))
                 spalte.bloecke.push_back(block(BlockArt::Aussprung, "falls through", 0));
             b.spalten.push_back(std::move(spalte));
         }
@@ -771,7 +915,7 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         kasten.name = typ.vollerName();
         kasten.zeile = typ.zeile;
         for (const modell::Feld& feld : typ.felder)
-            kasten.eintraege.push_back({feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht), feld.zeile});
+            kasten.eintraege.push_back({feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht), feld.zeile, feld.typHinten});
         for (const modell::Methode& m : typ.methoden)
             kasten.methoden.push_back({m.rueckgabe, m.signatur(), zeichen(m.sicht), m.abstrakt, m.statisch, m.zeile});
         kastenVon.emplace(typ.name, diagramm.kaesten.size());

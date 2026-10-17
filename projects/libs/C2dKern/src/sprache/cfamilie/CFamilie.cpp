@@ -5,8 +5,8 @@
 #include "CFamilie.hpp"
 
 #include "../Leser.hpp"
+#include "../Logik.hpp"
 #include "Bedingt.hpp"
-#include "Logik.hpp"
 
 #include <algorithm>
 #include <map>
@@ -1443,7 +1443,13 @@ Ergebnis lies(std::string_view text, std::string_view einheitName, const lexer::
 {
     Ergebnis ergebnis = liesGliederung(text, einheitName, tabelle, dialekt, optionen);
     // je Bedingung mit mindestens zwei Atomen ihre Logik (fuer die Wahrheitstabelle)
-    ergaenzeLogik(ergebnis.einheit, tabelle);
+    static constexpr std::string_view kZuweisungen[] = {"=",  "+=", "-=", "*=", "/=", "%=",
+                                                        "&=", "|=", "^=", "<<=", ">>="};
+    static constexpr Ausdrucksregeln kRegeln{.wahl = Ausdrucksregeln::Wahl::Fragezeichen,
+                                             .nichtUmfasstVergleich = false,
+                                             .zuweisungen = kZuweisungen,
+                                             .zeiger = true};
+    ergaenzeLogik(ergebnis.einheit, tabelle, kRegeln);
     return ergebnis;
 }
 

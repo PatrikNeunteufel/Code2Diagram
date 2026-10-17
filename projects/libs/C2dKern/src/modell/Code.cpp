@@ -10,8 +10,15 @@
 namespace c2d::modell
 {
 
-std::string deklaration(const std::string& typ, const std::string& name, const std::string& zusatz)
+std::string deklaration(const std::string& typ, const std::string& name, const std::string& zusatz, bool typHinten)
 {
+    if (typHinten)
+    {
+        std::string s = name;
+        if (!typ.empty()) s += (s.empty() ? "" : ": ") + typ;
+        if (!zusatz.empty()) s += (s.empty() ? "" : " ") + zusatz;
+        return s;
+    }
     std::string s = typ;
     if (!name.empty())
     {
@@ -106,8 +113,12 @@ std::vector<std::string> aufrufeIn(std::string_view text)
     static constexpr std::string_view kKeineFunktion[] = {
         "if",     "while",   "for",     "switch",   "return", "sizeof",  "catch",    "throw",
         "new",    "delete",  "alignof", "decltype", "typeid", "defined", "co_return", "case",
-        "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast", "noexcept", "alignas"};
+        "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast", "noexcept", "alignas",
+        // Woerter von Python, die im Text einer Anweisung vor `(` stehen koennen (`not (a)`, `del (x)`)
+        "not", "and", "or", "in", "is", "assert", "del", "yield"};
     std::vector<std::string> aus;
+    std::string_view davor;      // der Name vor dem laufenden
+    std::size_t davorEnde = 0;   // wo er endet
     std::size_t i = 0;
     while (i < text.size())
     {
@@ -130,9 +141,15 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         const std::size_t anfang = i;
         while (i < text.size() && istNamenZeichen(text[i])) ++i;
         const std::string_view name = text.substr(anfang, i - anfang);
+        // gleich hinter `def`/`class` (Python, nur Leerraum dazwischen) wird definiert, nicht gerufen
+        const std::string_view zwischen = text.substr(davorEnde, anfang - davorEnde);
+        const bool definiert = (davor == "def" || davor == "class") && !zwischen.empty() &&
+                               zwischen.find_first_not_of(' ') == std::string_view::npos;
+        davor = name;
+        davorEnde = i;
         std::size_t k = i;
         while (k < text.size() && text[k] == ' ') ++k;
-        if (k >= text.size() || text[k] != '(') continue;
+        if (k >= text.size() || text[k] != '(' || definiert) continue;
         if (std::find(std::begin(kKeineFunktion), std::end(kKeineFunktion), name) != std::end(kKeineFunktion)) continue;
         // ein Bereich davor gehoert dazu (`N::q`, `a::N::q`); `::q` meint den globalen
         std::size_t vorn = anfang;
@@ -263,7 +280,7 @@ std::string signatur(const std::string& name, const std::vector<Parameter>& para
     for (std::size_t i = 0; i < parameter.size(); ++i)
     {
         if (i != 0) s += ", ";
-        s += deklaration(parameter[i].typ, parameter[i].name);
+        s += deklaration(parameter[i].typ, parameter[i].name, {}, parameter[i].typHinten);
     }
     return s + ")";
 }

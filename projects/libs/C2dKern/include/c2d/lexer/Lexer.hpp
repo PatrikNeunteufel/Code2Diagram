@@ -31,6 +31,14 @@ enum class TokenArt
     Kommentar,
     Direktive,  ///< eine ganze Zeile, etwa `#include <x.h>` (mit Fortsetzungen)
     Unbekannt,  ///< ein Zeichen, das die Sprache nicht kennt; dazu eine Meldung
+    /// Nur mit Sprachtabelle::zeilenEnde: das Ende einer Zeile mit Inhalt, ausserhalb von
+    /// Klammern — es beendet eine Anweisung. Der Text ist leer und steht am Zeilenwechsel.
+    Zeilenende,
+    /// Nur mit Sprachtabelle::einrueckung: die Zeile ist tiefer eingerueckt als die vorige
+    /// (ein Block beginnt) bzw. flacher (je verlassener Stufe ein Auszug). Der Text ist
+    /// leer und steht am ersten Token der Zeile (am Ende des Texts: an dessen Ende).
+    Einzug,
+    Auszug,
     Ende,
 };
 
@@ -54,9 +62,9 @@ struct Sprachtabelle
     std::span<const std::string_view> schluesselwoerter;
     /// Operatoren und Satzzeichen; der laengste Treffer gewinnt.
     std::span<const std::string_view> operatoren;
-    std::string_view zeilenKommentar;  ///< leer = keiner
-    std::string_view blockKommentarAuf;
-    std::string_view blockKommentarZu;
+    std::string_view zeilenKommentar{};  ///< leer = keiner
+    std::string_view blockKommentarAuf{};
+    std::string_view blockKommentarZu{};
     char direktive = '\0';  ///< leitet am Zeilenanfang eine Direktive ein; '\0' = keine
     std::string_view zeichenkettenBegrenzer = "\"";  ///< jedes Zeichen ist ein Begrenzer
     std::string_view zeichenBegrenzer = "'";
@@ -64,6 +72,22 @@ struct Sprachtabelle
     bool rohZeichenketten = false;
     /// Trennt Ziffern in einer Zahl, etwa `'` in 1'000'000; '\0' = keiner.
     char ziffernTrenner = '\0';
+    /// Vorsaetze, die unmittelbar vor einer Zeichenkette zu ihr gehoeren (Python: `r`, `b`,
+    /// `f`, `rb` …), klein geschrieben; gross geschrieben gelten sie ebenso.
+    std::span<const std::string_view> zeichenkettenVorsaetze{};
+    /// Drei Begrenzer oeffnen eine Zeichenkette, die bis zu drei gleichen reicht, auch ueber
+    /// Zeilen (Python: `"""…"""`, `'''…'''`).
+    bool dreifachZeichenketten = false;
+    /// Ein Zeilenwechsel ausserhalb von Klammern beendet die Anweisung: Token Zeilenende,
+    /// einmal je Zeile mit Inhalt (eine Zeile mit nur Leerraum oder Kommentar gibt keins;
+    /// `\` am Zeilenende setzt fort). Am Ende des Texts steht eins, wenn die letzte Zeile
+    /// Inhalt hat.
+    bool zeilenEnde = false;
+    /// Nur mit zeilenEnde: die Einrueckung einer Zeile gliedert in Bloecke (Token Einzug,
+    /// Auszug); ein Tabulator rueckt bis zur naechsten Achterstelle. Rueckt eine Zeile auf
+    /// keine fruehere Stufe zurueck, gibt es eine Meldung. Am Ende des Texts schliessen
+    /// Auszuege jede offene Stufe.
+    bool einrueckung = false;
 };
 
 struct LexerOptionen

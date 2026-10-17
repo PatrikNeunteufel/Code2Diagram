@@ -46,6 +46,7 @@ public:
     [[nodiscard]] std::string_view name() const override { return "C"; }
     [[nodiscard]] std::span<const std::string_view> endungen() const override { return kEndungen; }
     [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return kTabelle; }
+    [[nodiscard]] bool hatPraeprozessor() const override { return true; }
 
     [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
                                 const LeseOptionen& optionen) const override

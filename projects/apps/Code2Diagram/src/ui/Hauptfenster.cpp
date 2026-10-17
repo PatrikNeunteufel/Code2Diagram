@@ -854,8 +854,8 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (!d.ergebnis.weichen.empty())
             m_auswahl->addItem(QStringLiteral("#if configuration (%1)").arg(d.ergebnis.weichen.size()),
                                QString::fromLatin1(kKonfiguration));
-        // die Namen des ganzen Projekts: in jeder Datei zur Wahl
-        if (m_schalterZahl > 0)
+        // die Namen des ganzen Projekts: in jeder Datei zur Wahl, deren Sprache #if kennt
+        if (m_schalterZahl > 0 && d.sprache != nullptr && d.sprache->hatPraeprozessor())
             m_auswahl->addItem(QStringLiteral("#if names (%1)").arg(m_schalterZahl), QString::fromLatin1(kSchalter));
     }
     {

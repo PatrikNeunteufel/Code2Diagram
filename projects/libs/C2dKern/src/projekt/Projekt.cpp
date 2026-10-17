@@ -195,7 +195,9 @@ public:
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
         std::vector<std::vector<sprache::Definition>> ausKoepfen(m_p.dateien.size());
-        for (std::size_t i = 0; i < m_p.dateien.size(); ++i) ausKoepfen[i] = sammleKoepfe(i, m_p.dateien[i].koepfe);
+        // (Koepfe bindet nur `#include` ein; ein import in Python loest das Projekt noch nicht auf)
+        for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
+            if (m_p.dateien[i].sprache->hatPraeprozessor()) ausKoepfen[i] = sammleKoepfe(i, m_p.dateien[i].koepfe);
         for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
         {
             if (ausKoepfen[i].empty()) continue;

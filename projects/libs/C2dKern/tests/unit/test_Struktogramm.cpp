@@ -33,7 +33,7 @@ Struktogramm struktogramm(std::string_view quelle, const c2d::sprache::LeseOptio
 /// Die Bloecke einer Folge als "Art:Text", durch Strichpunkt.
 std::string bild(const std::vector<Block>& bloecke)
 {
-    static constexpr const char* kKuerzel[] = {"A", "R", "X", "M", "IF", "SW", "WH", "DO", "EW", "TRY", "VAR", "BED"};
+    static constexpr const char* kKuerzel[] = {"A", "R", "X", "M", "IF", "SW", "WH", "DO", "EW", "TRY", "ABS", "VAR", "BED"};
     std::string s;
     for (const Block& b : bloecke)
     {

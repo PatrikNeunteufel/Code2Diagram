@@ -37,6 +37,8 @@ struct Entscheidungstabelle
         bool fall = false;    ///< ein switch: die Eintraege sind Werte, nicht Y/N
         bool mitAufruf = false;
         bool erneut = false;  ///< neu gefragt, nachdem sich ihr Wert aendern konnte (quellZeile: wo)
+        /// Nur fall: der Kopf, wie er in der Quelle steht (`match x`); leer = `switch (text)`.
+        std::string kopf;
     };
     struct Aktion
     {
@@ -57,8 +59,8 @@ struct Entscheidungstabelle
     std::vector<std::string> hinweise;
 };
 
-/// Wie eine Bedingung in ihrer Zeile heisst: ihr Text, ein switch als `switch (…)`, neu gefragt mit
-/// `(again, line n)`.
+/// Wie eine Bedingung in ihrer Zeile heisst: ihr Text, ein switch als `switch (…)` (oder wie sein Kopf in
+/// der Quelle steht), neu gefragt mit `(again, line n)`.
 [[nodiscard]] std::string zeilenText(const Entscheidungstabelle::Bedingung& bedingung);
 
 /// Bis so viele Regeln gibt es eine Tabelle; darueber keine, damit keine halbe fuer ganz gilt.

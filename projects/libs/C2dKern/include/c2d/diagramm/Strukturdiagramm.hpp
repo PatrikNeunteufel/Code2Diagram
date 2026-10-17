@@ -29,6 +29,7 @@ struct Eintrag
     std::string zusatz;  ///< `[8]`, `: 3` oder `= 4`
     char sicht = '\0';   ///< `+` oeffentlich, `#` geschuetzt, `-` privat; '\0' = keine Angabe
     int zeile = 0;       ///< im Quelltext; 0 = keine
+    bool typHinten = false;  ///< `name: typ` (wie modell::Feld::typHinten)
 
     /// Der Eintrag in einer Zeile, gesetzt wie in modell::deklaration (ohne die Sichtbarkeit).
     [[nodiscard]] std::string text() const;

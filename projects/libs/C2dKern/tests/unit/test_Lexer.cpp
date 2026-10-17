@@ -25,7 +25,7 @@ std::vector<Token> zerlegeC(std::string_view text, std::vector<Meldung>& meldung
 /// Die Token als "Art:Text", durch Leerzeichen getrennt — ohne das Ende.
 std::string bild(const std::vector<Token>& token)
 {
-    static constexpr std::string_view kKuerzel[] = {"B", "S", "N", "K", "Z", "O", "C", "D", "?", "E"};
+    static constexpr std::string_view kKuerzel[] = {"B", "S", "N", "K", "Z", "O", "C", "D", "?", ";", ">", "<", "E"};
     std::string s;
     for (const Token& t : token)
     {

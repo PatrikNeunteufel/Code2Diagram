@@ -42,9 +42,17 @@ enum class AnweisungArt
     Marke,         ///< text = Name
     Direktive,     ///< text = die Zeile (Praeprozessor im Rumpf)
     FuerJedes,     ///< text = `Element : Menge`; kinder[0] = Rumpf (range-for)
-    Versuch,       ///< kinder[0] = der Block; kinder[1..] = je ein Fang (try)
+    /// kinder[0] = der Block; kinder[1..] = je ein Fang (try/catch, Python except), zuletzt
+    /// vielleicht ein Schluss; sonst = was nach einem try ohne Ausnahme laeuft (Python else)
+    Versuch,
     Fang,          ///< text = was gefangen wird; kinder[0] = der Block (catch)
     Wurf,          ///< text = was geworfen wird (throw); darf leer sein
+    /// finally: kinder[0] = der Block — er laeuft auf jedem Weg aus dem try, auch nach
+    /// return, break, continue; nur als letztes Kind eines Versuchs
+    Schluss,
+    /// Ein Block unter einem verwalteten Gegenstand (Python with, C# using): text = was
+    /// verwaltet wird (`open(p) as f`); kinder[0] = der Rumpf
+    Mit,
     /// Bedingte Uebersetzung im Rumpf, als Varianten gelesen (LeseOptionen::varianten):
     /// text = `#if`; kinder = je Zweig ein Zweig, in der Reihenfolge des Texts. Fehlt
     /// das `#else`, steht dafuer ein leerer Zweig `else` am Ende.
@@ -82,7 +90,16 @@ struct Anweisung
     std::string init;     ///< nur Fuer
     std::string schritt;  ///< nur Fuer
     std::vector<std::unique_ptr<Anweisung>> kinder;
-    std::unique_ptr<Anweisung> sonst;  ///< nur Wenn
+    /// Wenn: der Zweig else. Solange, Fuer, FuerJedes: was laeuft, wenn die Schleife ohne break
+    /// endet (Python else). Versuch: was laeuft, wenn im try keine Ausnahme kam (Python else).
+    std::unique_ptr<Anweisung> sonst;
+    /// Wie der Kopf in der Quelle steht, wo die Sprache ihn nicht in der Form der C-Familie
+    /// schreibt — `while x > 0`, `for x in xs`, `except ValueError as e`, `raise X`, `match x`,
+    /// `with open(p) as f`; leer = die Diagramme setzen ihn aus text zusammen (`while (x)`).
+    std::string kopf;
+    /// Nur Auswahl: ein Fall endet an der naechsten Fall-Marke, ohne in sie zu laufen (Python
+    /// match); ein break darin verlaesst die Schleife darum, nicht die Auswahl.
+    bool ohneDurchfall = false;
     int zeile = 0;
     bool gilt = false;  ///< nur Zweig
     /// Eine Bedingung mit mindestens zwei Atomen (ein `if`, eine Schleife, `?:`, ein `return` oder
@@ -124,14 +141,16 @@ using AnweisungPtr = std::unique_ptr<Anweisung>;
 /// Leerzeichen dazwischen, ausser der Typ endet auf abgesetzte Sterne oder `(`
 /// oder der Zusatz beginnt mit `[` oder `)` — `u8 daten[16]`,
 /// `struct Knoten *naechster`, `QWidget* parent`, `void (*rueckruf)(int)`,
-/// `unsigned bereit : 1`.
+/// `unsigned bereit : 1`. Mit `typHinten` steht der Typ hinter dem Namen (`name: typ`,
+/// Python), der Zusatz mit Abstand dahinter (`name: typ = 3`).
 [[nodiscard]] std::string deklaration(const std::string& typ, const std::string& name,
-                                      const std::string& zusatz = {});
+                                      const std::string& zusatz = {}, bool typHinten = false);
 
 struct Parameter
 {
     std::string typ;
-    std::string name;  ///< darf leer sein (Prototyp)
+    std::string name;  ///< darf leer sein (Prototyp); in Python mit `*`/`**` davor
+    bool typHinten = false;  ///< `name: typ` (Python)
 };
 
 /// `bereich::name`, oder nur der Name, wenn es keinen Bereich gibt.
@@ -152,6 +171,10 @@ struct Funktion
     /// Nur in ihrer Datei sichtbar (`static` vor einer freien Funktion) — ein
     /// Aufruf aus einer anderen Datei meint sie nie.
     bool intern = false;
+    /// In einer anderen Funktion definiert (Python: `def` im Rumpf): deren voller Name;
+    /// leer = auf oberster Ebene oder in einem Typ. Im Rumpf der aeusseren steht dafuer eine
+    /// Anweisung `def name(…)`.
+    std::string aussen;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }
     /// Meint ein Aufruf diese Funktion, dem Namen nach? `f` passt auf jede
@@ -164,8 +187,9 @@ struct Funktion
 
 /// Die Funktionen, die ein Text ruft: jeder Name vor einer `(`, mit seinem
 /// Bereich (`a::b(` gibt `a::b`), ohne Objekt davor (`x.b(`, `p->b(` geben `b`),
-/// jeder einmal, in der Reihenfolge des Texts. Woerter der C-Familie, die so
-/// aussehen (`if (`, `sizeof(`), zaehlen nicht; in Literalen wird nichts gerufen.
+/// jeder einmal, in der Reihenfolge des Texts. Woerter der C-Familie und von Python,
+/// die so aussehen (`if (`, `sizeof(`, `not (`), zaehlen nicht; in Literalen wird
+/// nichts gerufen.
 [[nodiscard]] std::vector<std::string> aufrufeIn(std::string_view text);
 
 /// Die Namen in einem Text, mit Bereich (`a::B`), ausserhalb von Literalen, jeder einmal, in der
@@ -217,6 +241,7 @@ struct Feld
     std::string zusatz;  ///< `[8]`, `: 3` oder `= 4`
     Sichtbarkeit sicht = Sichtbarkeit::Keine;
     int zeile = 0;
+    bool typHinten = false;  ///< `name: typ` (Python)
 };
 
 /// Eine Funktion, die zu einem Typ gehoert. Hat sie einen Rumpf, steht sie

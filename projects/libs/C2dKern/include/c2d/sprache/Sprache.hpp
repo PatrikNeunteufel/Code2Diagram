@@ -112,6 +112,10 @@ public:
     /// die zuerst angemeldet ist.
     [[nodiscard]] virtual bool erkennt(std::string_view /*text*/) const { return false; }
 
+    /// Kennt die Sprache bedingte Uebersetzung (`#if`)? Sonst gibt es fuer ihre Dateien keine
+    /// Varianten, Rahmen, `#if`-Konfiguration und keine Namen, nach denen gefragt wird.
+    [[nodiscard]] virtual bool hatPraeprozessor() const { return false; }
+
     /// Liest den Text. Was der Leser nicht versteht, uebergeht er mit einer
     /// Meldung — das Ergebnis ist immer brauchbar, nie leer wegen eines Fehlers.
     [[nodiscard]] virtual Ergebnis lies(std::string_view text, std::string_view einheitName,
@@ -141,5 +145,12 @@ public:
 /// Sichtbarkeit, Konstruktoren und Operatoren, using, try/catch/throw,
 /// range-for. Schablonen werden uebergangen, nicht verstanden.
 [[nodiscard]] const Sprache& cpp();
+
+/// Python (3.12): Funktionen, auch in Funktionen (Funktion::aussen) und Methoden; Klassen mit
+/// Basen, Feldern (im Rumpf und `self.x =` in Methoden), Aufzaehlungen (Basis `Enum` …);
+/// if/elif/else, while und for (mit else), try/except/else/finally, with, match/case,
+/// return, raise, break, continue; import als Einbindung. Was auf oberster Ebene ablaeuft,
+/// ist die Funktion `<module>`. Kein Praeprozessor; LeseOptionen gelten nicht.
+[[nodiscard]] const Sprache& python();
 
 }  // namespace c2d::sprache

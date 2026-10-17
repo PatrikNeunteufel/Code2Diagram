@@ -36,6 +36,7 @@ struct Frage
     bool fall = false;
     bool mitAufruf = false;
     std::vector<std::string> namen;  // die Namen, die sie liest
+    std::string kopf;                // ein switch: wie sein Kopf in der Quelle steht
 };
 
 /// Darueber bricht der Bau ab: so viele Regeln zeigt ohnehin keine Tabelle.
@@ -102,7 +103,7 @@ private:
 
     static Frage frage(const std::string& text, const Anweisung& a, bool fall)
     {
-        return {text, a.zeile, fall, a.bedingungRuft, a.bedingungNamen};
+        return {text, a.zeile, fall, a.bedingungRuft, a.bedingungNamen, fall ? a.kopf : std::string()};
     }
 
     /// Die Zeile einer Bedingung: die erste mit ihrem Text — neu gefragt eine eigene je Stelle.
@@ -113,7 +114,7 @@ private:
             const Entscheidungstabelle::Bedingung& b = m_t.bedingungen[i];
             if (b.text == f.text && b.fall == f.fall && b.erneut == erneut && (!erneut || b.quellZeile == f.zeile)) return i;
         }
-        m_t.bedingungen.push_back({f.text, f.zeile, f.fall, f.mitAufruf, erneut});
+        m_t.bedingungen.push_back({f.text, f.zeile, f.fall, f.mitAufruf, erneut, f.kopf});
         m_namen.push_back(f.namen);
         return m_t.bedingungen.size() - 1;
     }
@@ -194,7 +195,7 @@ private:
             {
                 std::string text = a.text;
                 if (a.art == AnweisungArt::Ruecksprung) text = a.text.empty() ? "return" : "return " + a.text;
-                if (a.art == AnweisungArt::Wurf) text = a.text.empty() ? "throw" : "throw " + a.text;
+                if (a.art == AnweisungArt::Wurf) text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "throw" : "throw " + a.text;
                 if (!a.frage.empty())
                 {
                     // ?: verzweigt — beide Seiten fuehren dieselbe Anweisung aus
@@ -232,10 +233,20 @@ private:
                     case AnweisungArt::Fuer: kopf = "for (" + a.init + "; " + a.text + "; " + a.schritt + ") ..."; break;
                     default: kopf = "for (" + a.text + ") ..."; break;
                 }
+                if (!a.kopf.empty()) kopf = a.kopf + " ...";
                 aktion(wege, kopf, a.zeile);
                 vergiss(wege, a, true);  // was in ihr geschieht, ist nicht bekannt
                 hinweis("loops are one action each - what happens inside them is not in the table");
+                if (a.sonst)
+                    hinweis("the else of a loop runs only without break - it is not in the table");
                 return wege;
+            }
+            case AnweisungArt::Mit:
+            {
+                // der verwaltete Gegenstand ist eine Aktion (er ruft), dann der Rumpf
+                aktion(wege, a.kopf.empty() ? "with " + a.text : a.kopf, a.zeile);
+                vergiss(wege, a, true);
+                return a.kinder.empty() ? wege : schritt(*a.kinder[0], std::move(wege));
             }
             case AnweisungArt::Auswahl: return auswahl(a, std::move(wege));
             case AnweisungArt::Abbruch:
@@ -247,8 +258,21 @@ private:
                 hinweis("goto ends a rule at the jump");
                 return wege;
             case AnweisungArt::Versuch:
+            {
+                // der Weg ohne Ausnahme: der Block, sein else, dann finally (es laeuft immer)
                 hinweis("try: the catch blocks are not in the table");
-                return a.kinder.empty() ? wege : schritt(*a.kinder[0], std::move(wege));
+                if (a.kinder.empty()) return wege;
+                wege = schritt(*a.kinder[0], std::move(wege));
+                if (a.sonst) wege = schritt(*a.sonst, std::move(wege));
+                const Anweisung& letztes = *a.kinder.back();
+                if (letztes.art == AnweisungArt::Schluss && !letztes.kinder.empty())
+                {
+                    hinweis("finally is on the rules that leave the try normally - not after a return in it");
+                    wege = schritt(*letztes.kinder[0], std::move(wege));
+                }
+                return wege;
+            }
+            case AnweisungArt::Schluss: return a.kinder.empty() ? wege : schritt(*a.kinder[0], std::move(wege));
             case AnweisungArt::Varianten:
                 hinweis("#if variants: only the active branch is in the table");
                 for (const modell::AnweisungPtr& zweig : a.kinder)
@@ -314,10 +338,11 @@ private:
         for (std::size_t i = 0; i < geteilt.size(); ++i)
         {
             std::vector<Weg> laufend = std::move(geteilt[i]);
-            // vom Fall i an, bis ein break oder Sprung alle Wege anhaelt
+            // vom Fall i an, bis ein break oder Sprung alle Wege anhaelt; ohne Durchfallen (match) nur er
             for (std::size_t j = i; j < faelle.size() && !laufend.empty(); ++j)
             {
                 laufend = folge(faelle[j].anweisungen, std::move(laufend));
+                if (a.ohneDurchfall) break;
                 if (std::all_of(laufend.begin(), laufend.end(), [](const Weg& w) { return w.endet || w.raus; })) break;
             }
             for (Weg& w : laufend)
@@ -341,7 +366,7 @@ private:
 
 std::string zeilenText(const Entscheidungstabelle::Bedingung& b)
 {
-    std::string text = b.fall ? "switch (" + b.text + ")" : b.text;
+    std::string text = b.fall ? (b.kopf.empty() ? "switch (" + b.text + ")" : b.kopf) : b.text;
     if (b.erneut) text += " (again, line " + std::to_string(b.quellZeile) + ")";
     return text;
 }
