@@ -377,7 +377,9 @@ public:
         return aus + "</svg>\n";
     }
 
-    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
+    [[nodiscard]] bool kann(Diagrammart) const override { return true; }
+
+    [[nodiscard]] std::string schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
     {
         using FeldArt = StruktoAnordnung::FeldArt;
         const AnordnungOptionen o = anordnung(optionen);
@@ -400,6 +402,23 @@ public:
                    rahmenTitel(kuerze(r.titel, titelZeichen(r.ort, o)), r.ort, o,
                                "font-style=\"italic\" " + textStil(r.farbe));
         aus += legende(a.legende, o);
+        return aus + "</svg>\n";
+    }
+
+    [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle> tabellen, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const TabellenAnordnung a = ordneAn(tabellen, o);
+        std::string aus = kopf(tabellen.empty() ? std::string("truth table") : tabellen.front().funktion, a.breite, a.hoehe);
+        for (const TabellenAnordnung::Zelle& z : a.zellen)
+        {
+            std::string stueck = rechteck(z.ort, z.kopf || z.mcdc ? "getoent" : "flaeche") +
+                                 textMittig(z.zeilen, z.ort.mitte(), o.zeilenHoehe, z.kopf ? "font-weight=\"bold\"" : "");
+            // der volle Text eines Atoms als Tooltip
+            aus += z.ganz.empty() ? stueck : "  <g>\n  <title>" + xml(z.ganz) + "</title>\n" + stueck + "  </g>\n";
+        }
+        for (const TabellenAnordnung::Text& t : a.texte)
+            aus += textLinks(t.text, t.links.x, t.links.y - o.zeilenHoehe / 2, o.zeilenHoehe, t.fett ? "font-weight=\"bold\"" : "");
         return aus + "</svg>\n";
     }
 

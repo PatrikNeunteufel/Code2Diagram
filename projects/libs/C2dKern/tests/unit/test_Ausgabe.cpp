@@ -50,11 +50,26 @@ TEST_SUITE("Ausgabe")
 {
     TEST_CASE("Die Formate melden sich an; das erste ist die Vorgabe")
     {
-        REQUIRE(c2d::ausgabe::formate().size() == 4);
+        REQUIRE(c2d::ausgabe::formate().size() == 5);
         CHECK(c2d::ausgabe::formate()[0] == &c2d::ausgabe::svg());
         CHECK(c2d::ausgabe::format("mermaid") == &mermaid());
         CHECK(c2d::ausgabe::format("dot") == &dot());
         CHECK(c2d::ausgabe::format("drawio") == &c2d::ausgabe::drawio());
+        CHECK(c2d::ausgabe::format("csv") == &c2d::ausgabe::csv());
+        // was ein Format kann: csv nur Tabellen, Mermaid und DOT keine Bloecke und Tabellen
+        using c2d::ausgabe::Diagrammart;
+        for (const Diagrammart art : {Diagrammart::Ablauf, Diagrammart::Datentypen, Diagrammart::Zustandsautomat,
+                                      Diagrammart::Aufrufgraph, Diagrammart::Struktogramm, Diagrammart::Wahrheitstabelle})
+        {
+            CAPTURE(c2d::ausgabe::nameVon(art));
+            CHECK(c2d::ausgabe::svg().kann(art));
+            CHECK(c2d::ausgabe::drawio().kann(art));
+            const bool graph = art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle;
+            CHECK(mermaid().kann(art) == graph);
+            CHECK(dot().kann(art) == graph);
+            CHECK(c2d::ausgabe::csv().kann(art) == (art == Diagrammart::Wahrheitstabelle));
+        }
+        CHECK(c2d::ausgabe::nichtVerfuegbar(c2d::ausgabe::csv(), Diagrammart::Ablauf) == "Flowchart is not available in csv");
         CHECK(c2d::ausgabe::format("png") == nullptr);
         CHECK(c2d::ausgabe::svg().endung() == "svg");
         CHECK(mermaid().endung() == "mmd");

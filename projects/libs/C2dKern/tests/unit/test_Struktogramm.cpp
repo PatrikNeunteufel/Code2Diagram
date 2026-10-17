@@ -190,17 +190,20 @@ TEST_SUITE("Struktogramm")
     TEST_CASE("Formate: SVG und draw.io zeichnen es, Mermaid und DOT sagen ab")
     {
         const Struktogramm d = struktogramm("int f(int x) { if (x) return 1; for (;;) { a(); } }");
-        const std::optional<std::string> svg = c2d::ausgabe::svg().schreibe(d, {});
-        REQUIRE(svg.has_value());
-        CHECK(svg->starts_with("<svg xmlns="));
-        CHECK(svg->find(">forever</tspan>") != std::string::npos);
-        CHECK(svg->find(">f(int x)</tspan>") != std::string::npos);
-        const std::optional<std::string> drawio = c2d::ausgabe::drawio().schreibe(d, {});
-        REQUIRE(drawio.has_value());
-        CHECK(drawio->find("as=\"sourcePoint\"") != std::string::npos);
-        CHECK(drawio->find("value=\"forever\"") != std::string::npos);
-        CHECK_FALSE(c2d::ausgabe::mermaid().schreibe(d, {}).has_value());
-        CHECK_FALSE(c2d::ausgabe::dot().schreibe(d, {}).has_value());
-        CHECK(c2d::ausgabe::keinStruktogramm(c2d::ausgabe::dot()) == "Nassi-Shneiderman is not available in dot");
+        using c2d::ausgabe::Diagrammart;
+        REQUIRE(c2d::ausgabe::svg().kann(Diagrammart::Struktogramm));
+        const std::string svg = c2d::ausgabe::svg().schreibe(d, {});
+        CHECK(svg.starts_with("<svg xmlns="));
+        CHECK(svg.find(">forever</tspan>") != std::string::npos);
+        CHECK(svg.find(">f(int x)</tspan>") != std::string::npos);
+        REQUIRE(c2d::ausgabe::drawio().kann(Diagrammart::Struktogramm));
+        const std::string drawio = c2d::ausgabe::drawio().schreibe(d, {});
+        CHECK(drawio.find("as=\"sourcePoint\"") != std::string::npos);
+        CHECK(drawio.find("value=\"forever\"") != std::string::npos);
+        CHECK_FALSE(c2d::ausgabe::mermaid().kann(Diagrammart::Struktogramm));
+        CHECK_FALSE(c2d::ausgabe::dot().kann(Diagrammart::Struktogramm));
+        CHECK_FALSE(c2d::ausgabe::csv().kann(Diagrammart::Struktogramm));
+        CHECK(c2d::ausgabe::nichtVerfuegbar(c2d::ausgabe::dot(), Diagrammart::Struktogramm) ==
+              "Nassi-Shneiderman is not available in dot");
     }
 }

@@ -238,6 +238,17 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   schreiben es, Mermaid und DOT nicht (die Ansicht Text sagt es). Klick, Doppelklick und *Show in
   diagram* wie im Ablauf; Einbetten gibt es hier nicht. `c2d --funktion f --struktogramm`,
   im Fenster `--struktogramm`.
+- **Wahrheitstabellen** samt **MC/DC**: zu jeder Bedingung mit mindestens zwei Teilen (in `if`,
+  `while`, `do`, `for`, `?:`, einem `return` oder einer Zuweisung mit `&&`/`||`). Je Teil (Atom:
+  ein Vergleich, ein Aufruf, ein Name) eine Spalte, je Kombination eine Zeile; wo C wegen
+  Kurzschluss ein Atom nicht auswertet, steht `–`; ein Atom mit Aufruf heißt `(call)`. MC/DC nach
+  Unique-Cause: je Atom ein Paar Zeilen, die sich nur in ihm unterscheiden und verschieden ausgehen;
+  die kleinste Menge davon ist getönt, darunter stehen die Paare. Bis 6 Atome jede Kombination,
+  darüber nur die MC/DC-Zeilen. Knoten und Blöcke mit Tabelle tragen ein kleines Tabellensymbol
+  (Klick öffnet sie), das Kontextmenü *Truth table (line n)*, im Quelltext *Truth table of line n*.
+  Die Tabelle ist ein eigenes Diagramm (Back zurück); ein Klick darin zeigt die Bedingung. SVG und
+  draw.io zeichnen sie, **csv** schreibt sie für Testpläne (Trenner `;`); Mermaid und DOT nicht.
+  `c2d --funktion f --wahrheitstabelle [<zeile>]`. Beispiel: `beispiele/bedingungen.c`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -295,6 +306,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
   `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`, `darstellung_waehlen name=<flowchart|nassi-shneiderman>`,
+  `wahrheitstabelle_zeigen zeile=<n>`,
   `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
 
@@ -430,6 +442,11 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   neben ihrem Knoten Platz, über einer Zeile, in der ein Rahmen beginnt, sein Titel. Kreuzungen vermeidet sie nicht immer; ein
   Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
   wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
+- **Wahrheitstabellen:** Atome gelten als unabhängig — `x > 5` und `x > 10` können nicht beide
+  falsch-wahr sein, die Tabelle zeigt die Zeile trotzdem. Makros werden nicht aufgelöst (`IS_OK(x)`
+  ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche
+  in ihrer Grenze bleibt (sonst ein Hinweis). Entscheidungstabelle einer Funktion,
+  `switch`-Zuordnung und `#if`-Konfiguration fehlen noch (eigene Fragen).
 - **Struktogramm:** kein Einbetten (vorgemerkt); eine lange Zeile wird gekürzt, nicht
   umgebrochen; ein `switch` mit vielen Fällen und tiefe Schachtelung werden breit. Anweisungen vor
   dem ersten `case` stehen nicht darin (Meldung).

@@ -309,6 +309,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 / %2").arg(fenster.diagramm(), fenster.markiert()));
                      });
 
+    anbindung.aktion(QStringLiteral("wahrheitstabelle_zeigen"),
+                     QStringLiteral("Like right-click in the source, Truth table of line n"),
+                     QStringLiteral("zeile=<line in the file shown in the source>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const int zeile = st::argument(argumente, QStringLiteral("zeile")).toInt();
+                         if (zeile <= 0) return st::ungueltig(QStringLiteral("zeile is missing"));
+                         if (!fenster.zeigeWahrheitstabelle(zeile))
+                             return st::fehler(QStringLiteral("Line %1 has no condition with two or more parts").arg(zeile));
+                         return st::ok(fenster.diagramm());
+                     });
+
     anbindung.aktion(QStringLiteral("darstellung_waehlen"),
                      QStringLiteral("How a function is shown: flowchart or Nassi-Shneiderman"),
                      QStringLiteral("name=<flowchart | nassi-shneiderman>"),

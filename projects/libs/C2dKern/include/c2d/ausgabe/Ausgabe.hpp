@@ -5,8 +5,10 @@
  * Ein Format kennt die Diagramm-Modelle (diagramm/), aber weder eine Sprache
  * noch das Codemodell. Ein neues Format: eine Klasse von `Format` ableiten und
  * in Ausgabe.cpp in die Liste eintragen. Eine neue Diagrammart bekommt hier
- * eine weitere Funktion `schreibe` — der Uebersetzer nennt dann jedes Format,
- * das sie noch nicht kann.
+ * eine weitere Funktion `schreibe` und einen Wert in `Diagrammart` — der
+ * Uebersetzer nennt dann jedes Format, das sie noch nicht kann. Was ein Format
+ * nicht richtig zeigen kann (eine Tabelle in Mermaid, einen Ablauf in csv),
+ * verneint es in kann(); wer schreibt, fragt vorher und sagt sonst nichtVerfuegbar().
  */
 #pragma once
 
@@ -14,10 +16,10 @@
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,6 +36,19 @@ struct Optionen
     std::size_t maxZeilenLaenge = 60;
 };
 
+enum class Diagrammart
+{
+    Ablauf,
+    Datentypen,
+    Zustandsautomat,
+    Aufrufgraph,
+    Struktogramm,
+    Wahrheitstabelle,
+};
+
+/// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
+[[nodiscard]] std::string_view nameVon(Diagrammart art);
+
 class Format
 {
 public:
@@ -44,6 +59,10 @@ public:
     /// Die uebliche Dateiendung ohne Punkt.
     [[nodiscard]] virtual std::string_view endung() const = 0;
 
+    /// Kann das Format diese Art richtig zeigen? Nur dann ist `schreibe` fuer sie gemeint
+    /// (sonst liefert es leeren Text).
+    [[nodiscard]] virtual bool kann(Diagrammart art) const = 0;
+
     /// Gleiche Eingabe gibt gleichen Text.
     [[nodiscard]] virtual std::string schreibe(const diagramm::Flussdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
@@ -52,10 +71,10 @@ public:
     [[nodiscard]] virtual std::string schreibe(const diagramm::Zustandsdiagramm& diagramm,
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Aufrufgraph& graph, const Optionen& optionen) const = 0;
-    /// Ein Struktogramm; std::nullopt = das Format kann es nicht richtig zeigen (Mermaid, DOT) —
-    /// wer schreibt, sagt dann `Nassi-Shneiderman is not available in <name>`.
-    [[nodiscard]] virtual std::optional<std::string> schreibe(const diagramm::Struktogramm& diagramm,
-                                                              const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Struktogramm& diagramm, const Optionen& optionen) const = 0;
+    /// Eine oder mehrere Wahrheitstabellen, untereinander.
+    [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Wahrheitstabelle> tabellen,
+                                               const Optionen& optionen) const = 0;
 };
 
 /// Alle Formate; das erste ist die Vorgabe.
@@ -64,8 +83,8 @@ public:
 /// Das Format dieses Namens; nullptr = keines.
 [[nodiscard]] const Format* format(std::string_view name);
 
-/// Wie ein Format sagt, dass es ein Struktogramm nicht kann.
-[[nodiscard]] std::string keinStruktogramm(const Format& format);
+/// Was gesagt wird, wenn ein Format eine Art nicht kann: `Truth table is not available in mermaid`.
+[[nodiscard]] std::string nichtVerfuegbar(const Format& format, Diagrammart art);
 
 /// SVG: das Diagramm gezeichnet wie in der Vorschau, mit den Orten und Wegen aus
 /// diagramm/Anordnung.hpp — das eigene Format, die Vorgabe.
@@ -76,6 +95,10 @@ public:
 
 /// Graphviz DOT: `digraph`, Datentypen als `record`.
 [[nodiscard]] const Format& dot();
+
+/// CSV (Trenner `;`, wie Excel unter deutscher Einstellung): nur Wahrheitstabellen —
+/// fuer Testplaene. Je Tabelle eine Zeile mit Funktion, Zeile und Bedingung, dann Kopf und Zeilen.
+[[nodiscard]] const Format& csv();
 
 /// draw.io (diagrams.net): mxGraph-XML mit festen Orten aus diagramm/Anordnung.hpp.
 [[nodiscard]] const Format& drawio();

@@ -37,6 +37,7 @@
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
@@ -85,6 +86,8 @@ public:
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
+    /// So beginnt der Name einer Wahrheitstabelle: `truth:<Funktion>@<Zeile>`.
+    static constexpr const char* kWahrheitstabelle = "truth:";
 
     explicit Hauptfenster(QWidget* parent = nullptr);
 
@@ -196,6 +199,9 @@ public:
     bool klicke(const QString& name);
     /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`; leer = keine.
     [[nodiscard]] QString gezeigteStelle() const;
+    /// Wie Rechtsklick im Quelltext, Truth table of line n: die Wahrheitstabelle der Bedingung in Zeile
+    /// `zeile` der Datei im Quelltext, als eigenes Diagramm (Back fuehrt zurueck). false = dort keine.
+    bool zeigeWahrheitstabelle(int zeile);
     /// Wie Rechtsklick im Quelltext, Show in diagram: Zeile `zeile` der Datei im Quelltext. In einer
     /// Funktion: ihr Knoten im gezeigten Ablauf (sonst erst zum Ablauf der Funktion; Back fuehrt
     /// zurueck), im Aufrufgraph die Funktion; in einem Typ: Data types mit ihm. Hervorgehoben (Ring),
@@ -277,6 +283,15 @@ protected:
 private:
     /// Ist eine Funktion als Struktogramm gezeigt? Dann haelt m_fluss je Block einen Knoten.
     [[nodiscard]] bool zeigtStruktogramm() const;
+    [[nodiscard]] bool istWahrheitstabelle() const;
+    /// Die Funktion (Stelle in der Einheit), in deren Rumpf die Zeile steht; kKeine = keine.
+    [[nodiscard]] std::size_t funktionZurZeile(std::size_t datei, int zeile) const;
+    /// Steht in dieser Zeile eine Bedingung mit Wahrheitstabelle?
+    [[nodiscard]] bool hatWahrheitstabelle(std::size_t datei, int zeile) const;
+    /// Die Zeilen eines Knotens (beim Buendeln mehrere), in denen eine Tabelle steht.
+    [[nodiscard]] std::vector<int> tabellenZeilen(c2d::diagramm::KnotenId knoten) const;
+    /// Zur Wahrheitstabelle der Zeile; `von` wie bei gehe(). false = dort keine.
+    bool geheZuWahrheitstabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
     /// Was mit Farben der Palette gezeichnet ist, neu: Vorschau, Marke, Zeile im Quelltext.
     void farbenNeu();
     /// Die Hinterlegung der gezeigten Zeile: Highlight, halb durchsichtig — hell wie dunkel lesbar.
@@ -415,6 +430,8 @@ private:
     /// bloeckeVon()) ein Knoten ohne Kanten: so gelten Klick, Spruenge, Show in diagram fuer beide.
     c2d::diagramm::Flussdiagramm m_fluss;
     c2d::diagramm::Struktogramm m_struktogramm;  ///< das gezeigte Struktogramm; leer = keines
+    std::vector<c2d::diagramm::Wahrheitstabelle> m_tabellen;  ///< die gezeigte Wahrheitstabelle
+    bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl

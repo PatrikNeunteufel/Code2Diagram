@@ -20,9 +20,11 @@
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <cstddef>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -140,8 +142,39 @@ struct StruktoAnordnung
     double hoehe = 0;
 };
 
+/// Wahrheitstabellen untereinander: je Tabelle oben Funktion, Zeile und Bedingung, darunter die
+/// Zellen (Kopf: `#`, je Atom Kennung und Text, Result, MC/DC), darunter die Paare und Hinweise.
+/// Die Texte stehen schon gekuerzt darin (ein Atom auf kAtomZeichen); `ganz` traegt den vollen.
+struct TabellenAnordnung
+{
+    struct Zelle
+    {
+        Rechteck ort;
+        std::vector<std::string> zeilen;  ///< mittig
+        bool kopf = false;                ///< die Kopfzeile: getoent, fett
+        bool mcdc = false;                ///< eine Zeile der MC/DC-Menge: getoent
+        std::string ganz;                 ///< der volle Text (Tooltip); leer = wie zeilen
+        std::size_t tabelle = 0;          ///< welche Tabelle
+    };
+    struct Text
+    {
+        Punkt links;  ///< linker Rand, Mitte der Zeile
+        std::string text;
+        bool fett = false;
+        std::size_t tabelle = 0;
+    };
+    std::vector<Zelle> zellen;
+    std::vector<Text> texte;
+    double breite = 0;
+    double hoehe = 0;
+};
+
+/// So viele Zeichen zeigt der Kopf eines Atoms; den Rest der Tooltip.
+inline constexpr std::size_t kAtomZeichen = 30;
+
 [[nodiscard]] FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StruktoAnordnung ordneAn(const Struktogramm& diagramm, const AnordnungOptionen& optionen = {});
+[[nodiscard]] TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

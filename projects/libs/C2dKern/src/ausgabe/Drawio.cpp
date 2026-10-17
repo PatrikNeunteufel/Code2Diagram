@@ -300,7 +300,9 @@ public:
         return aus + std::string(kFuss);
     }
 
-    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
+    [[nodiscard]] bool kann(Diagrammart) const override { return true; }
+
+    [[nodiscard]] std::string schreibe(const Struktogramm& diagramm, const Optionen& optionen) const override
     {
         using FeldArt = StruktoAnordnung::FeldArt;
         const AnordnungOptionen o = anordnung(optionen);
@@ -345,6 +347,33 @@ public:
                         "1", r.ort);
         }
         aus += legende(a.legende, optionen);
+        return aus + std::string(kFuss);
+    }
+
+    [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle> tabellen, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const TabellenAnordnung a = ordneAn(tabellen, o);
+        std::string aus = kopf(tabellen.empty() ? std::string("truth table") : tabellen.front().funktion, a.breite, a.hoehe);
+        for (std::size_t i = 0; i < a.zellen.size(); ++i)
+        {
+            const TabellenAnordnung::Zelle& z = a.zellen[i];
+            std::string inhalt;
+            for (const std::string& zeile : z.zeilen) inhalt += (inhalt.empty() ? "" : "<br>") + html(zeile);
+            std::string stil = "rounded=0;whiteSpace=wrap;html=1;" + std::string(kSchrift);
+            if (z.kopf || z.mcdc) stil += "fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + ";";
+            if (z.kopf) stil += "fontStyle=1;";
+            aus += ecke("z" + std::to_string(i), inhalt, stil, "1", z.ort);
+        }
+        for (std::size_t i = 0; i < a.texte.size(); ++i)
+        {
+            const TabellenAnordnung::Text& t = a.texte[i];
+            const double breite = static_cast<double>(t.text.size()) * o.zeichenBreite + 8;
+            aus += ecke("t" + std::to_string(i), html(t.text),
+                        "text;html=1;align=left;verticalAlign=middle;" + std::string(t.fett ? "fontStyle=1;" : "") +
+                            std::string(kSchrift),
+                        "1", {t.links.x, t.links.y - 9, breite, 18});
+        }
         return aus + std::string(kFuss);
     }
 

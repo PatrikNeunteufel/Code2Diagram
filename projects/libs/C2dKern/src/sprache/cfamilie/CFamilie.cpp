@@ -6,6 +6,7 @@
 
 #include "../Leser.hpp"
 #include "Bedingt.hpp"
+#include "Logik.hpp"
 
 #include <algorithm>
 #include <map>
@@ -1323,8 +1324,12 @@ private:
 
 }  // namespace
 
-Ergebnis lies(std::string_view text, std::string_view einheitName, const lexer::Sprachtabelle& tabelle,
-              Dialekt dialekt, const LeseOptionen& optionen)
+namespace
+{
+
+/// Liest die Gliederung; die Logik der Bedingungen kommt danach (lies).
+Ergebnis liesGliederung(std::string_view text, std::string_view einheitName, const lexer::Sprachtabelle& tabelle,
+                        Dialekt dialekt, const LeseOptionen& optionen)
 {
     Ergebnis ergebnis;
     ergebnis.einheit.name = std::string(einheitName);
@@ -1361,6 +1366,17 @@ Ergebnis lies(std::string_view text, std::string_view einheitName, const lexer::
                                                  ergebnis.meldungen, ergebnis.unbekannteNamen, &varianten,
                                                  &ergebnis.schalter, &ergebnis.weichen);
     CFamilienLeser(gezeigt, tabelle, dialekt, ergebnis, &varianten).liesEinheit();
+    return ergebnis;
+}
+
+}  // namespace
+
+Ergebnis lies(std::string_view text, std::string_view einheitName, const lexer::Sprachtabelle& tabelle,
+              Dialekt dialekt, const LeseOptionen& optionen)
+{
+    Ergebnis ergebnis = liesGliederung(text, einheitName, tabelle, dialekt, optionen);
+    // je Bedingung mit mindestens zwei Atomen ihre Logik (fuer die Wahrheitstabelle)
+    ergaenzeLogik(ergebnis.einheit, tabelle);
     return ergebnis;
 }
 

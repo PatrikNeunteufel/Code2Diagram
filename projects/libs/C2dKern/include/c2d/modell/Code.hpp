@@ -12,6 +12,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -56,6 +57,23 @@ enum class AnweisungArt
     Bedingt,
 };
 
+/// Die Logik einer Bedingung (`(a && b) || !c`): ein Baum aus Und, Oder, Nicht und Atomen.
+/// Ein Atom ist, was zwischen den logischen Operatoren steht: ein Vergleich, ein Aufruf, ein Name.
+struct Logik
+{
+    enum class Art
+    {
+        Atom,
+        Nicht,  ///< teile[0]
+        Und,    ///< teile, von links ausgewertet; endet beim ersten falschen
+        Oder,   ///< teile, von links ausgewertet; endet beim ersten wahren
+    };
+    Art art = Art::Atom;
+    std::string text;           ///< nur Atom: wie es in der Quelle steht
+    bool mitAufruf = false;     ///< nur Atom: es ruft eine Funktion (Kurzschluss kann ihn auslassen)
+    std::vector<Logik> teile;
+};
+
 struct Anweisung
 {
     AnweisungArt art = AnweisungArt::Einfach;
@@ -66,6 +84,10 @@ struct Anweisung
     std::unique_ptr<Anweisung> sonst;  ///< nur Wenn
     int zeile = 0;
     bool gilt = false;  ///< nur Zweig
+    /// Eine Bedingung mit mindestens zwei Atomen (ein `if`, eine Schleife, `?:`, ein `return` oder
+    /// eine Zuweisung mit `&&`/`||`): ihr Text und ihre Logik — fuer die Wahrheitstabelle.
+    std::string logikText;
+    std::optional<Logik> logik;
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;

@@ -37,6 +37,7 @@ constexpr int kKnoten = 0;
 constexpr int kGruppe = 1;
 constexpr int kKasten = 2;
 constexpr int kEintrag = 3;
+constexpr int kTabelle = 4;  // das Tabellensymbol eines Knotens
 
 constexpr qsizetype kMaxZeichen = 60;  // wie AnordnungOptionen::maxZeilenLaenge
 
@@ -439,6 +440,41 @@ public:
         }
     }
 
+    /// Ein kleines Tabellensymbol: es gibt eine Wahrheitstabelle; ein Klick zeigt sie. Innen rechts oben
+    /// in `r` — bei einer Raute (`spitz`) rechts neben ihrer Spitze, die Ecke von `r` laege neben der Form.
+    void tabellenSymbol(KnotenId id, const QRectF& r, bool spitz = false)
+    {
+        const QRectF feld = spitz ? QRectF(r.right() + 3, r.center().y() - 14, 12, 9) : QRectF(r.right() - 16, r.top() + 3, 12, 9);
+        QPen stift(m_verweis.color(), 1);
+        m_szene.addRect(feld, stift, m_flaeche)->setZValue(6);
+        m_szene.addLine(feld.left(), feld.top() + 3, feld.right(), feld.top() + 3, stift)->setZValue(6);
+        m_szene.addLine(feld.center().x(), feld.top(), feld.center().x(), feld.bottom(), stift)->setZValue(6);
+        // die Flaeche zum Klicken etwas groesser als das Symbol
+        QGraphicsRectItem* treffer = m_szene.addRect(feld.adjusted(-3, -3, 3, 3), Qt::NoPen, Qt::NoBrush);
+        treffer->setZValue(6.5);
+        treffer->setData(kTabelle, static_cast<qulonglong>(id) + 1);
+        treffer->setToolTip(QStringLiteral("Truth table - click to show it"));
+        treffer->setCursor(Qt::PointingHandCursor);
+    }
+
+    /// Eine Zelle einer Wahrheitstabelle: getoent im Kopf und in den MC/DC-Zeilen; ein Klick ist Knoten 0.
+    void tabellenZelle(const TabellenAnordnung::Zelle& z)
+    {
+        const QRectF r(z.ort.x, z.ort.y, z.ort.breite, z.ort.hoehe);
+        QGraphicsRectItem* feld = m_szene.addRect(r, m_strich, z.kopf || z.mcdc ? m_getoent : m_flaeche);
+        feld->setZValue(2);
+        feld->setData(kKnoten, 1ULL);
+        QStringList zeilen;
+        for (const std::string& s : z.zeilen) zeilen << QString::fromStdString(s);
+        QGraphicsSimpleTextItem* t = text(zeilen.join(QLatin1Char('\n')), r, z.kopf);
+        t->setData(kKnoten, 1ULL);
+        if (!z.ganz.empty())
+        {
+            feld->setToolTip(QString::fromStdString(z.ganz));
+            t->setToolTip(QString::fromStdString(z.ganz));
+        }
+    }
+
     /// Eine Linie ohne Spitze (Diagonalen und Trennstriche eines Struktogramms).
     void linie(const Linienzug& l)
     {
@@ -563,7 +599,8 @@ bool Vorschau::markiere(KnotenId knoten)
     return true;
 }
 
-void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<std::vector<std::string>>& links)
+void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::vector<std::vector<std::string>>& links,
+                     const std::vector<bool>& mitTabelle)
 {
     leere();
     AnordnungOptionen optionen;
@@ -590,6 +627,10 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
         z.kante(a.kanten[e], QString::fromStdString(diagramm.kanten()[e].beschriftung), a.beschriftungen[e]);
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
         z.knoten(i, diagramm.knoten()[i], alsRect(a.knoten[i]), i < links.size() ? links[i] : std::vector<std::string>{});
+    for (std::size_t i = 0; i < a.knoten.size() && i < mitTabelle.size(); ++i)
+        if (mitTabelle[i])
+            z.tabellenSymbol(i, alsRect(a.knoten[i]), diagramm.knoten()[i].art == KnotenArt::Verzweigung ||
+                                                          diagramm.knoten()[i].art == KnotenArt::Variante);
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
@@ -597,7 +638,8 @@ void Vorschau::zeige(const Flussdiagramm& diagramm, bool nachRechts, const std::
     m_rahmen = static_cast<int>(a.gruppen.size());
 }
 
-void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links)
+void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links,
+                     const std::vector<bool>& mitTabelle)
 {
     leere();
     AnordnungOptionen optionen;
@@ -620,11 +662,37 @@ void Vorschau::zeige(const Struktogramm& diagramm, const std::vector<std::vector
     }
     for (const FlussAnordnung::Legende& l : a.legende)
         z.legende(alsRect(l.feld), farbeVon(l.farbe), gekuerzt(l.titel), alsPunkt(l.text));
+    for (const StruktoAnordnung::Feld& f : a.felder)
+        if (f.block < mitTabelle.size() && mitTabelle[f.block]) z.tabellenSymbol(f.block, alsRect(f.ort));
     for (const Rechteck& r : a.bloecke) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.bloecke.size());
     m_rahmen = static_cast<int>(a.rahmen.size());
+}
+
+void Vorschau::zeige(std::span<const Wahrheitstabelle> tabellen)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const TabellenAnordnung a = ordneAn(tabellen, optionen);
+    Zeichner z(*scene(), dunkel());
+    for (const TabellenAnordnung::Zelle& zelle : a.zellen) z.tabellenZelle(zelle);
+    for (const TabellenAnordnung::Text& t : a.texte)
+    {
+        QGraphicsSimpleTextItem* stueck = z.textLinks(QString::fromStdString(t.text), {});
+        if (t.fett)
+        {
+            QFont fett = stueck->font();
+            fett.setBold(true);
+            stueck->setFont(fett);
+        }
+        stueck->setPos(t.links.x, t.links.y - stueck->boundingRect().height() / 2);
+        stueck->setData(kKnoten, 1ULL);
+    }
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.zellen.size());
 }
 
 void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)
@@ -770,6 +838,13 @@ void Vorschau::mouseReleaseEvent(QMouseEvent* ereignis)
                        (ereignis->pos() - m_gedrueckt).manhattanLength() < QApplication::startDragDistance();
     m_klickMoeglich = false;
     if (!klick) return;
+    // das Tabellensymbol eines Knotens zuerst: es liegt ueber ihm
+    for (const QGraphicsItem* stueck : items(ereignis->pos()))
+        if (stueck->data(kTabelle).toULongLong() != 0)
+        {
+            if (beiTabelle) beiTabelle(static_cast<KnotenId>(stueck->data(kTabelle).toULongLong() - 1));
+            return;
+        }
     if (m_struktur)
     {
         std::size_t kasten = kKeine;

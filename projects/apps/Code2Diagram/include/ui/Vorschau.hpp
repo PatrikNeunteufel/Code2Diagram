@@ -12,6 +12,7 @@
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
 #include <QGraphicsView>
@@ -20,6 +21,7 @@
 class QGraphicsItem;
 
 #include <functional>
+#include <span>
 #include <vector>
 
 namespace c2d::ui
@@ -32,8 +34,9 @@ public:
 
     /// `links[i]`: die Namen im Text des Knotens i, die irgendwohin fuehren (eine Funktion, ein
     /// Typ) — sie und der Knoten werden hervorgehoben. Darf kuerzer sein als die Knoten.
+    /// `mitTabelle[i]`: Knoten i traegt rechts oben ein Tabellensymbol (beiTabelle).
     void zeige(const c2d::diagramm::Flussdiagramm& diagramm, bool nachRechts,
-               const std::vector<std::vector<std::string>>& links = {});
+               const std::vector<std::vector<std::string>>& links = {}, const std::vector<bool>& mitTabelle = {});
     /// `links[k][e]`: die Namen im Glied e des Kastens k, die zu einem Typ fuehren — sie
     /// werden hervorgehoben. Darf kuerzer sein als die Kaesten.
     void zeige(const c2d::diagramm::Strukturdiagramm& diagramm, bool nachRechts,
@@ -44,7 +47,10 @@ public:
     void zeige(const c2d::diagramm::Aufrufgraph& graph, bool nachRechts);
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
-    void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {});
+    void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},
+               const std::vector<bool>& mitTabelle = {});
+    /// Wahrheitstabellen untereinander; ein Klick auf eine Zelle ist ein Klick auf Knoten 0.
+    void zeige(std::span<const c2d::diagramm::Wahrheitstabelle> tabellen);
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.
@@ -62,6 +68,8 @@ public:
 
     /// Klick (ohne zu ziehen) auf einen Knoten des Flussdiagramms: seine Stelle im Quelltext.
     std::function<void(c2d::diagramm::KnotenId knoten)> beiKlick;
+    /// Klick auf das Tabellensymbol eines Knotens (oder Blocks): seine Wahrheitstabelle.
+    std::function<void(c2d::diagramm::KnotenId knoten)> beiTabelle;
     /// Doppelklick auf einen Knoten des Flussdiagramms: was er nennt. Ihm geht ein Klick voraus.
     std::function<void(c2d::diagramm::KnotenId knoten)> beiDoppelklick;
     /// Rechtsklick: der Knoten und die innerste Gruppe unter dem Zeiger (je kKeine = keine), der Ort am Bildschirm.

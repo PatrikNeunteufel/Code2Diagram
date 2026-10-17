@@ -6,6 +6,7 @@
 //                                            [--ohne-fremde]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
+//                             [--wahrheitstabelle [<zeile>]]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
@@ -37,28 +38,35 @@
 //                  uebrige wird ausgewertet
 //   --rahmen       auswerten, aber umrahmen, was ein solches #if zuschaltet (je Bedingung
 //                  eine Farbe)
-//   --format       mermaid (Vorgabe), svg, dot oder drawio
+//   --format       mermaid (Vorgabe), svg, dot, drawio oder csv (nur Wahrheitstabellen); was ein
+//                  Format nicht kann, meldet es (Rueckgabe 1)
 //   --roh          je Anweisung ein Knoten, nichts gebuendelt
 //   --struktogramm mit --funktion: das Struktogramm (Nassi-Shneiderman) statt des Ablaufs; svg und
 //                  drawio, Mermaid und DOT koennen es nicht (Meldung, Rueckgabe 1)
+//   --wahrheitstabelle  mit --funktion: die Wahrheitstabelle (samt MC/DC) der Bedingung in dieser
+//                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
 // Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
 
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace
 {
@@ -86,6 +94,7 @@ int aufruf()
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
+                 "                         [--wahrheitstabelle [<line>]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -141,6 +150,8 @@ int main(int argc, char* argv[])
     std::string formatName = "mermaid";
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
+    bool wahrheitstabelle = false;
+    int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
     for (int i = 1; i < argc; ++i)
@@ -151,6 +162,12 @@ int main(int argc, char* argv[])
         else if (a == "--struktur") struktur = true;
         else if (a == "--roh") roh = true;
         else if (a == "--struktogramm") struktogramm = true;
+        else if (a == "--wahrheitstabelle")
+        {
+            wahrheitstabelle = true;
+            // die Zeile darf folgen
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') tabellenZeile = std::atoi(argv[++i]);
+        }
         else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
         else if (a == "--automat") automat = wert();
@@ -266,6 +283,16 @@ int main(int argc, char* argv[])
     }
 
     const c2d::ausgabe::Optionen optionen{.richtung = richtung};
+    // schreiben, wenn das Format die Art kann — sonst sagen, dass nicht (Rueckgabe 1)
+    const auto schreibe = [&](c2d::ausgabe::Diagrammart art, const auto& diagramm) {
+        if (!format->kann(art))
+        {
+            std::cerr << "c2d: " << c2d::ausgabe::nichtVerfuegbar(*format, art) << '\n';
+            return 1;
+        }
+        std::cout << format->schreibe(diagramm, optionen);
+        return 0;
+    };
 
     // --automat: ein Zustandsautomat, erkannt im Code
     if (!automat.empty())
@@ -289,8 +316,7 @@ int main(int argc, char* argv[])
             std::cerr << (treffer.empty() ? " - see --liste\n" : " - choose one with --datei\n");
             return 1;
         }
-        std::cout << format->schreibe(treffer.front(), optionen);
-        return 0;
+        return schreibe(c2d::ausgabe::Diagrammart::Zustandsautomat, treffer.front());
     }
 
     // --aufrufgraph: ab einer Funktion, oder der Graph einer Datei
@@ -347,8 +373,7 @@ int main(int argc, char* argv[])
             std::cerr << "c2d: no function with a body in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
             return 1;
         }
-        std::cout << format->schreibe(e.graph, optionen);
-        return 0;
+        return schreibe(c2d::ausgabe::Diagrammart::Aufrufgraph, e.graph);
     }
     if (gewaehlt)
     {
@@ -363,14 +388,22 @@ int main(int argc, char* argv[])
             const Struktogramm s = struktogrammVon(wahl);
             for (const Hinweis& h : s.hinweise)
                 std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << h.zeile << ": " << h.text << '\n';
-            const std::optional<std::string> text = format->schreibe(s, optionen);
-            if (!text)
+            return schreibe(c2d::ausgabe::Diagrammart::Struktogramm, s);
+        }
+        if (wahrheitstabelle)
+        {
+            std::vector<Wahrheitstabelle> tabellen;
+            if (tabellenZeile == 0)
+                tabellen = wahrheitstabellenVon(wahl);
+            else if (std::optional<Wahrheitstabelle> t = wahrheitstabelleVon(wahl, tabellenZeile))
+                tabellen.push_back(std::move(*t));
+            if (tabellen.empty())
             {
-                std::cerr << "c2d: " << c2d::ausgabe::keinStruktogramm(*format) << " - use --format svg or drawio\n";
+                std::cerr << "c2d: no condition with two or more parts in " << wahl.name << "()"
+                          << (tabellenZeile == 0 ? std::string() : " at line " + std::to_string(tabellenZeile)) << '\n';
                 return 1;
             }
-            std::cout << *text;
-            return 0;
+            return schreibe(c2d::ausgabe::Diagrammart::Wahrheitstabelle, std::span<const Wahrheitstabelle>(tabellen));
         }
         Flussdiagramm d = ablauf(wahl);
         if (const int ab = unerreichbarAb(d); ab > 0)
@@ -404,8 +437,7 @@ int main(int argc, char* argv[])
             else
                 std::cerr << "c2d: cannot embed '" << name << "'\n";
         }
-        std::cout << format->schreibe(d, optionen);
-        return 0;
+        return schreibe(c2d::ausgabe::Diagrammart::Ablauf, d);
     }
 
     // ein Typ und seine Nachbarn, in seiner Datei
@@ -422,8 +454,7 @@ int main(int argc, char* argv[])
             std::cerr << "c2d: no type '" << typ << "' in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
             return 1;
         }
-        std::cout << format->schreibe(d, optionen);
-        return 0;
+        return schreibe(c2d::ausgabe::Diagrammart::Datentypen, d);
     }
 
     // die Datentypen: einer Datei, oder aller
@@ -442,6 +473,5 @@ int main(int argc, char* argv[])
         std::cerr << "c2d: nothing to draw in " << ziel << '\n';
         return 1;
     }
-    std::cout << format->schreibe(c2d::diagramm::strukturVon(alle), optionen);
-    return 0;
+    return schreibe(c2d::ausgabe::Diagrammart::Datentypen, c2d::diagramm::strukturVon(alle));
 }

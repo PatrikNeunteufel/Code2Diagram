@@ -513,6 +513,37 @@ zu dem, was genannt ist. Am Beispielprojekt `beispiele/projekt` und an `beispiel
 - [ ] **P6 Zurück zum Ablauf:** Feld auf Flowchart: wieder der Ablauf, Top-down wählbar.
       `aktion: darstellung_waehlen name=flowchart`
 
+## Q. Wahrheitstabellen
+
+Am Beispiel `beispiele/bedingungen.c`: `darf_einschalten` (Zeile 17 `k->not_aus || !k->freigabe`,
+Zeile 19 drei Teile mit `pruefe_sensor(k)`), `ueberwache` (eine Schleife, eine Zuweisung).
+
+- [ ] **Q0 Vorbereiten:** Die Datei öffnen, `darf_einschalten`, Vorschau, Format svg.
+      `aktion: datei_oeffnen pfad=beispiele/bedingungen.c` `aktion: diagramm_waehlen name=darf_einschalten` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview`
+- [ ] **Q1 Das Symbol:** Rechts neben der Spitze der Raute `k->not_aus || !k->freigabe` ein kleines
+      blaues Tabellensymbol, Tooltip *Truth table - click to show it*; ebenso innen rechts oben im
+      Kasten `return k->spannung_mv > 11000 …`. `return false` trägt keines.
+- [ ] **Q2 Die Tabelle:** Klick auf das Symbol am Kasten `return …`: Diagram steht auf *Truth table:
+      darf_einschalten() line 19*. Oben Funktion und Zeile, die Bedingung; Spalten `#`, `A`, `B`,
+      `C (call)` mit ihrem Text, `Result`, `MC/DC`. Acht Zeilen; wo `A` falsch ist, stehen bei `B`
+      und `C` Striche. Getönt die Zeilen 4, 6, 7, 8; darunter `MC/DC pairs (unique-cause): A 4-8,
+      B 6-8, C 7-8`. Tooltip auf dem Kopf von `C` zeigt `pruefe_sensor(k)`.
+      `aktion: wahrheitstabelle_zeigen zeile=19`
+- [ ] **Q3 Klick und Back:** Ein Klick in die Tabelle hinterlegt Zeile 19 im Quelltext. **Back**:
+      wieder der Ablauf von `darf_einschalten`.
+      `aktion: zurueck`
+- [ ] **Q4 Aus dem Quelltext und dem Kontextmenü:** Rechtsklick im Quelltext auf Zeile 17: *Truth
+      table of line 17* (auf Zeile 18 gesperrt). Rechtsklick auf die Raute: *Truth table (line 17)*.
+      `aktion: wahrheitstabelle_zeigen zeile=17`
+- [ ] **Q5 Formate:** Ansicht Text: mit csv beginnt sie `darf_einschalten(): line 17;k->not_aus ||
+      !k->freigabe`, dann `#;A: k->not_aus;B: k->freigabe;Result;MC/DC`; mit mermaid steht dort
+      `Truth table is not available in mermaid`, und File > Save diagram as… speichert nichts (die
+      Statuszeile sagt es). Zurück im Ablauf mit csv: `Flowchart is not available in csv`.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=mermaid`
+- [ ] **Q6 Im Struktogramm:** Feld Nassi-Shneiderman: das Symbol rechts oben im Kopf der
+      Verzweigung und im Block `return …`; Klick öffnet dieselbe Tabelle.
+      `aktion: format_waehlen name=svg` `aktion: darstellung_waehlen name=nassi-shneiderman`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

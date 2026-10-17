@@ -643,6 +643,36 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().startsWith("%% eins"));
     }
 
+    TEST_CASE("Wahrheitstabelle: aus dem Quelltext, als eigenes Diagramm, in csv; Mermaid sagt nein; Back")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("int f(int a, int b)\n"  // 1
+                                     "{\n"                   // 2
+                                     "    if (a && b)\n"     // 3
+                                     "        return 1;\n"   // 4
+                                     "    return a || b;\n"  // 5
+                                     "}\n"),
+                      QStringLiteral("t.c"));
+        REQUIRE(fenster.waehleDiagramm("f"));
+        CHECK_FALSE(fenster.zeigeWahrheitstabelle(4));  // keine Bedingung mit zwei Atomen
+        REQUIRE(fenster.zeigeWahrheitstabelle(3));
+        CHECK(fenster.diagramm() == "truth:f@3");
+        CHECK(fenster.diagramme().contains("truth:f@3"));
+        CHECK(fenster.vorschauFormen() == 5 * 5);  // #, A, B, Result, MC/DC — Kopf und vier Zeilen
+        CHECK(fenster.diagrammText().startsWith("<svg xmlns="));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().startsWith("f(): line 3;a && b\n#;A: a;B: b;Result;MC/DC\n"));
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText() == "Truth table is not available in mermaid");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "f");
+        // im Ablauf kann csv nicht
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText() == "Flowchart is not available in csv");
+        REQUIRE(fenster.zeigeWahrheitstabelle(5));
+        CHECK(fenster.diagramm() == "truth:f@5");
+    }
+
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
     {
         QTemporaryDir ordner;

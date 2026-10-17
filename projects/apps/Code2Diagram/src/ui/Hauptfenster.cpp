@@ -55,6 +55,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <span>
 #include <tuple>
 
 namespace c2d::ui
@@ -174,6 +175,9 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         menue->addSeparator();
         menue->addAction(QStringLiteral("Show in diagram"), this, [this, zeile] { zeigeImDiagramm(zeile); })
             ->setEnabled(!m_quelle->toPlainText().isEmpty());
+        const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
+        menue->addAction(QStringLiteral("Truth table of line %1").arg(zeile), this, [this, zeile] { zeigeWahrheitstabelle(zeile); })
+            ->setEnabled(hatWahrheitstabelle(datei, zeile));
         menue->exec(m_quelle->mapToGlobal(ort));
     });
     m_definitionen = new QLineEdit(links);
@@ -311,7 +315,12 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         kastenMenue(kasten, eintrag, ort);
     };
 
+    m_vorschau->beiTabelle = [this](c2d::diagramm::KnotenId knoten) {
+        const std::vector<int> zeilen = tabellenZeilen(knoten);
+        if (!zeilen.empty()) geheZuWahrheitstabelle(dateiVon(knoten), zeilen.front(), knoten);
+    };
     m_vorschau->beiDoppelklick = [this](c2d::diagramm::KnotenId knoten) {
+        if (istWahrheitstabelle()) return;  // eine Zelle fuehrt nirgendwohin
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -1394,6 +1403,19 @@ void Hauptfenster::kastenMenue(std::size_t kasten, std::size_t eintrag, const QP
 bool Hauptfenster::waehleEintrag(const QString& name)
 {
     if (waehle(m_auswahl, name)) return true;
+    if (name.startsWith(QLatin1String(kWahrheitstabelle)) && m_datei < m_projekt.dateien.size())
+    {
+        // `truth:<Funktion>@<Zeile>` — die Funktion dieser Datei, die Zeile mit einer Bedingung
+        const QString rest = name.mid(QString::fromLatin1(kWahrheitstabelle).size());
+        const qsizetype at = rest.lastIndexOf(QLatin1Char('@'));
+        const int zeile = at > 0 ? rest.mid(at + 1).toInt() : 0;
+        if (zeile <= 0 || !hatWahrheitstabelle(m_datei, zeile)) return false;
+        const std::size_t f = funktionZurZeile(m_datei, zeile);
+        if (f == kKeine || ausStd(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f].vollerName()) != rest.left(at))
+            return false;
+        m_auswahl->addItem(QStringLiteral("Truth table: %1() line %2").arg(rest.left(at)).arg(zeile), name);
+        return waehle(m_auswahl, name);
+    }
     // ein Aufrufgraph ab einer Funktion der Datei steht erst da, wenn er gezeigt wird
     const QString praefix = QString::fromLatin1(kAufrufgraph);
     if (!name.startsWith(praefix) || m_datei >= m_projekt.dateien.size()) return false;
@@ -1686,6 +1708,68 @@ bool Hauptfenster::zeigtStruktogramm() const
     return !m_struktogramm.titel.empty();
 }
 
+bool Hauptfenster::istWahrheitstabelle() const
+{
+    return m_gezeigt.startsWith(QLatin1String(kWahrheitstabelle));
+}
+
+std::size_t Hauptfenster::funktionZurZeile(std::size_t datei, int zeile) const
+{
+    if (datei >= m_projekt.dateien.size()) return kKeine;
+    const auto& fs = m_projekt.dateien[datei].ergebnis.einheit.funktionen;
+    std::size_t funktion = kKeine;
+    for (std::size_t i = 0; i < fs.size(); ++i)
+        if (fs[i].rumpf && fs[i].zeile <= zeile && zeile <= fs[i].bisZeile) funktion = i;
+    return funktion;
+}
+
+bool Hauptfenster::hatWahrheitstabelle(std::size_t datei, int zeile) const
+{
+    const std::size_t f = funktionZurZeile(datei, zeile);
+    if (f == kKeine) return false;
+    const std::vector<int> zeilen =
+        c2d::diagramm::zeilenMitWahrheitstabelle(m_projekt.dateien[datei].ergebnis.einheit.funktionen[f]);
+    return std::find(zeilen.begin(), zeilen.end(), zeile) != zeilen.end();
+}
+
+std::vector<int> Hauptfenster::tabellenZeilen(c2d::diagramm::KnotenId knoten) const
+{
+    std::vector<int> aus;
+    if (knoten >= m_fluss.knoten().size() || istAufrufgraph()) return aus;
+    const c2d::diagramm::Knoten& k = m_fluss.knoten()[knoten];
+    const std::size_t datei = dateiVon(knoten);
+    std::vector<int> zeilen{k.quellZeile};
+    zeilen.insert(zeilen.end(), k.weitereZeilen.begin(), k.weitereZeilen.end());
+    for (const int z : zeilen)
+        if (z > 0 && hatWahrheitstabelle(datei, z) && std::find(aus.begin(), aus.end(), z) == aus.end()) aus.push_back(z);
+    return aus;
+}
+
+bool Hauptfenster::geheZuWahrheitstabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von)
+{
+    if (!hatWahrheitstabelle(datei, zeile)) return false;
+    const std::size_t f = funktionZurZeile(datei, zeile);
+    const QString name = QString::fromLatin1(kWahrheitstabelle) +
+                         ausStd(m_projekt.dateien[datei].ergebnis.einheit.funktionen[f].vollerName()) +
+                         QStringLiteral("@%1").arg(zeile);
+    if (datei == m_datei && name == m_gezeigt) return true;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (datei != m_datei) zeigeDatei(datei);
+    const bool da = waehleEintrag(name);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+    return da;
+}
+
+bool Hauptfenster::zeigeWahrheitstabelle(int zeile)
+{
+    const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
+    if (geheZuWahrheitstabelle(datei, zeile, kKeine)) return true;
+    statusBar()->showMessage(QStringLiteral("Line %1 has no condition with two or more parts").arg(zeile), 4000);
+    return false;
+}
+
 bool Hauptfenster::waehleAnsicht(const QString& name)
 {
     if (name == QLatin1String("preview"))
@@ -1852,7 +1936,17 @@ void Hauptfenster::baueNeu()
     m_gezeigt = m_auswahl->currentData().toString();
     m_fluss = Flussdiagramm();
     m_struktogramm = Struktogramm();
+    m_tabellen.clear();
     m_richtung->setEnabled(true);
+    if (istWahrheitstabelle() && m_datei < m_projekt.dateien.size())
+    {
+        const qsizetype at = m_gezeigt.lastIndexOf(QLatin1Char('@'));
+        const int zeile = m_gezeigt.mid(at + 1).toInt();
+        if (const std::size_t f = funktionZurZeile(m_datei, zeile); f != kKeine)
+            if (auto t = wahrheitstabelleVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
+                m_tabellen.push_back(std::move(*t));
+        m_richtung->setEnabled(false);
+    }
     // ein anderer Aufrufgraph beginnt zugeklappt
     if (m_gezeigt != bisher) m_aufgeklappt.clear();
     m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
@@ -1909,7 +2003,19 @@ void Hauptfenster::zeichne()
     const std::string richtung = m_richtung->currentData().toString().toStdString();
     const c2d::ausgabe::Optionen optionen{.richtung = richtung};
     const bool nachRechts = richtung == "LR";
+    // der Text im gewaehlten Format — kann es die Art nicht, sagt er es (und gespeichert wird nichts)
+    const auto alsText = [&](c2d::ausgabe::Diagrammart art, const auto& diagramm) {
+        m_textVerfuegbar = format->kann(art);
+        if (!m_textVerfuegbar) return QString::fromStdString(c2d::ausgabe::nichtVerfuegbar(*format, art));
+        return QString::fromStdString(format->schreibe(diagramm, optionen));
+    };
 
+    if (istWahrheitstabelle())
+    {
+        m_vorschau->zeige(std::span<const Wahrheitstabelle>(m_tabellen));
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Wahrheitstabelle, std::span<const Wahrheitstabelle>(m_tabellen)));
+        return;
+    }
     if (m_gezeigt == QLatin1String(kDatentypen))
     {
         const c2d::modell::Einheit& einheit = m_projekt.dateien[m_datei].ergebnis.einheit;
@@ -1924,20 +2030,20 @@ void Hauptfenster::zeichne()
                 for (const c2d::projekt::TypVerweis& v : typVerweiseVon(k, e)) links[k].back().push_back(v.name);
             }
         m_vorschau->zeige(m_struktur, nachRechts, links);
-        m_text->setPlainText(QString::fromStdString(format->schreibe(m_struktur, optionen)));
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Datentypen, m_struktur));
         return;
     }
     if (istAufrufgraph())
     {
         m_vorschau->zeige(m_aufrufgraph.graph, nachRechts);
-        m_text->setPlainText(QString::fromStdString(format->schreibe(m_aufrufgraph.graph, optionen)));
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Aufrufgraph, m_aufrufgraph.graph));
         return;
     }
     if (const qsizetype automat = m_automatNamen.indexOf(m_gezeigt); automat >= 0)
     {
         const Zustandsdiagramm& z = m_automaten[static_cast<std::size_t>(automat)];
         m_vorschau->zeige(z, nachRechts);
-        m_text->setPlainText(QString::fromStdString(format->schreibe(z, optionen)));
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Zustandsautomat, z));
         return;
     }
     // hervorgehoben wird, was weiterfuehrt: ein Aufruf, der eine Funktion des Projekts meint, ein Typ
@@ -1949,17 +2055,17 @@ void Hauptfenster::zeichne()
             if (!c2d::projekt::kandidaten(m_projekt, von, aufruf).empty()) links[i].push_back(aufruf);
         for (const c2d::projekt::TypVerweis& t : typVerweiseVon(i)) links[i].push_back(t.name);
     }
+    // ein Knoten (Block), in dessen Zeilen eine Bedingung mit Tabelle steht, traegt ihr Symbol
+    std::vector<bool> mitTabelle(m_fluss.knoten().size(), false);
+    for (KnotenId i = 0; i < mitTabelle.size(); ++i) mitTabelle[i] = !tabellenZeilen(i).empty();
     if (zeigtStruktogramm())
     {
-        m_vorschau->zeige(m_struktogramm, links);
-        const std::optional<std::string> text = format->schreibe(m_struktogramm, optionen);
-        m_text->setPlainText(text ? QString::fromStdString(*text)
-                                  : QString::fromStdString(c2d::ausgabe::keinStruktogramm(*format)) +
-                                        QStringLiteral(" - choose svg or drawio"));
+        m_vorschau->zeige(m_struktogramm, links, mitTabelle);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Struktogramm, m_struktogramm));
         return;
     }
-    m_vorschau->zeige(m_fluss, nachRechts, links);
-    m_text->setPlainText(QString::fromStdString(format->schreibe(m_fluss, optionen)));
+    m_vorschau->zeige(m_fluss, nachRechts, links, mitTabelle);
+    m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Ablauf, m_fluss));
 }
 
 void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort)
@@ -2005,6 +2111,10 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 }
             }
         }
+        // die Bedingungen des Knotens mit Wahrheitstabelle
+        for (const int zeile : tabellenZeilen(knoten))
+            menue.addAction(QStringLiteral("Truth table (line %1)").arg(zeile), this,
+                            [this, knoten, zeile] { geheZuWahrheitstabelle(dateiVon(knoten), zeile, knoten); });
         // die Typen, die der Knoten nennt
         for (const c2d::projekt::TypVerweis& t : typVerweiseVon(knoten))
         {
@@ -2146,6 +2256,7 @@ void Hauptfenster::farbenNeu()
 
 bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
 {
+    if (istWahrheitstabelle()) return !m_tabellen.empty() && zeigeZeile(m_datei, m_tabellen.front().quellZeile);
     if (!istAufrufgraph())
         return knoten < m_fluss.knoten().size() && zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
     if (knoten >= m_aufrufgraph.graph.knoten.size()) return false;
@@ -2295,6 +2406,11 @@ void Hauptfenster::speichereUnter()
     if (format == nullptr || diagrammText().isEmpty())
     {
         statusBar()->showMessage(QStringLiteral("Nothing to save"), 3000);
+        return;
+    }
+    if (!m_textVerfuegbar)
+    {
+        statusBar()->showMessage(diagrammText(), 5000);  // das Format kann dieses Diagramm nicht
         return;
     }
     const QString endung = ausStd(format->endung());

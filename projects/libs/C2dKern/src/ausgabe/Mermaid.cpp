@@ -286,10 +286,13 @@ public:
         return aus;
     }
 
-    [[nodiscard]] std::optional<std::string> schreibe(const Struktogramm&, const Optionen&) const override
+    // Bloecke und Tabellen sind kein Graph: hier nicht richtig darstellbar
+    [[nodiscard]] bool kann(Diagrammart art) const override
     {
-        return std::nullopt;  // ein Struktogramm sind Bloecke, kein Graph: hier nicht richtig darstellbar
+        return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle;
     }
+    [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle>, const Optionen&) const override { return {}; }
 
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
