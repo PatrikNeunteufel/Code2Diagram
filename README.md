@@ -354,7 +354,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -387,6 +387,11 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--funktion`: der Name allein (`starte`) oder mit Bereich (`antrieb::Motor::starte`)
 - `--roh`: je Anweisung ein Knoten, nichts gebündelt
 - das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe
+- `--breite`: der Breiten-Test an echtem Code — legt je Datei (im Projekt jede, oder `--datei`)
+  jeden Ablauf, die Automaten, die Datentypen und den Aufrufgraph der Datei an, nach unten und nach
+  rechts, und nennt jede Anordnung, die mehr als doppelt so breit (nach rechts: hoch) ist, wie ihre
+  breiteste Schicht samt Stützpunkten, Rahmen, Rückwegen und Legende braucht; je Band zählt seine
+  breiteste Stelle. Am Ende die Zahl und die breiteste; Exit 3, wenn eine zu breit ist
 
 ```bash
 c2d beispiele\aufrufe.c --funktion main --einbetten summe --format drawio > main.drawio
@@ -457,6 +462,12 @@ out\build\windows-ninja-release-clang\exec\Code2Diagram.UnitTests\bin\Release\Co
 
 „Grün" heisst je Lauf: `Status: SUCCESS!`, kein Fall übersprungen.
 
+Der **Breiten-Test** (`test_Breite.cpp`) legt gebaute Formen an, die die bekannten Wege des
+Aufschaukelns nachstellen — ein breiter Fächer, viele frühe `return`, Schleifen mit Rückwegen, ein
+Automat, Datentypen, ein Aufrufgraph über Dateien sehr ungleicher Größe —, je nach unten und nach
+rechts, und prüft das Maß aus dem Kern (`querVerhaeltnis`, Grenze `kHoechstesQuerVerhaeltnis` = 2).
+An echtem Code: `c2d <ordner> --breite`.
+
 Sichttest: `Code2Diagram.exe --testing` startet den Tester mit den Listen aus `docs/sichttest/`.
 Den Tester danach schliessen — offen sperrt er den nächsten Bau.
 
@@ -480,13 +491,19 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   Typen der Argumente. Über Dateien hinweg gilt: nicht `static`; welche Datei der Linker nähme,
   weiß Code2Diagram nicht.
 - **Die Anordnung ist einfach:** Schichten, Schwerpunkt, die Lage in der Zeile nach Brandes–Köpf
-  (vier Ausrichtungen gemittelt), Kanten zurück außen herum — im Ablauf, im Aufrufgraph und bei
+  (vier Ausrichtungen gemittelt; bei zwei mittleren Nachbarn zuerst der mit dem längeren Weg, also
+  der Hauptstrang), Kanten zurück außen herum — im Ablauf, im Aufrufgraph und bei
   den Datentypen dieselbe rechtwinklige Wegeführung; eine Kante
-  über mehrere Schichten bekommt eine eigene Spalte; steht rechts neben der Quelle einer Kante
+  über mehrere Schichten bekommt eine eigene Spalte, die unter ihrer Quelle einmal abbiegen darf
+  (so liegen die Spalten früher `return` dicht beisammen); im Aufrufgraph wird jedes Band (je
+  Datei) für sich angeordnet, die Bänder stehen nebeneinander; steht rechts neben der Quelle einer Kante
   zurück noch ein Knoten, tritt sie unten aus; eine Schlaufe an sich selbst bekommt rechts
   neben ihrem Knoten Platz, über einer Zeile, in der ein Rahmen beginnt, sein Titel. Kreuzungen vermeidet sie nicht immer; ein
   Rahmen kann einen fremden Knoten derselben Schicht umfassen. Ein `switch` mit vielen Fällen
-  wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle.
+  wird breit. Leere Fälle stehen rechts hinter `default`, nicht in der Folge der Quelle. Zweige,
+  die länger sind als der Abstand bis zur nächsten Verzweigung (ein Typ-Verteiler mit vielen
+  Anweisungen je Fall, zwei lange Zweige eines `if`/`else`), stehen nebeneinander: so ein Ablauf
+  wird breiter als seine breiteste Schicht — der Breiten-Test nennt ihn (`c2d --breite`).
 - **Wahrheitstabellen:** Atome gelten als unabhängig — `x > 5` und `x > 10` können nicht beide
   falsch-wahr sein, die Tabelle zeigt die Zeile trotzdem. Makros werden nicht aufgelöst (`IS_OK(x)`
   ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche

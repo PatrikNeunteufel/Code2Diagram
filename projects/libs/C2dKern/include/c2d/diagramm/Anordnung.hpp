@@ -88,6 +88,12 @@ struct FlussAnordnung
     std::vector<Legende> legende;
     double breite = 0;
     double hoehe = 0;
+    /// Quer zur Richtung (nach unten die Breite, nach rechts die Hoehe): wie weit die Anordnung
+    /// reicht (`quer`), und was ihre breiteste Schicht samt Stuetzpunkten und Abstaenden, Rand,
+    /// Rahmen, Platz fuer Rueckwege und Schlaufen und (nach unten) die Legende brauchen
+    /// (`querBedarf`). Massstab des Breiten-Tests (querVerhaeltnis).
+    double quer = 0;
+    double querBedarf = 0;
 };
 
 struct StrukturAnordnung
@@ -99,7 +105,26 @@ struct StrukturAnordnung
     std::vector<Punkt> beschriftungen;
     double breite = 0;
     double hoehe = 0;
+    /// Quer zur Richtung (nach unten die Breite, nach rechts die Hoehe): wie weit die Anordnung
+    /// reicht (`quer`), und was ihre breiteste Schicht samt Stuetzpunkten und Abstaenden, Rand,
+    /// Rahmen, Platz fuer Rueckwege und Schlaufen und (nach unten) die Legende brauchen
+    /// (`querBedarf`). Massstab des Breiten-Tests (querVerhaeltnis).
+    double quer = 0;
+    double querBedarf = 0;
 };
+
+/// Hoechstens so viel breiter (nach rechts: hoeher) als ihre breiteste Schicht braucht darf eine
+/// geschichtete Anordnung sein (Ablauf, Aufrufgraph, Zustandsautomat, Datentypen). Darueber hat sie
+/// sich aufgeschaukelt: eine Treppe, ein Band, das Band um Band weiter rueckt (Entscheid Patrik
+/// 2026-10-17). Bleibt fest; reisst eine echte Form sie zu Recht, wird das vermerkt.
+inline constexpr double kHoechstesQuerVerhaeltnis = 2;
+
+/// quer / querBedarf; 1 ohne Bedarf (leer).
+template <typename Anordnung>
+[[nodiscard]] double querVerhaeltnis(const Anordnung& a)
+{
+    return a.querBedarf > 0 ? a.quer / a.querBedarf : 1;
+}
 
 /// Ein Struktogramm, gezeichnet als flache Liste: wer zeichnet, malt `felder` in ihrer
 /// Reihenfolge (ein Block vor den Bloecken seiner Spalten, die liegen darueber), dann

@@ -8,6 +8,7 @@
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
 //                             [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
+//                             [--breite]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
@@ -55,12 +56,19 @@
 //   --nachschlagetabellen  die konstanten Tabellen (const-Arrays) der Datei (im Projekt: --datei)
 //   --konfiguration  je Kette #if der Datei, welcher Zweig bei welchen Definitionen gilt (im
 //                  Projekt: --datei); svg, drawio, csv
+//   --breite       der Breiten-Test an echtem Code: legt je Datei (im Projekt jede, oder --datei)
+//                  jeden Ablauf, Automaten, die Datentypen und den Aufrufgraph der Datei an, nach
+//                  unten und nach rechts, und nennt jede Anordnung, die mehr als
+//                  kHoechstesQuerVerhaeltnis mal so breit ist, wie ihre breiteste Schicht braucht.
+//                  Exit 3, wenn eine es ist
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
-// Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
+// Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar,
+// 3 der Breiten-Test fand eine zu breite Anordnung.
 
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Anordnung.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
@@ -72,6 +80,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <iomanip>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -108,7 +117,7 @@ int aufruf()
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
                  "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
-                 "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
+                 "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration] [--breite]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -187,7 +196,7 @@ int main(int argc, char* argv[])
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
     bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
-    bool konfiguration = false;
+    bool konfiguration = false, breite = false;
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -202,6 +211,7 @@ int main(int argc, char* argv[])
         else if (a == "--entscheidungstabelle") entscheidungstabelle = true;
         else if (a == "--nachschlagetabellen") nachschlagetabellen = true;
         else if (a == "--konfiguration") konfiguration = true;
+        else if (a == "--breite") breite = true;
         else if (a == "--zuordnung")
         {
             zuordnung = true;
@@ -339,6 +349,55 @@ int main(int argc, char* argv[])
         std::cout << format->schreibe(diagramm, optionen);
         return 0;
     };
+
+    // der Breiten-Test: jede geschichtete Anordnung, nach unten und nach rechts
+    if (breite)
+    {
+        using namespace c2d::diagramm;
+        std::size_t geprueft = 0, zuBreit = 0;
+        double hoechstes = 0;
+        std::string wo;
+        for (std::size_t i = 0; i < p.dateien.size(); ++i)
+        {
+            if (gewaehlteDatei != c2d::projekt::kKeine && i != gewaehlteDatei) continue;
+            const c2d::modell::Einheit& einheit = p.dateien[i].ergebnis.einheit;
+            const auto pruefe = [&](const auto& diagramm, const std::string& was) {
+                for (const bool nachRechts : {false, true})
+                {
+                    AnordnungOptionen o;
+                    o.nachRechts = nachRechts;
+                    const auto a = ordneAn(diagramm, o);
+                    const double v = querVerhaeltnis(a);
+                    ++geprueft;
+                    const std::string hier = vorn(p.dateien[i].pfad) + ": " + was + (nachRechts ? " LR" : " TD");
+                    if (v > hoechstes)
+                    {
+                        hoechstes = v;
+                        wo = hier;
+                    }
+                    if (v <= kHoechstesQuerVerhaeltnis) continue;
+                    ++zuBreit;
+                    std::cout << hier << ": " << static_cast<long>(a.quer) << " px, needs " << static_cast<long>(a.querBedarf)
+                              << " px (x" << std::fixed << std::setprecision(2) << v << ")\n" << std::defaultfloat;
+                }
+            };
+            bool mitRumpf = false;
+            for (const c2d::modell::Funktion& f : einheit.funktionen)
+            {
+                if (!f.rumpf) continue;
+                mitRumpf = true;
+                pruefe(fasseAnweisungsfolgenZusammen(flussVon(f)), "flow " + f.vollerName());
+            }
+            for (const Zustandsdiagramm& z : automatenVon(einheit)) pruefe(z, "automaton " + z.titel);
+            if (!einheit.typen.empty()) pruefe(strukturVon(einheit), "data types");
+            if (mitRumpf) pruefe(c2d::projekt::aufrufgraphDerDatei(p, i, graph).graph, "call graph of the file");
+        }
+        std::cout << "checked " << geprueft << " layouts, " << zuBreit << " wider than x" << kHoechstesQuerVerhaeltnis
+                  << " of their widest layer";
+        if (geprueft > 0) std::cout << "; widest x" << std::fixed << std::setprecision(2) << hoechstes << " in " << wo;
+        std::cout << '\n';
+        return zuBreit > 0 ? 3 : 0;
+    }
 
     // die konstanten Tabellen einer Datei
     if (nachschlagetabellen)
