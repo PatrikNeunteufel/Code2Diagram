@@ -254,7 +254,9 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_darstellung->setObjectName(QStringLiteral("darstellung"));
     m_darstellung->addItem(QStringLiteral("Flowchart"), QString::fromLatin1(kFlussdiagramm));
     m_darstellung->addItem(QStringLiteral("Nassi-Shneiderman"), QString::fromLatin1(kStruktogramm));
-    m_darstellung->setToolTip(QStringLiteral("How a function is shown: its flowchart or its structogram (Nassi-Shneiderman)"));
+    m_darstellung->addItem(QStringLiteral("Decision table"), QString::fromLatin1(kEntscheidungstabelle));
+    m_darstellung->setToolTip(
+        QStringLiteral("How a function is shown: its flowchart, its structogram (Nassi-Shneiderman) or its decision table"));
     m_richtung = new QComboBox(rechts);
     m_richtung->setObjectName(QStringLiteral("richtung"));
     m_richtung->addItem(QStringLiteral("Top-down"), QStringLiteral("TD"));
@@ -1708,6 +1710,16 @@ bool Hauptfenster::zeigtStruktogramm() const
     return !m_struktogramm.titel.empty();
 }
 
+bool Hauptfenster::zeigtEntscheidungstabelle() const
+{
+    return !m_entscheidung.funktion.empty();
+}
+
+bool Hauptfenster::ohneEinbetten() const
+{
+    return zeigtStruktogramm() || zeigtEntscheidungstabelle();
+}
+
 bool Hauptfenster::istWahrheitstabelle() const
 {
     return m_gezeigt.startsWith(QLatin1String(kWahrheitstabelle));
@@ -1852,7 +1864,7 @@ void Hauptfenster::gehe(const Fundstelle& stelle, c2d::diagramm::KnotenId von)
 bool Hauptfenster::betteEin(c2d::diagramm::KnotenId knoten, const Fundstelle& gerufen)
 {
     using namespace c2d::diagramm;
-    if (zeigtStruktogramm()) return false;  // im Struktogramm (noch) nicht
+    if (ohneEinbetten()) return false;  // im Struktogramm und in der Entscheidungstabelle (noch) nicht
     const c2d::modell::Funktion& f = c2d::projekt::funktion(m_projekt, gerufen);
     Flussdiagramm neu = c2d::diagramm::betteEin(m_fluss, knoten, fasseAnweisungsfolgenZusammen(flussVon(f)), f.signatur(),
                                                 m_projekt.dateien[gerufen.datei].pfad);
@@ -1936,6 +1948,7 @@ void Hauptfenster::baueNeu()
     m_gezeigt = m_auswahl->currentData().toString();
     m_fluss = Flussdiagramm();
     m_struktogramm = Struktogramm();
+    m_entscheidung = Entscheidungstabelle();
     m_tabellen.clear();
     m_richtung->setEnabled(true);
     if (istWahrheitstabelle() && m_datei < m_projekt.dateien.size())
@@ -1957,6 +1970,25 @@ void Hauptfenster::baueNeu()
         for (const c2d::modell::Funktion& f : m_projekt.dateien[m_datei].ergebnis.einheit.funktionen)
         {
             if (!f.rumpf || f.vollerName() != name) continue;
+            if (darstellung() == QLatin1String(kEntscheidungstabelle))
+            {
+                m_entscheidung = entscheidungstabelleVon(f);
+                // je Zeile ein Knoten (erst die Bedingungen, dann die Aktionen): Klick, Show in diagram, Symbol
+                const auto knoten = [&](const std::string& text, int zeile) {
+                    Knoten k;
+                    k.zeilen = {text};
+                    k.quellZeile = zeile;
+                    m_fluss.neuerKnoten(std::move(k));
+                };
+                if (!m_entscheidung.regeln.empty())
+                {
+                    for (const Entscheidungstabelle::Bedingung& b : m_entscheidung.bedingungen) knoten(b.text, b.quellZeile);
+                    for (const Entscheidungstabelle::Aktion& a : m_entscheidung.aktionen) knoten(a.text, a.quellZeile);
+                }
+                for (const std::string& h : m_entscheidung.hinweise) statusBar()->showMessage(ausStd(h), 8000);
+                m_richtung->setEnabled(false);
+                break;
+            }
             if (darstellung() == QLatin1String(kStruktogramm))
             {
                 m_struktogramm = struktogrammVon(f);
@@ -2058,6 +2090,12 @@ void Hauptfenster::zeichne()
     // ein Knoten (Block), in dessen Zeilen eine Bedingung mit Tabelle steht, traegt ihr Symbol
     std::vector<bool> mitTabelle(m_fluss.knoten().size(), false);
     for (KnotenId i = 0; i < mitTabelle.size(); ++i) mitTabelle[i] = !tabellenZeilen(i).empty();
+    if (zeigtEntscheidungstabelle())
+    {
+        m_vorschau->zeige(m_entscheidung, mitTabelle);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Entscheidungstabelle, m_entscheidung));
+        return;
+    }
     if (zeigtStruktogramm())
     {
         m_vorschau->zeige(m_struktogramm, links, mitTabelle);
@@ -2089,7 +2127,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 const QString wo = f.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[f.datei].pfad));
                 menue.addAction(QStringLiteral("Go to %1()%2").arg(voll, wo), this, [this, f, knoten] { gehe(f, knoten); });
                 // im Struktogramm gibt es (noch) kein Einbetten (Entscheid Patrik, 2026-10-17, G)
-                if (!zeigtStruktogramm())
+                if (!ohneEinbetten())
                     menue.addAction(QStringLiteral("Embed %1()%2 here").arg(voll, wo), this, [this, knoten, f] { betteEin(knoten, f); })
                         ->setEnabled(!traegtSchon);
                 menue.addAction(QStringLiteral("Call graph from %1()%2").arg(voll, wo), this,
@@ -2101,7 +2139,7 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 QMenu* wahl = menue.addMenu(QStringLiteral("%1(): %2 functions qualify").arg(ausStd(aufruf)).arg(gemeint.size()));
                 for (const Fundstelle& f : gemeint)
                     wahl->addAction(QStringLiteral("Go to %1").arg(beschreibe(f)), this, [this, f, knoten] { gehe(f, knoten); });
-                if (!zeigtStruktogramm())
+                if (!ohneEinbetten())
                 {
                     wahl->addSeparator();
                     for (const Fundstelle& f : gemeint)

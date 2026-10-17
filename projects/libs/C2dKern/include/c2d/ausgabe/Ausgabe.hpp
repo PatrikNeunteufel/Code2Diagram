@@ -13,6 +13,7 @@
 #pragma once
 
 #include "c2d/diagramm/Aufrufgraph.hpp"
+#include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -44,6 +45,7 @@ enum class Diagrammart
     Aufrufgraph,
     Struktogramm,
     Wahrheitstabelle,
+    Entscheidungstabelle,
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
@@ -75,6 +77,8 @@ public:
     /// Eine oder mehrere Wahrheitstabellen, untereinander.
     [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Wahrheitstabelle> tabellen,
                                                const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Entscheidungstabelle& tabelle,
+                                               const Optionen& optionen) const = 0;
 };
 
 /// Alle Formate; das erste ist die Vorgabe.
@@ -96,8 +100,9 @@ public:
 /// Graphviz DOT: `digraph`, Datentypen als `record`.
 [[nodiscard]] const Format& dot();
 
-/// CSV (Trenner `;`, wie Excel unter deutscher Einstellung): nur Wahrheitstabellen —
-/// fuer Testplaene. Je Tabelle eine Zeile mit Funktion, Zeile und Bedingung, dann Kopf und Zeilen.
+/// CSV (Trenner `;`, wie Excel unter deutscher Einstellung): nur Tabellen — fuer Testplaene.
+/// Wahrheitstabelle: je Tabelle eine Zeile mit Funktion, Zeile und Bedingung, dann Kopf und Zeilen.
+/// Entscheidungstabelle: so ausgerichtet wie gezeichnet (Regeln als Spalten).
 [[nodiscard]] const Format& csv();
 
 /// draw.io (diagrams.net): mxGraph-XML mit festen Orten aus diagramm/Anordnung.hpp.

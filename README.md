@@ -140,7 +140,7 @@ Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
 ### Fenster
 
 ```bash
-Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark] [--einstellungen] [--struktogramm]
+Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !NAME]... [--alle-zweige | --varianten | --rahmen] [--diagramm <name>] [--einbetten <funktion>]... [--springe <aufruf>]... [--zurueck] [--format <name>] [--ansicht preview|text] [--bild <datei.png>] [--szene <datei.png>] [--thema system|light|dark] [--einstellungen] [--struktogramm] [--entscheidungstabelle]
 ```
 
 - **Eine Datei oder ein Ordner:** File > Open… liest eine Datei, File > Open folder…
@@ -249,6 +249,16 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   Die Tabelle ist ein eigenes Diagramm (Back zurück); ein Klick darin zeigt die Bedingung. SVG und
   draw.io zeichnen sie, **csv** schreibt sie für Testpläne (Trenner `;`); Mermaid und DOT nicht.
   `c2d --funktion f --wahrheitstabelle [<zeile>]`. Beispiel: `beispiele/bedingungen.c`.
+- **Entscheidungstabelle** einer Funktion (DIN 66241): die dritte Darstellung im Feld neben
+  Diagram (*Decision table*). Je Weg durch `if`/`else`, `switch`-Fälle und `?:` eine Regel R1, R2 …
+  (Spalten); oben die Bedingungen (Y/N, bei `switch` der Wert des Falls, `–` = nicht gefragt), nach
+  einer doppelten Linie die Aktionen (je Anweisung eine Zeile, X je Regel). Eine Schleife ist eine
+  Aktion mit ihrem Kopf, ihr Inneres steht nicht darin (Hinweis). Eine Bedingung gilt auf einem Weg
+  als entschieden, bis eine Anweisung danach etwas ruft oder einen ihrer Namen schreibt (auch durch
+  einen Zeiger); bis dahin folgt der Weg ihrem Wert, sonst wird sie neu gefragt — in einer eigenen
+  Zeile `… (again, line n)`. Über 32 Regeln keine Tabelle, nur ein Hinweis. Klick auf eine Zeile
+  zeigt sie im Quelltext; SVG, draw.io und csv schreiben sie, Mermaid und DOT nicht.
+  `c2d --funktion f --entscheidungstabelle`, im Fenster `--entscheidungstabelle`.
 - **Aufrufgraph:** wer wen ruft. In Diagram steht *Call graph of this file* (alle Funktionen der
   Datei; ein Aufruf in eine andere Datei endet am Knoten der gerufenen Funktion), und
   **Call graph from here** in der Leiste, im Menü Diagram und im Kontextmenü eines Ablaufs zeigt
@@ -305,7 +315,8 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   `format_waehlen name=<svg|mermaid|dot|drawio>`, `ansicht_waehlen name=<preview|text>`,
   `einbetten name=<Funktion>`, `einbettungen_loesen`, `zurueck`,
   `definitionen_setzen wert=<NAME NAME=wert …>`, `zweige_waehlen name=<auswerten|alle>`,
-  `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`, `darstellung_waehlen name=<flowchart|nassi-shneiderman>`,
+  `klicken name=<…>`, `im_diagramm_zeigen zeile=<n>`,
+  `darstellung_waehlen name=<flowchart|nassi-shneiderman|decision-table>`,
   `wahrheitstabelle_zeigen zeile=<n>`,
   `einstellungen_zeigen`,
   `thema_setzen name=<system|light|dark>`.
@@ -447,6 +458,10 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   ist ein Atom). Über 16 Atome keine Tabelle. Die MC/DC-Menge ist die kleinste, solange die Suche
   in ihrer Grenze bleibt (sonst ein Hinweis). Entscheidungstabelle einer Funktion,
   `switch`-Zuordnung und `#if`-Konfiguration fehlen noch (eigene Fragen).
+- **Entscheidungstabellen:** das Innere von Schleifen, `catch`-Blöcke und nicht geltende
+  `#if`-Varianten stehen nicht darin (Hinweise). Ob eine Anweisung eine Bedingung ändern kann,
+  wird an ihren Namen erkannt: ein Alias, den kein Name verrät (ein globaler Zeiger auf eine lokale
+  Variable, ohne Aufruf dazwischen), bleibt unbemerkt.
 - **Struktogramm:** kein Einbetten (vorgemerkt); eine lange Zeile wird gekürzt, nicht
   umgebrochen; ein `switch` mit vielen Fällen und tiefe Schachtelung werden breit. Anweisungen vor
   dem ersten `case` stehen nicht darin (Meldung).

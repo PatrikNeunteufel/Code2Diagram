@@ -1,6 +1,6 @@
 /**
  * @file Csv.cpp
- * @brief CSV: Wahrheitstabellen fuer Testplaene — andere Diagramme kann es nicht
+ * @brief CSV: Wahrheits- und Entscheidungstabellen fuer Testplaene — andere Diagramme kann es nicht
  *
  * Trenner `;` (Excel unter deutscher Einstellung), Zeilen mit `\n`. Ein Feld mit
  * `;`, `"` oder Zeilenwechsel steht in `"…"`, ein `"` darin doppelt. Ein nicht
@@ -44,7 +44,10 @@ public:
     [[nodiscard]] std::string_view endung() const override { return "csv"; }
 
     // eine Tabelle ja, ein Graph oder Bloecke nicht
-    [[nodiscard]] bool kann(Diagrammart art) const override { return art == Diagrammart::Wahrheitstabelle; }
+    [[nodiscard]] bool kann(Diagrammart art) const override
+    {
+        return art == Diagrammart::Wahrheitstabelle || art == Diagrammart::Entscheidungstabelle;
+    }
 
     [[nodiscard]] std::string schreibe(const Flussdiagramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Strukturdiagramm&, const Optionen&) const override { return {}; }
@@ -79,6 +82,32 @@ public:
             }
             for (const std::string& h : t.hinweise) aus += zeile({h});
         }
+        return aus;
+    }
+
+    [[nodiscard]] std::string schreibe(const Entscheidungstabelle& t, const Optionen&) const override
+    {
+        std::string aus = zeile({t.funktion + "(): decision table"});
+        if (!t.regeln.empty())
+        {
+            std::vector<std::string> kopf{"Conditions"};
+            for (std::size_t r = 0; r < t.regeln.size(); ++r) kopf.push_back("R" + std::to_string(r + 1));
+            aus += zeile(kopf);
+            for (std::size_t b = 0; b < t.bedingungen.size(); ++b)
+            {
+                std::vector<std::string> z{zeilenText(t.bedingungen[b])};
+                for (const Entscheidungstabelle::Regel& r : t.regeln) z.push_back(r.eintraege[b].empty() ? "-" : r.eintraege[b]);
+                aus += zeile(z);
+            }
+            aus += zeile({"Actions"});
+            for (std::size_t k = 0; k < t.aktionen.size(); ++k)
+            {
+                std::vector<std::string> z{t.aktionen[k].text};
+                for (const Entscheidungstabelle::Regel& r : t.regeln) z.emplace_back(r.aktionen[k] ? "X" : "");
+                aus += zeile(z);
+            }
+        }
+        for (const std::string& h : t.hinweise) aus += zeile({h});
         return aus;
     }
 };

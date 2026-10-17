@@ -88,6 +88,20 @@ struct Anweisung
     /// eine Zuweisung mit `&&`/`||`): ihr Text und ihre Logik — fuer die Wahrheitstabelle.
     std::string logikText;
     std::optional<Logik> logik;
+    /// Nur Einfach und Ruecksprung: die Bedingung eines `?:` auf oberster Ebene (auch mit einem
+    /// Teil) — fuer die Entscheidungstabelle eine Verzweigung; leer = keins.
+    std::string frage;
+    /// Die Bedingung (eines if, einer Schleife, eines `?:`) ruft eine Funktion: sie kann bei
+    /// jeder Pruefung anders ausgehen.
+    bool bedingungRuft = false;
+    /// Die Namen, die die Bedingung (eines if, einer Schleife, eines switch, eines `?:`) liest.
+    std::vector<std::string> bedingungNamen;
+    /// Was die Anweisung aendern kann (Einfach, Ruecksprung, Wurf): die Namen, die sie schreibt
+    /// (Zuweisung, `++`/`--`, `&name`); ob sie durch einen Zeiger schreibt (`*p =`, `p->x =`) —
+    /// dann kann es jeder Name sein; ob sie etwas ruft — dann ebenso.
+    std::vector<std::string> schreibt;
+    bool schreibtDurchZeiger = false;
+    bool ruft = false;
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;

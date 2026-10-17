@@ -203,9 +203,115 @@ std::string_view kandidat(std::string_view text, const lexer::Sprachtabelle& tab
     return text.substr(stelle(t[nachZuweisung]));
 }
 
+/// Die Bedingung eines `?:` auf oberster Ebene — vom Ende einer Zuweisung bis zum `?`; leer = keins.
+std::string_view frageIn(std::string_view text, const lexer::Sprachtabelle& tabelle)
+{
+    std::vector<quelle::Meldung> stumm;
+    const std::vector<Token> t = lexer::zerlege(text, tabelle, stumm);
+    const auto stelle = [&](const Token& tok) { return static_cast<std::size_t>(tok.text.data() - text.data()); };
+    int tiefe = 0;
+    std::size_t nachZuweisung = 0;
+    for (std::size_t i = 0; i < t.size() && t[i].art != TokenArt::Ende; ++i)
+    {
+        const Token& tok = t[i];
+        if (oeffnet(tok)) ++tiefe;
+        else if (schliesst(tok)) --tiefe;
+        else if (tiefe == 0 && tok.art == TokenArt::Operator &&
+                 (tok.text == "=" || tok.text == "|=" || tok.text == "&=" || tok.text == "^="))
+            nachZuweisung = i + 1;
+        else if (tiefe == 0 && tok.istOp("?"))
+        {
+            if (nachZuweisung >= i) return {};
+            const std::size_t a = stelle(t[nachZuweisung]);
+            std::string_view bedingung = text.substr(a, stelle(tok) - a);
+            while (!bedingung.empty() && bedingung.back() == ' ') bedingung.remove_suffix(1);
+            return bedingung;
+        }
+    }
+    return {};
+}
+
+/// Ruft der Ausdruck eine Funktion — ein Name vor `(`?
+bool ruft(std::string_view text, const lexer::Sprachtabelle& tabelle)
+{
+    std::vector<quelle::Meldung> stumm;
+    const std::vector<Token> t = lexer::zerlege(text, tabelle, stumm);
+    for (std::size_t i = 0; i + 1 < t.size(); ++i)
+        if (t[i].art == TokenArt::Bezeichner && t[i + 1].istOp("(")) return true;
+    return false;
+}
+
+/// Die Namen eines Ausdrucks (jeder einmal, in der Reihenfolge des Texts).
+std::vector<std::string> namenIn(std::string_view text, const lexer::Sprachtabelle& tabelle)
+{
+    std::vector<quelle::Meldung> stumm;
+    std::vector<std::string> aus;
+    for (const Token& t : lexer::zerlege(text, tabelle, stumm))
+        if (t.art == TokenArt::Bezeichner && std::find(aus.begin(), aus.end(), t.text) == aus.end()) aus.emplace_back(t.text);
+    return aus;
+}
+
+bool istZuweisung(const Token& t)
+{
+    static constexpr std::string_view kZuweisungen[] = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="};
+    return t.art == TokenArt::Operator && std::find(std::begin(kZuweisungen), std::end(kZuweisungen), t.text) != std::end(kZuweisungen);
+}
+
+/// Was eine Anweisung schreibt: links einer Zuweisung (der erste Name; mit `*` davor oder `->` darin
+/// durch einen Zeiger), neben `++`/`--`, hinter einem `&`, das eine Adresse nimmt; und ob sie ruft.
+void wirkung(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle)
+{
+    std::vector<quelle::Meldung> stumm;
+    const std::vector<Token> t = lexer::zerlege(a.text, tabelle, stumm);
+    const auto schreibe = [&](std::string_view name) {
+        if (std::find(a.schreibt.begin(), a.schreibt.end(), name) == a.schreibt.end()) a.schreibt.emplace_back(name);
+    };
+    std::size_t anfang = 0;  // wo der laufende Teilausdruck beginnt (nach `(`, `,`, `;` oder einer Zuweisung)
+    for (std::size_t i = 0; i < t.size() && t[i].art != TokenArt::Ende; ++i)
+    {
+        const Token& tok = t[i];
+        if (tok.art == TokenArt::Bezeichner && i + 1 < t.size() && t[i + 1].istOp("(")) a.ruft = true;
+        if (istZuweisung(tok))
+        {
+            // jeder Name links gilt als geschrieben (bei `a[i] = …` auch i): lieber einmal zu oft neu
+            // fragen als eine Regel weglassen. `*p = …` und `p->x = …` schreiben durch einen Zeiger.
+            for (std::size_t j = anfang; j < i; ++j)
+            {
+                if ((j == anfang && t[j].istOp("*")) || t[j].istOp("->")) a.schreibtDurchZeiger = true;
+                if (t[j].art == TokenArt::Bezeichner) schreibe(t[j].text);
+            }
+            anfang = i + 1;
+            continue;
+        }
+        if (tok.istOp("(") || tok.istOp(",") || tok.istOp(";")) anfang = i + 1;
+        if ((tok.istOp("++") || tok.istOp("--")))
+        {
+            if (i > 0 && t[i - 1].art == TokenArt::Bezeichner) schreibe(t[i - 1].text);
+            if (i + 1 < t.size() && t[i + 1].art == TokenArt::Bezeichner) schreibe(t[i + 1].text);
+        }
+        // `&name` als Adresse: am Anfang eines Teilausdrucks (nicht `a & b`)
+        if (tok.istOp("&") && i + 1 < t.size() && t[i + 1].art == TokenArt::Bezeichner &&
+            (i == 0 || t[i - 1].istOp("(") || t[i - 1].istOp(",") || istZuweisung(t[i - 1])))
+            schreibe(t[i + 1].text);
+    }
+}
+
 void ergaenze(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle)
 {
     using modell::AnweisungArt;
+    if (a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung || a.art == AnweisungArt::Wurf) wirkung(a, tabelle);
+    if (a.art == AnweisungArt::Wenn || a.art == AnweisungArt::Solange || a.art == AnweisungArt::TueSolange ||
+        a.art == AnweisungArt::Fuer || a.art == AnweisungArt::Auswahl)
+        a.bedingungNamen = namenIn(a.text, tabelle);
+    if (a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung)
+    {
+        a.frage = std::string(frageIn(a.text, tabelle));
+        a.bedingungRuft = !a.frage.empty() && ruft(a.frage, tabelle);
+        if (!a.frage.empty()) a.bedingungNamen = namenIn(a.frage, tabelle);
+    }
+    if (a.art == AnweisungArt::Wenn || a.art == AnweisungArt::Solange || a.art == AnweisungArt::TueSolange ||
+        a.art == AnweisungArt::Fuer)
+        a.bedingungRuft = ruft(a.text, tabelle);
     std::string_view ausdruck;
     switch (a.art)
     {

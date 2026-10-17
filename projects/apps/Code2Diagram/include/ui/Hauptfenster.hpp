@@ -36,6 +36,7 @@
 
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
+#include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
@@ -86,6 +87,7 @@ public:
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
+    static constexpr const char* kEntscheidungstabelle = "decision-table";
     /// So beginnt der Name einer Wahrheitstabelle: `truth:<Funktion>@<Zeile>`.
     static constexpr const char* kWahrheitstabelle = "truth:";
 
@@ -223,7 +225,7 @@ public:
 
     /// `svg`, `mermaid`, `dot`, `drawio`, ...; false = so heisst kein Format.
     bool waehleFormat(const QString& name);
-    /// kFlussdiagramm oder kStruktogramm: so wird jede Funktion gezeigt, auch nach einem Sprung.
+    /// kFlussdiagramm, kStruktogramm oder kEntscheidungstabelle: so wird jede Funktion gezeigt, auch nach einem Sprung.
     /// false = so heisst keine Darstellung.
     bool waehleDarstellung(const QString& name);
     [[nodiscard]] QString darstellung() const;
@@ -284,6 +286,10 @@ private:
     /// Ist eine Funktion als Struktogramm gezeigt? Dann haelt m_fluss je Block einen Knoten.
     [[nodiscard]] bool zeigtStruktogramm() const;
     [[nodiscard]] bool istWahrheitstabelle() const;
+    /// Ist eine Funktion als Entscheidungstabelle gezeigt? Dann haelt m_fluss je Zeile einen Knoten.
+    [[nodiscard]] bool zeigtEntscheidungstabelle() const;
+    /// Im Struktogramm und in der Entscheidungstabelle gibt es (noch) kein Einbetten.
+    [[nodiscard]] bool ohneEinbetten() const;
     /// Die Funktion (Stelle in der Einheit), in deren Rumpf die Zeile steht; kKeine = keine.
     [[nodiscard]] std::size_t funktionZurZeile(std::size_t datei, int zeile) const;
     /// Steht in dieser Zeile eine Bedingung mit Wahrheitstabelle?
@@ -431,6 +437,7 @@ private:
     c2d::diagramm::Flussdiagramm m_fluss;
     c2d::diagramm::Struktogramm m_struktogramm;  ///< das gezeigte Struktogramm; leer = keines
     std::vector<c2d::diagramm::Wahrheitstabelle> m_tabellen;  ///< die gezeigte Wahrheitstabelle
+    c2d::diagramm::Entscheidungstabelle m_entscheidung;       ///< die gezeigte; leer = keine
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei

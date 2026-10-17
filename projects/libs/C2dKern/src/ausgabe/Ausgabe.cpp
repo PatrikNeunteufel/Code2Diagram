@@ -32,6 +32,7 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Aufrufgraph: return "Call graph";
         case Diagrammart::Struktogramm: return "Nassi-Shneiderman";
         case Diagrammart::Wahrheitstabelle: return "Truth table";
+        case Diagrammart::Entscheidungstabelle: return "Decision table";
     }
     return {};
 }

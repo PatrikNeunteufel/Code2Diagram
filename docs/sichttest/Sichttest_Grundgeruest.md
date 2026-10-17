@@ -544,6 +544,26 @@ Zeile 19 drei Teile mit `pruefe_sensor(k)`), `ueberwache` (eine Schleife, eine Z
       Verzweigung und im Block `return …`; Klick öffnet dieselbe Tabelle.
       `aktion: format_waehlen name=svg` `aktion: darstellung_waehlen name=nassi-shneiderman`
 
+## R. Entscheidungstabelle
+
+- [ ] **R0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt`, Feld auf *Decision table*.
+      `aktion: beispiel_zeigen` `aktion: diagramm_waehlen name=ampel_takt` `aktion: format_waehlen name=svg` `aktion: ansicht_waehlen name=preview` `aktion: darstellung_waehlen name=decision-table`
+- [ ] **R1 Die Form:** Oben `ampel_takt(): decision table`. Links `Conditions / actions`, rechts `R1`,
+      `R2`, `R3`. Zeile `ampel->stoerung`: Y N N; `ampel->rest_ms > vergangen_ms`: – Y N. Dann eine
+      doppelte Linie, darunter sechs Aktionen mit je einem X; zwei Zeilen `return` (zwei Stellen im
+      Quelltext). Top-down ist gesperrt.
+- [ ] **R2 switch:** `dauer_ms`: eine Zeile `switch (phase)` mit `ROT`, `GRUEN`, `ROT_GELB, GELB`,
+      `otherwise`, darunter die vier `return`.
+      `aktion: diagramm_waehlen name=dauer_ms`
+- [ ] **R3 Klick und Show in diagram:** Ein Klick auf die Zeile `return 1000` hinterlegt sie im
+      Quelltext. Rechtsklick im Quelltext auf ihre Zeile, *Show in diagram*: Ring um die Zeile.
+- [ ] **R4 Neu gefragt:** `beispiele/bedingungen.c`, `darf_einschalten`: eine Bedingung, zwei Regeln.
+      Die Bedingung trägt das Tabellensymbol; Klick öffnet ihre Wahrheitstabelle, Back zurück.
+      `aktion: datei_oeffnen pfad=beispiele/bedingungen.c` `aktion: diagramm_waehlen name=darf_einschalten`
+- [ ] **R5 Formate:** csv: `darf_einschalten(): decision table`, `Conditions;R1;R2`, … `Actions`;
+      mermaid: `Decision table is not available in mermaid`. Feld zurück auf *Flowchart*.
+      `aktion: ansicht_waehlen name=text` `aktion: format_waehlen name=csv` `aktion: format_waehlen name=mermaid` `aktion: darstellung_waehlen name=flowchart`
+
 ## O. Einstellungen und Thema
 
 - [ ] **O0 Vorbereiten:** Das Beispiel zeigen, `ampel_takt` in der Vorschau, Thema System.

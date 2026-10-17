@@ -197,10 +197,12 @@ public:
     // Bloecke und Tabellen sind kein Graph: hier nicht richtig darstellbar
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
-        return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle;
+        return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle &&
+               art != Diagrammart::Entscheidungstabelle;
     }
     [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle>, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(const Entscheidungstabelle&, const Optionen&) const override { return {}; }
 
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {

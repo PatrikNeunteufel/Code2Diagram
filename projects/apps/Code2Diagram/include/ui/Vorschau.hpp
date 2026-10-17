@@ -9,6 +9,7 @@
 #pragma once
 
 #include "c2d/diagramm/Aufrufgraph.hpp"
+#include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -51,6 +52,9 @@ public:
                const std::vector<bool>& mitTabelle = {});
     /// Wahrheitstabellen untereinander; ein Klick auf eine Zelle ist ein Klick auf Knoten 0.
     void zeige(std::span<const c2d::diagramm::Wahrheitstabelle> tabellen);
+    /// Eine Entscheidungstabelle; jede Zeile ist ein Knoten (erst die Bedingungen, dann die Aktionen).
+    /// `mitTabelle[k]`: Zeile k traegt das Tabellensymbol.
+    void zeige(const c2d::diagramm::Entscheidungstabelle& tabelle, const std::vector<bool>& mitTabelle = {});
     void leere();
 
     /// Wie viele Knoten oder Kaesten gezeichnet sind.

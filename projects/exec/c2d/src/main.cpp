@@ -6,7 +6,7 @@
 //                                            [--ohne-fremde]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
-//                             [--wahrheitstabelle [<zeile>]]
+//                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
@@ -45,12 +45,15 @@
 //                  drawio, Mermaid und DOT koennen es nicht (Meldung, Rueckgabe 1)
 //   --wahrheitstabelle  mit --funktion: die Wahrheitstabelle (samt MC/DC) der Bedingung in dieser
 //                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv
+//   --entscheidungstabelle  mit --funktion: die Entscheidungstabelle (DIN 66241) der Funktion;
+//                  svg, drawio, csv
 //
 // Das Diagramm geht auf die Standardausgabe, Meldungen auf die Fehlerausgabe.
 // Exit: 0 gut, 1 Aufruf falsch oder nichts zu zeichnen, 2 Datei oder Ordner nicht lesbar.
 
 #include "c2d/ausgabe/Ausgabe.hpp"
 #include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
@@ -94,7 +97,7 @@ int aufruf()
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
-                 "                         [--wahrheitstabelle [<line>]]\n"
+                 "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -150,7 +153,7 @@ int main(int argc, char* argv[])
     std::string formatName = "mermaid";
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
-    bool wahrheitstabelle = false;
+    bool wahrheitstabelle = false, entscheidungstabelle = false;
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -162,6 +165,7 @@ int main(int argc, char* argv[])
         else if (a == "--struktur") struktur = true;
         else if (a == "--roh") roh = true;
         else if (a == "--struktogramm") struktogramm = true;
+        else if (a == "--entscheidungstabelle") entscheidungstabelle = true;
         else if (a == "--wahrheitstabelle")
         {
             wahrheitstabelle = true;
@@ -389,6 +393,12 @@ int main(int argc, char* argv[])
             for (const Hinweis& h : s.hinweise)
                 std::cerr << vorn(p.dateien[gewaehlt->datei].pfad) << ':' << h.zeile << ": " << h.text << '\n';
             return schreibe(c2d::ausgabe::Diagrammart::Struktogramm, s);
+        }
+        if (entscheidungstabelle)
+        {
+            const Entscheidungstabelle t = entscheidungstabelleVon(wahl);
+            for (const std::string& h : t.hinweise) std::cerr << "c2d: " << wahl.name << "(): " << h << '\n';
+            return schreibe(c2d::ausgabe::Diagrammart::Entscheidungstabelle, t);
         }
         if (wahrheitstabelle)
         {

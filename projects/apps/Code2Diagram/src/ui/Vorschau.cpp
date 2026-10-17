@@ -457,17 +457,31 @@ public:
         treffer->setCursor(Qt::PointingHandCursor);
     }
 
-    /// Eine Zelle einer Wahrheitstabelle: getoent im Kopf und in den MC/DC-Zeilen; ein Klick ist Knoten 0.
+    /// Eine Zelle einer Tabelle: getoent im Kopf und in den MC/DC-Zeilen; ein Klick trifft ihren Knoten.
     void tabellenZelle(const TabellenAnordnung::Zelle& z)
     {
         const QRectF r(z.ort.x, z.ort.y, z.ort.breite, z.ort.hoehe);
         QGraphicsRectItem* feld = m_szene.addRect(r, m_strich, z.kopf || z.mcdc ? m_getoent : m_flaeche);
         feld->setZValue(2);
-        feld->setData(kKnoten, 1ULL);
+        const qulonglong knoten = z.knoten == kKeine ? 0ULL : static_cast<qulonglong>(z.knoten) + 1;
+        feld->setData(kKnoten, knoten);
         QStringList zeilen;
         for (const std::string& s : z.zeilen) zeilen << QString::fromStdString(s);
-        QGraphicsSimpleTextItem* t = text(zeilen.join(QLatin1Char('\n')), r, z.kopf);
-        t->setData(kKnoten, 1ULL);
+        QGraphicsSimpleTextItem* t = nullptr;
+        if (z.links)
+        {
+            t = textLinks(zeilen.join(QLatin1Char('\n')), {}, false);
+            if (z.kopf)
+            {
+                QFont fett = t->font();
+                fett.setBold(true);
+                t->setFont(fett);
+            }
+            t->setPos(r.left() + 8, r.center().y() - t->boundingRect().height() / 2);
+        }
+        else
+            t = text(zeilen.join(QLatin1Char('\n')), r, z.kopf);
+        t->setData(kKnoten, knoten);
         if (!z.ganz.empty())
         {
             feld->setToolTip(QString::fromStdString(z.ganz));
@@ -679,6 +693,7 @@ void Vorschau::zeige(std::span<const Wahrheitstabelle> tabellen)
     const TabellenAnordnung a = ordneAn(tabellen, optionen);
     Zeichner z(*scene(), dunkel());
     for (const TabellenAnordnung::Zelle& zelle : a.zellen) z.tabellenZelle(zelle);
+    for (const Rechteck& r : a.knotenOrte) m_orte.push_back(alsRect(r));
     for (const TabellenAnordnung::Text& t : a.texte)
     {
         QGraphicsSimpleTextItem* stueck = z.textLinks(QString::fromStdString(t.text), {});
@@ -693,6 +708,37 @@ void Vorschau::zeige(std::span<const Wahrheitstabelle> tabellen)
     }
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.zellen.size());
+}
+
+void Vorschau::zeige(const Entscheidungstabelle& tabelle, const std::vector<bool>& mitTabelle)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const TabellenAnordnung a = ordneAn(tabelle, optionen);
+    Zeichner z(*scene(), dunkel());
+    for (const TabellenAnordnung::Zelle& zelle : a.zellen)
+    {
+        z.tabellenZelle(zelle);
+        // das Symbol in der ersten Spalte der Zeile
+        if (zelle.links && zelle.knoten < mitTabelle.size() && mitTabelle[zelle.knoten])
+            z.tabellenSymbol(zelle.knoten, alsRect(zelle.ort));
+    }
+    for (const Linienzug& l : a.linien) z.linie(l);
+    for (const TabellenAnordnung::Text& t : a.texte)
+    {
+        QGraphicsSimpleTextItem* stueck = z.textLinks(QString::fromStdString(t.text), {});
+        if (t.fett)
+        {
+            QFont fett = stueck->font();
+            fett.setBold(true);
+            stueck->setFont(fett);
+        }
+        stueck->setPos(t.links.x, t.links.y - stueck->boundingRect().height() / 2);
+    }
+    for (const Rechteck& r : a.knotenOrte) m_orte.push_back(alsRect(r));
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.knotenOrte.size());
 }
 
 void Vorschau::zeige(const Zustandsdiagramm& diagramm, bool nachRechts)

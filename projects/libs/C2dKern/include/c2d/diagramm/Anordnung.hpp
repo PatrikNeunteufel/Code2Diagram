@@ -17,6 +17,7 @@
 #pragma once
 
 #include "c2d/diagramm/Aufrufgraph.hpp"
+#include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -142,9 +143,10 @@ struct StruktoAnordnung
     double hoehe = 0;
 };
 
-/// Wahrheitstabellen untereinander: je Tabelle oben Funktion, Zeile und Bedingung, darunter die
-/// Zellen (Kopf: `#`, je Atom Kennung und Text, Result, MC/DC), darunter die Paare und Hinweise.
-/// Die Texte stehen schon gekuerzt darin (ein Atom auf kAtomZeichen); `ganz` traegt den vollen.
+/// Eine Tabelle (Wahrheits- oder Entscheidungstabelle) als Zellen und Textzeilen. Die Texte stehen
+/// schon gekuerzt darin; `ganz` traegt den vollen. `knoten`: was ein Klick trifft — bei der
+/// Wahrheitstabelle die Tabelle, bei der Entscheidungstabelle die Zeile (erst die Bedingungen,
+/// dann die Aktionen); je Knoten sein Rechteck in `knotenOrte` (fuer den Ring).
 struct TabellenAnordnung
 {
     struct Zelle
@@ -155,6 +157,8 @@ struct TabellenAnordnung
         bool mcdc = false;                ///< eine Zeile der MC/DC-Menge: getoent
         std::string ganz;                 ///< der volle Text (Tooltip); leer = wie zeilen
         std::size_t tabelle = 0;          ///< welche Tabelle
+        std::size_t knoten = kKeine;      ///< was ein Klick trifft; kKeine = nichts
+        bool links = false;               ///< Text linksbuendig (die Spalte der Bedingungen und Aktionen)
     };
     struct Text
     {
@@ -165,6 +169,8 @@ struct TabellenAnordnung
     };
     std::vector<Zelle> zellen;
     std::vector<Text> texte;
+    std::vector<Linienzug> linien;     ///< die doppelte Linie zwischen Bedingungen und Aktionen
+    std::vector<Rechteck> knotenOrte;  ///< je Knoten sein Rechteck
     double breite = 0;
     double hoehe = 0;
 };
@@ -175,6 +181,9 @@ inline constexpr std::size_t kAtomZeichen = 30;
 [[nodiscard]] FlussAnordnung ordneAn(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StruktoAnordnung ordneAn(const Struktogramm& diagramm, const AnordnungOptionen& optionen = {});
 [[nodiscard]] TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const AnordnungOptionen& optionen = {});
+/// Klassisch (DIN 66241): links die Bedingungen, dann die Aktionen (doppelte Linie dazwischen),
+/// je Regel eine Spalte R1, R2 … mit Y/N/–/Wert bzw. X. Knoten: je Zeile.
+[[nodiscard]] TabellenAnordnung ordneAn(const Entscheidungstabelle& tabelle, const AnordnungOptionen& optionen = {});
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein

@@ -673,6 +673,34 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramm() == "truth:f@5");
     }
 
+    TEST_CASE("Entscheidungstabelle: dritte Darstellung; Zeilen sind Knoten — Klick, Show in diagram, Formate")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("int f(int a, int b)\n"  // 1
+                                     "{\n"                   // 2
+                                     "    if (a && b)\n"     // 3
+                                     "        return 1;\n"   // 4
+                                     "    return 0;\n"       // 5
+                                     "}\n"),
+                      QStringLiteral("t.c"));
+        REQUIRE(fenster.waehleDiagramm("f"));
+        REQUIRE(fenster.waehleDarstellung(Hauptfenster::kEntscheidungstabelle));
+        CHECK(fenster.vorschauFormen() == 3);  // eine Bedingung, zwei Aktionen
+        CHECK(fenster.diagrammText().contains(">R2</tspan>"));
+        CHECK(fenster.klicke("return 0"));
+        CHECK(fenster.gezeigteStelle() == "t.c:5");
+        CHECK(fenster.zeigeImDiagramm(3));
+        CHECK(fenster.markiert() == "a && b");
+        CHECK_FALSE(fenster.betteEin("f"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText() == "f(): decision table\nConditions;R1;R2\na && b;Y;N\nActions\nreturn 1;X;\nreturn 0;;X\n");
+        // die Bedingung hat eine Wahrheitstabelle
+        REQUIRE(fenster.zeigeWahrheitstabelle(3));
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.darstellung() == Hauptfenster::kEntscheidungstabelle);
+        CHECK(fenster.diagramm() == "f");
+    }
+
     TEST_CASE("Links auf Datentypen: zweites Feld, aus dem Ablauf und aus einem Glied, ueber Dateien, zurueck")
     {
         QTemporaryDir ordner;
