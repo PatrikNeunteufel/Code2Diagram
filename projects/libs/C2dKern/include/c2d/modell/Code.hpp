@@ -36,8 +36,8 @@ enum class AnweisungArt
     Auswahl,       ///< text = Ausdruck; kinder[0] = Rumpf (ein Block mit Faellen)
     Fall,          ///< text = Wert; leer = der Standardfall (default)
     Ruecksprung,   ///< text = Wert (darf leer sein)
-    Abbruch,       ///< break
-    Fortsetzung,   ///< continue
+    Abbruch,       ///< break; text = die Marke (`break outer`, Java/JavaScript), leer = die innerste
+    Fortsetzung,   ///< continue; text = die Marke wie bei Abbruch
     Sprung,        ///< text = Marke (goto)
     Marke,         ///< text = Name
     Direktive,     ///< text = die Zeile (Praeprozessor im Rumpf)
@@ -100,6 +100,10 @@ struct Anweisung
     /// Nur Auswahl: ein Fall endet an der naechsten Fall-Marke, ohne in sie zu laufen (Python
     /// match); ein break darin verlaesst die Schleife darum, nicht die Auswahl.
     bool ohneDurchfall = false;
+    /// Schleifen, Auswahl und Block: die Marke davor (`outer: for …`, Java/JavaScript), die ein
+    /// `break outer` / `continue outer` meint; leer = keine. (In C bleibt eine Marke eine Anweisung
+    /// Marke — sie ist das Ziel eines goto.)
+    std::string marke;
     int zeile = 0;
     bool gilt = false;  ///< nur Zweig
     /// Eine Bedingung mit mindestens zwei Atomen (ein `if`, eine Schleife, `?:`, ein `return` oder

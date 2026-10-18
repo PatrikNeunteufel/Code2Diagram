@@ -7,6 +7,8 @@
 #include "ui/Hauptfenster.hpp"
 #include "ui/Konfiguration.hpp"
 
+#include "c2d/sprache/Sprache.hpp"
+
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -937,11 +939,44 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.markiert().contains("k.on"));  // zurueck zu der Anweisung, in der sie steht
     }
 
+    TEST_CASE("Java: die Methode einer anonymen Klasse ist eine Funktion; dorthin und zurueck; kein #if")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("class K {\n  void f(Handler h) {\n    h.post(new Runnable() {\n      public void run() { tu(); }\n"
+                      "    });\n  }\n}\n",
+                      "K.java");
+        CHECK(fenster.meldungen() == 0);
+        CHECK(fenster.diagramme().contains("K::f::<anonymous:3>.run"));
+        CHECK(fenster.diagramme().contains("types"));
+        CHECK_FALSE(fenster.diagramme().contains("ifnames"));
+        REQUIRE(fenster.waehleDiagramm("K::f"));
+        CHECK(fenster.ziele("K::f::<anonymous:3>.run") == QStringList{"K.java:4"});
+        REQUIRE(fenster.springe("K::f::<anonymous:3>.run"));
+        CHECK(fenster.diagrammText().contains("tu()"));
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "K::f");
+        CHECK(fenster.markiert().contains("h.post"));
+    }
+
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
-        CHECK(Hauptfenster::dateiFilter() ==
-              "C files (*.c *.h);;C++ files (*.cpp *.cc *.cxx *.hpp *.hh *.hxx *.ipp *.inl *.tpp *.h);;"
-              "Python files (*.py *.pyi *.pyw);;JavaScript files (*.js *.mjs *.cjs);;TypeScript files (*.ts *.mts *.cts);;"
-              "C# files (*.cs);;All files (*)");
+        // aus sprachen() gebildet: eine neue Sprache braucht hier keine neue Zeile
+        const auto sprachen = c2d::sprache::sprachen();
+        const QStringList filter = Hauptfenster::dateiFilter().split(QStringLiteral(";;"));
+        REQUIRE(filter.size() == static_cast<qsizetype>(sprachen.size()) + 1);
+        for (std::size_t i = 0; i < sprachen.size(); ++i)
+        {
+            QStringList muster;
+            for (const std::string_view endung : sprachen[i]->endungen())
+                muster << QStringLiteral("*.") + QString::fromUtf8(endung.data(), static_cast<qsizetype>(endung.size()));
+            const std::string_view name = sprachen[i]->name();
+            CHECK(filter[static_cast<qsizetype>(i)] ==
+                  QString::fromUtf8(name.data(), static_cast<qsizetype>(name.size())) + QStringLiteral(" files (") +
+                      muster.join(QLatin1Char(' ')) + QLatin1Char(')'));
+        }
+        CHECK(filter.back() == "All files (*)");
+        // Stichproben, damit der Test nicht nur sich selbst nachrechnet
+        CHECK(filter.front() == "C files (*.c *.h)");
+        CHECK(filter.contains("C# files (*.cs)"));
     }
 }

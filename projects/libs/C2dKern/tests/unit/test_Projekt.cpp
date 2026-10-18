@@ -201,6 +201,46 @@ TEST_SUITE("Projekt")
         }
     }
 
+    TEST_CASE("Ordner eines Werkzeugs: nur neben seinem Kennzeichen uebergangen (Unity, Maven target)")
+    {
+        TempOrdner t;
+        t.lege("spiel/ProjectSettings/ProjectVersion.txt", "m_EditorVersion: 2022.3\n");
+        t.lege("spiel/Assets/a.cs", "class A {}\n");
+        t.lege("spiel/Library/b.cs", "class B {}\n");
+        t.lege("dienst/pom.xml", "<project/>\n");
+        t.lege("dienst/src/C.java", "class C {}\n");
+        t.lege("dienst/target/generated-sources/D.java", "class D {}\n");
+        // ohne Kennzeichen daneben: gewoehnliche Ordner (Firmware fuer ein Ziel, eine Bibliothek)
+        t.lege("fw/target/e.c", "void e(void) {}\n");
+        t.lege("fw/Library/f.c", "void f(void) {}\n");
+        const Projekt p = liesOrdner(t.weg());
+        std::vector<std::string> pfade;
+        for (const Datei& d : p.dateien) pfade.push_back(d.pfad);
+        CHECK(pfade == std::vector<std::string>{"dienst/src/C.java", "fw/Library/f.c", "fw/target/e.c", "spiel/Assets/a.cs"});
+        CHECK(hatMeldung(p, "dienst/target", "folder skipped (made by Maven)"));
+        CHECK(hatMeldung(p, "spiel/Library", "folder skipped (made by Unity)"));
+    }
+
+#ifdef _WIN32
+    TEST_CASE("Ein Weg ueber 260 Zeichen wird gelesen (Windows)")
+    {
+        TempOrdner t;
+        // angelegt mit dem Vorsatz \\?\ — ohne ihn legt auch der Test nichts so Tiefes an
+        const std::string tief(60, 'x');
+        const fs::path wurzel(L"\\\\?\\" + fs::absolute(t.weg()).make_preferred().native());
+        const fs::path ordner = wurzel / tief / tief / tief / tief / tief;
+        fs::create_directories(ordner);
+        std::ofstream(ordner / "Tief.java", std::ios::binary) << "class Tief { void f() { } }\n";
+        const Projekt p = liesOrdner(t.weg());
+        REQUIRE(p.dateien.size() == 1);
+        CHECK(p.dateien[0].pfad.size() > 300);
+        CHECK(p.meldungen.empty());
+        CHECK(p.funktionen() == 1);
+        std::error_code egal;
+        fs::remove_all(wurzel / tief, egal);  // so tief raeumt TempOrdner ohne den Vorsatz nicht auf
+    }
+#endif
+
     TEST_CASE("Nicht definiert: !NAME in Projektdatei, Abschnitt und von aussen; Koepfe und die Datei selbst")
     {
         TempOrdner t;

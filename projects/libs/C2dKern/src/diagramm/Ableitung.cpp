@@ -126,6 +126,14 @@ public:
     }
 
 private:
+    /// Eine markierte Schleife (Auswahl, Block): wohin `break marke` und `continue marke` gehen.
+    struct Benannt
+    {
+        std::string marke;
+        Enden* abbruch;
+        Enden* fortsetzung;  ///< nullptr = keine Schleife (continue meint sie nicht)
+    };
+
     /// Was nicht erreicht wird, kennzeichnen; wo es beginnt, die Zeile kUnerreichbar vorn.
     void markiereUnerreichbares(const std::vector<bool>& erreicht)
     {
@@ -225,7 +233,16 @@ private:
                          {}}};
 
             case AnweisungArt::Block:
-                return baueFolge(a.kinder, std::move(eingang));
+            {
+                if (a.marke.empty()) return baueFolge(a.kinder, std::move(eingang));
+                // ein markierter Block (`marke: { … break marke; … }`): break marke fuehrt hinter ihn
+                Enden abbruch;
+                m_benannt.push_back({a.marke, &abbruch, nullptr});
+                Enden aus = baueFolge(a.kinder, std::move(eingang));
+                m_benannt.pop_back();
+                haengeAn(aus, std::move(abbruch));
+                return aus;
+            }
 
             case AnweisungArt::Wenn:
             {
@@ -243,7 +260,7 @@ private:
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
                 Enden abbruch;
                 {
-                    Schleife schleife(*this);
+                    Schleife schleife(*this, a.marke);
                     verbinde(baue(*a.kinder[0], {{kopf, "yes"}}), kopf);
                     verbinde(schleife.fortsetzung, kopf);
                     abbruch = std::move(schleife.abbruch);
@@ -256,7 +273,7 @@ private:
             case AnweisungArt::TueSolange:
             {
                 const KnotenId erster = m_d.knoten().size();  // der naechste Knoten ist der Einstieg
-                Schleife schleife(*this);
+                Schleife schleife(*this, a.marke);
                 Enden aus = baue(*a.kinder[0], std::move(eingang));
                 haengeAn(aus, std::move(schleife.fortsetzung));
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, aus);
@@ -270,7 +287,7 @@ private:
             case AnweisungArt::Fuer:
             {
                 if (!a.init.empty()) eingang = {{knoten(KnotenArt::Anweisung, a.init, a.zeile, eingang), {}}};
-                Schleife schleife(*this);
+                Schleife schleife(*this, a.marke);
                 if (!a.text.empty())
                 {
                     const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
@@ -299,6 +316,7 @@ private:
                 // ohne Durchfallen (match) auch break nicht
                 Enden abbruch;
                 if (!a.ohneDurchfall) m_abbruch.push_back(&abbruch);
+                if (!a.marke.empty()) m_benannt.push_back({a.marke, &abbruch, nullptr});
                 Enden offen;
                 Enden fertig;  // ohne Durchfallen: die Enden der Faelle davor
                 bool hatStandard = false;
@@ -328,6 +346,7 @@ private:
                 else
                     schritt(rumpf);
                 if (!a.ohneDurchfall) m_abbruch.pop_back();
+                if (!a.marke.empty()) m_benannt.pop_back();
                 haengeAn(offen, std::move(fertig));
                 haengeAn(offen, std::move(abbruch));
                 if (!hatStandard) offen.emplace_back(kopf, "otherwise");
@@ -339,7 +358,7 @@ private:
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, eingang);
                 Enden abbruch;
                 {
-                    Schleife schleife(*this);
+                    Schleife schleife(*this, a.marke);
                     verbinde(baue(*a.kinder[0], {{kopf, "each"}}), kopf);
                     verbinde(schleife.fortsetzung, kopf);
                     abbruch = std::move(schleife.abbruch);
@@ -351,7 +370,7 @@ private:
             {
                 // ein Knoten `try`: ohne Beschriftung in den Block, je Fang eine Kante in dessen Block;
                 // else hinter dem Block; finally auf jedem Weg hinaus, auch nach return, throw, break, continue
-                const KnotenId kopf = knoten(KnotenArt::Verzweigung, "try", a.zeile, eingang);
+                const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.kopf.empty() ? "try" : a.kopf, a.zeile, eingang);
                 const Anweisung* schluss = nullptr;
                 if (!a.kinder.empty() && a.kinder.back()->art == AnweisungArt::Schluss && !a.kinder.back()->kinder.empty())
                     schluss = a.kinder.back()->kinder[0].get();
@@ -422,11 +441,13 @@ private:
                 return {};
 
             case AnweisungArt::Abbruch:
-                if (!m_abbruch.empty()) haengeAn(*m_abbruch.back(), std::move(eingang));
+                if (Enden* ziel = benannt(a.text, true)) haengeAn(*ziel, std::move(eingang));
+                else if (!m_abbruch.empty()) haengeAn(*m_abbruch.back(), std::move(eingang));
                 return {};
 
             case AnweisungArt::Fortsetzung:
-                if (!m_fortsetzung.empty()) haengeAn(*m_fortsetzung.back(), std::move(eingang));
+                if (Enden* ziel = benannt(a.text, false)) haengeAn(*ziel, std::move(eingang));
+                else if (!m_fortsetzung.empty()) haengeAn(*m_fortsetzung.back(), std::move(eingang));
                 return {};
 
             case AnweisungArt::Sprung:
@@ -470,6 +491,15 @@ private:
             m_mitFortsetzung = !m_bauer.m_fortsetzung.empty();
             if (m_mitAbbruch) m_bauer.m_abbruch.push_back(&abbruch);
             if (m_mitFortsetzung) m_bauer.m_fortsetzung.push_back(&fortsetzung);
+            // break marke / continue marke an eine Schleife draussen: ebenso durch den finally-Block
+            ziele = m_bauer.m_benannt;
+            benannt.resize(ziele.size());
+            for (std::size_t i = 0; i < ziele.size(); ++i)
+            {
+                Benannt& b = m_bauer.m_benannt[i];
+                if (b.abbruch != nullptr) b.abbruch = &benannt[i].abbruch;
+                if (b.fortsetzung != nullptr) b.fortsetzung = &benannt[i].fortsetzung;
+            }
         }
         ~Umweg() { beende(); }
         Umweg(const Umweg&) = delete;
@@ -483,12 +513,21 @@ private:
             m_bauer.m_wuerfe.pop_back();
             if (m_mitAbbruch) m_bauer.m_abbruch.pop_back();
             if (m_mitFortsetzung) m_bauer.m_fortsetzung.pop_back();
+            for (std::size_t i = 0; i < ziele.size(); ++i) m_bauer.m_benannt[i] = ziele[i];
         }
+
+        struct Gefangen
+        {
+            Enden abbruch;
+            Enden fortsetzung;
+        };
 
         Enden rueck;
         Enden wuerfe;
         Enden abbruch;
         Enden fortsetzung;
+        std::vector<Benannt> ziele;     ///< die markierten draussen, wie sie vorher zeigten
+        std::vector<Gefangen> benannt;  ///< je Eintrag von ziele, was ihn verlassen will
 
     private:
         FlussBauer& m_bauer;
@@ -505,6 +544,9 @@ private:
         const bool weiter = !hinein.empty();
         for (const Enden* e : {&umweg.rueck, &umweg.wuerfe, &umweg.abbruch, &umweg.fortsetzung})
             for (const auto& ende : *e) hinein.push_back(ende);
+        for (const Umweg::Gefangen& g : umweg.benannt)
+            for (const Enden* e : {&g.abbruch, &g.fortsetzung})
+                for (const auto& ende : *e) hinein.push_back(ende);
         if (hinein.empty()) return {};
         const Enden hinaus = baue(schluss, std::move(hinein));
         const auto weiterNach = [&](const Enden& gefangen, Enden* ziel, const char* text) {
@@ -515,21 +557,40 @@ private:
         weiterNach(umweg.wuerfe, m_wuerfe.back(), "throw");
         weiterNach(umweg.abbruch, m_abbruch.empty() ? nullptr : m_abbruch.back(), "break");
         weiterNach(umweg.fortsetzung, m_fortsetzung.empty() ? nullptr : m_fortsetzung.back(), "continue");
+        for (std::size_t i = 0; i < umweg.benannt.size(); ++i)
+        {
+            const Benannt& z = umweg.ziele[i];
+            weiterNach(umweg.benannt[i].abbruch, z.abbruch, ("break " + z.marke).c_str());
+            weiterNach(umweg.benannt[i].fortsetzung, z.fortsetzung, ("continue " + z.marke).c_str());
+        }
         return weiter ? hinaus : Enden{};
     }
 
-    /// Faengt break und continue einer Schleife, solange das Objekt lebt.
+    /// Wohin `break marke` (abbruch) bzw. `continue marke` gehen; nullptr = keine solche Marke
+    /// (dann gilt die innerste Schleife).
+    Enden* benannt(const std::string& marke, bool abbruch)
+    {
+        if (marke.empty()) return nullptr;
+        for (auto b = m_benannt.rbegin(); b != m_benannt.rend(); ++b)
+            if (b->marke == marke) return abbruch ? b->abbruch : b->fortsetzung;
+        return nullptr;
+    }
+
+    /// Faengt break und continue einer Schleife, solange das Objekt lebt; mit Marke auch
+    /// `break marke` und `continue marke`.
     struct Schleife
     {
-        explicit Schleife(FlussBauer& bauer) : m_bauer(bauer)
+        Schleife(FlussBauer& bauer, const std::string& marke) : m_bauer(bauer), m_marke(!marke.empty())
         {
             m_bauer.m_abbruch.push_back(&abbruch);
             m_bauer.m_fortsetzung.push_back(&fortsetzung);
+            if (m_marke) m_bauer.m_benannt.push_back({marke, &abbruch, &fortsetzung});
         }
         ~Schleife()
         {
             m_bauer.m_abbruch.pop_back();
             m_bauer.m_fortsetzung.pop_back();
+            if (m_marke) m_bauer.m_benannt.pop_back();
         }
         Schleife(const Schleife&) = delete;
         Schleife& operator=(const Schleife&) = delete;
@@ -539,6 +600,7 @@ private:
 
     private:
         FlussBauer& m_bauer;
+        bool m_marke;
     };
 
     struct OffenerRahmen
@@ -551,6 +613,7 @@ private:
     std::vector<OffenerRahmen> m_rahmen;  ///< von aussen nach innen
     std::vector<Enden*> m_abbruch;
     std::vector<Enden*> m_fortsetzung;
+    std::vector<Benannt> m_benannt;  ///< die markierten Schleifen, Auswahlen, Bloecke; von aussen nach innen
     Enden m_ruecksprunge;
     /// Wohin return bzw. throw gehen: ins Ende, oder in den Umweg eines finally.
     std::vector<Enden*> m_rueck{&m_ruecksprunge};
@@ -677,10 +740,10 @@ public:
                 ziel.push_back(block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "throw" : "throw " + a.text), a.zeile));
                 break;
             case AnweisungArt::Abbruch:
-                ziel.push_back(block(BlockArt::Aussprung, "break", a.zeile));
+                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "break" : "break " + a.text, a.zeile));
                 break;
             case AnweisungArt::Fortsetzung:
-                ziel.push_back(block(BlockArt::Aussprung, "continue", a.zeile));
+                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "continue" : "continue " + a.text, a.zeile));
                 break;
             case AnweisungArt::Sprung:
                 ziel.push_back(block(BlockArt::Aussprung, "goto " + a.text, a.zeile));
@@ -691,7 +754,7 @@ public:
                 break;
             case AnweisungArt::Versuch:
             {
-                Block b = block(BlockArt::Versuch, "try", a.zeile);
+                Block b = block(BlockArt::Versuch, kopfVon(a, "try"), a.zeile);
                 for (std::size_t i = 0; i < a.kinder.size(); ++i)
                 {
                     const Anweisung& kind = *a.kinder[i];
@@ -767,7 +830,8 @@ private:
 
     void schleife(BlockArt art, std::string kopf, const Anweisung& a, std::vector<Block>& ziel)
     {
-        Block b = block(art, std::move(kopf), a.zeile);
+        // die Marke, die ein `break marke` darin meint, steht vorn
+        Block b = block(art, a.marke.empty() ? std::move(kopf) : a.marke + ": " + kopf, a.zeile);
         b.spalten.push_back({});
         baue(*a.kinder[0], b.spalten.back().bloecke);
         ziel.push_back(std::move(b));
@@ -798,7 +862,7 @@ private:
 
     void auswahl(const Anweisung& a, std::vector<Block>& ziel)
     {
-        Block b = block(BlockArt::Fallunterscheidung, a.text, a.zeile);
+        Block b = block(BlockArt::Fallunterscheidung, a.marke.empty() ? a.text : a.marke + ": " + a.text, a.zeile);
         struct Fall
         {
             std::string titel;
@@ -848,7 +912,8 @@ private:
             // ein break am Ende eines Falls ist Syntax, kein Ablauf — ohne Durchfallen (match) gehoert er
             // der Schleife darum, und kein Fall laeuft in den naechsten
             const bool mitBreak = !a.ohneDurchfall && !fall.anweisungen.empty() &&
-                                  fall.anweisungen.back()->art == AnweisungArt::Abbruch;
+                                  fall.anweisungen.back()->art == AnweisungArt::Abbruch &&
+                                  fall.anweisungen.back()->text.empty();  // break marke geht weiter hinaus
             if (mitBreak) fall.anweisungen.pop_back();
             for (const Anweisung* s : fall.anweisungen) baue(*s, spalte.bloecke);
             const bool letzter = i + 1 == faelle.size();

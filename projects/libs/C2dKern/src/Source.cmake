@@ -38,6 +38,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Ecma.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Sprachen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/csharp/CSharp.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/csharp/Sprachen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Ableitung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Anordnung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Aufrufgraph.cpp"
@@ -94,6 +95,7 @@ set(_local_headers
     "${CMAKE_CURRENT_LIST_DIR}/sprache/Logik.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/CFamilie.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Ecma.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/csharp/CSharp.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Text.hpp"
 )
 

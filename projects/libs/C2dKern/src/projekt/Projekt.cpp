@@ -58,15 +58,22 @@ std::string nameVon(std::string_view pfad)
     return std::string(strich == std::string_view::npos ? pfad : pfad.substr(strich + 1));
 }
 
-bool liesDatei(const fs::path& weg, std::string& text)
+/// Windows oeffnet einen Weg ab 260 Zeichen nur mit dem Vorsatz `\\?\` (absolut, mit `\`) — eine
+/// Datei wie einen Ordner (Sourcetrail-Testdaten: 18 Dateien „cannot read the file“).
+fs::path oeffenbar(const fs::path& weg)
 {
-    std::ifstream strom(weg, std::ios::binary);
-    if (!strom) return false;
-    std::ostringstream inhalt;
-    inhalt << strom.rdbuf();
-    text = inhalt.str();
-    return true;
+#ifdef _WIN32
+    constexpr std::size_t kHoechstens = 259;
+    if (weg.native().size() <= kHoechstens || weg.native().starts_with(L"\\\\?\\")) return weg;
+    std::error_code fehler;
+    const fs::path absolut = fs::absolute(weg, fehler).lexically_normal().make_preferred();
+    if (fehler || absolut.native().starts_with(L"\\\\")) return weg;  // ein UNC-Weg hiesse \\?\UNC\…
+    return fs::path(L"\\\\?\\" + absolut.native());
+#else
+    return weg;
+#endif
 }
+
 
 /// Gleichnamiges ersetzt: das Spaetere gilt, an der Stelle des Frueheren (auch innerhalb von `dazu`).
 /// Ueber einen Index nach Namen: die Koepfe eines Projekts bringen Tausende `#define` je Datei.
@@ -128,7 +135,7 @@ public:
     {
         std::error_code fehler;
         std::vector<fs::directory_entry> eintraege;
-        for (fs::directory_iterator it(ordner, fs::directory_options::skip_permission_denied, fehler), ende;
+        for (fs::directory_iterator it(oeffenbar(ordner), fs::directory_options::skip_permission_denied, fehler), ende;
              !fehler && it != ende; it.increment(fehler))
             eintraege.push_back(*it);
         if (fehler)
@@ -155,10 +162,13 @@ public:
                     uebergehe(weg, "always skipped");
                     continue;
                 }
-                std::error_code unity;
-                if (erzeugtVonUnity(name) && fs::is_regular_file(ordner / "ProjectSettings" / "ProjectVersion.txt", unity))
+                const auto erzeugt = std::find_if(erzeugteOrdner().begin(), erzeugteOrdner().end(), [&](const ErzeugterOrdner& o) {
+                    std::error_code fehler;
+                    return o.name == name && fs::is_regular_file(oeffenbar(ordner / fs::path(std::string(o.kennzeichen))), fehler);
+                });
+                if (erzeugt != erzeugteOrdner().end())
                 {
-                    uebergehe(weg, "made by Unity");
+                    uebergehe(weg, "made by " + std::string(erzeugt->werkzeug));
                     continue;
                 }
                 const auto muster = std::find_if(m_p.einstellungen.uebergehen.begin(), m_p.einstellungen.uebergehen.end(),
@@ -339,6 +349,16 @@ private:
 };
 
 }  // namespace
+
+bool liesDatei(const fs::path& weg, std::string& text)
+{
+    std::ifstream strom(oeffenbar(weg), std::ios::binary);
+    if (!strom) return false;
+    std::ostringstream inhalt;
+    inhalt << strom.rdbuf();
+    text = inhalt.str();
+    return true;
+}
 
 std::size_t Projekt::finde(std::string_view pfad) const
 {

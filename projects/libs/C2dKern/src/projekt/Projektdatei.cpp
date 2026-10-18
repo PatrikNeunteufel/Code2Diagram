@@ -20,8 +20,15 @@ using quelle::Schwere;
 /// Ordnernamen, die nie Quelltext des Projekts tragen: Bau-Ausgaben und Abhaengigkeiten.
 constexpr std::string_view kImmer[] = {"out", "build", "node_modules", "bin", "obj"};
 
-/// Was Unity neben `ProjectSettings/` erzeugt: Pakete im Cache, Zwischenstaende, Protokolle.
-constexpr std::string_view kUnity[] = {"Library", "Temp", "Logs", "UserSettings"};
+/// Was Werkzeuge neben ihrem Kennzeichen erzeugen: Unity Pakete im Cache, Zwischenstaende,
+/// Protokolle; Maven die Bau-Ausgabe samt erzeugtem Quelltext.
+constexpr ErzeugterOrdner kErzeugt[] = {
+    {"Library", "ProjectSettings/ProjectVersion.txt", "Unity"},
+    {"Temp", "ProjectSettings/ProjectVersion.txt", "Unity"},
+    {"Logs", "ProjectSettings/ProjectVersion.txt", "Unity"},
+    {"UserSettings", "ProjectSettings/ProjectVersion.txt", "Unity"},
+    {"target", "pom.xml", "Maven"},
+};
 
 std::vector<std::string_view> teile(std::string_view weg)
 {
@@ -309,9 +316,9 @@ bool wirdImmerUebergangen(std::string_view name)
     return name.starts_with('.') || std::find(std::begin(kImmer), std::end(kImmer), name) != std::end(kImmer);
 }
 
-bool erzeugtVonUnity(std::string_view name)
+std::span<const ErzeugterOrdner> erzeugteOrdner()
 {
-    return std::find(std::begin(kUnity), std::end(kUnity), name) != std::end(kUnity);
+    return kErzeugt;
 }
 
 Vorschlag ausGitignore(std::string_view text)

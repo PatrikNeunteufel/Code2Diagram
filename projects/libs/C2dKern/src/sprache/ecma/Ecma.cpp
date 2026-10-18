@@ -776,19 +776,25 @@ private:
         if (t.istWort("break") || t.istWort("continue"))
         {
             ++m_p;
-            if (tok(m_p).art == TokenArt::Bezeichner && !neueZeile(m_p))
-            {
-                melde(Schwere::Hinweis, akt(),
-                      std::string(t.text) + " " + std::string(akt().text) +
-                          ": shown as a " + std::string(t.text) + " of the innermost loop or switch");
-                ++m_p;
-            }
+            std::string marke;  // break marke: die markierte Schleife (Anweisung::marke)
+            if (tok(m_p).art == TokenArt::Bezeichner && !neueZeile(m_p)) marke = std::string(tok(m_p++).text);
             nimmSemikolon();
-            return neu(t.istWort("break") ? AnweisungArt::Abbruch : AnweisungArt::Fortsetzung, t);
+            return neu(t.istWort("break") ? AnweisungArt::Abbruch : AnweisungArt::Fortsetzung, t, std::move(marke));
         }
         if (t.art == TokenArt::Bezeichner && tok(m_p + 1).istOp(":"))
         {
             m_p += 2;
+            // vor einer Schleife, einem switch, einem Block: deren Marke; sonst eine Anweisung Marke
+            const Token& n = akt();
+            if (n.istWort("for") || n.istWort("while") || n.istWort("do") || n.istWort("switch") || n.istOp("{"))
+            {
+                AnweisungPtr a = n.istOp("{") ? liesBlock(ort) : liesSteuerung(ort);
+                if (a)
+                {
+                    a->marke = std::string(t.text);
+                    return a;
+                }
+            }
             return neu(AnweisungArt::Marke, t, std::string(t.text));
         }
         return nullptr;

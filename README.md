@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C# | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: Java, Kotlin) |
+| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: Kotlin) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -44,7 +44,7 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | `quelle/` | Ort im Quelltext, Meldungen | — |
 | `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#; ein BOM am Anfang wird übergangen) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), Python und C# haben je einen eigenen (`python/`, `csharp/`). Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), C# und Java den Leser `csharp/` (Java als `Dialekt`), Python hat einen eigenen (`python/`). Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -200,6 +200,32 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   er definiert ist; Defines, Projektdatei, Feld Configuration und die `#if`-Diagramme gelten.
   `#region`, `#pragma`, `#nullable` werden übergangen. Beispiel: `beispiele/lager.cs`.
 
+**Java** (`.java`, Java 21; gelesen vom Leser von C# als Dialekt):
+
+- `package` wird überlesen (die Namen tragen keinen Paketpfad), `import` ist eine Einbindung;
+  `class`, `interface`, `@interface` (eine Schnittstelle), `enum` mit Rumpf (Konstanten mit ihren
+  Argumenten als Wert, Felder, Konstruktoren, Methoden; der Rumpf einer Konstante wie eine anonyme
+  Klasse: `ROT.methode`), `record` (eine Struktur mit den Komponenten als Feldern, auch der kompakte
+  Konstruktor); innere Klassen als `Aussen::Innen`
+- Basen: `extends` ist eine Basis, `implements` eine Realisierung (gestrichelt); `permits`, `sealed`,
+  `non-sealed` werden überlesen
+- Glieder: Felder (auch `int a[]`), Methoden, Konstruktoren, Initialisierungsblöcke als Funktionen
+  `<static:Zeile>` und `<init:Zeile>`; Annotationen, `final` an Parametern, `throws …` und `<T>` vor
+  dem Rückgabetyp stehen nicht in der Signatur; varargs `String...`
+- **Anonyme Klassen:** jede Methode ist eine eigene Funktion `<anonymous:Zeile>.run` mit der
+  umgebenden als äußerer; in der Anweisung bleibt `new Runnable() {…}`, ein Doppelklick führt hin.
+  In den Datentypen steht kein Kasten für sie.
+- Anweisungen: `if`, `while`, `do`, `for` (auch `for (T x : xs)`), `switch` mit `:` (Durchfallen)
+  und mit `->` (ohne), ein `switch`-Ausdruck auf oberster Ebene eines `return`, einer Zuweisung oder
+  Deklaration (`yield wert` im Block eines Arms wird `return wert` bzw. `x = wert`),
+  `try`/`catch`/`finally`, `try (Ressourcen)` mit diesem Kopf, `synchronized (…)`, Lambdas mit
+  Block-Rumpf (`<lambda:Zeile>`), lokale Klassen
+- **Marken:** `aussen: for …` gehört der Schleife; `break aussen` führt hinter sie, `continue aussen`
+  an ihren Kopf — auch durch ein `finally`. Im Struktogramm trägt der Kopf `aussen:`. (Ebenso in
+  JavaScript.)
+- Ohne Präprozessor: keine `#if`-Diagramme. Ein Maven-Ordner `target` neben einer `pom.xml` wird
+  übergangen. Beispiel: `beispiele/Lager.java`.
+
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
 Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
@@ -238,7 +264,9 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
     Liste gilt der spätere Eintrag; `includePfade` wie `-I` (relativ zum Ordner),
   - `abschnitte`: je Ordner (`"ordner": "firmware/Slave"`) eigene Definitionen und Include-Pfade,
   - `uebergehen`: Ordnermuster, die nicht gelesen werden (`old`, `firmware/bak*`, `**/test`).
-  Immer übergangen werden Ordner, die mit `.` beginnen, und `out`, `build`, `node_modules`.
+  Immer übergangen werden Ordner, die mit `.` beginnen, und `out`, `build`, `node_modules`, `bin`,
+  `obj`; neben ihrem Kennzeichen auch die Ordner eines Werkzeugs: Unity (`Library`, `Temp`, `Logs`,
+  `UserSettings` neben `ProjectSettings/ProjectVersion.txt`), Maven (`target` neben `pom.xml`).
   Project > Edit project file… bearbeitet sie; gibt es noch keine, steht ein Vorschlag da,
   `uebergehen` aus der `.gitignore` des Ordners. Was nicht passt, wird nicht gespeichert.
   Project > Show project messages nennt übergangene Ordner und Köpfe, die sich nicht finden.
@@ -624,8 +652,7 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   `.js`-Datei gibt Meldungen. `import` wird im Projekt nicht aufgelöst (Aufrufe über Dateien am
   Namen). Methoden in Objekten tragen keinen Bereich: zwei `messageFont()` in zwei Objekten derselben
   Datei sind mehrdeutig (Meldung). Eine Klasse als Ausdruck (`const A = class {…}`) und ein statischer
-  Block einer Klasse stehen nicht im Diagramm (Hinweis beim Block). `break marke`/`continue marke`
-  verlassen im Ablauf die innerste Schleife (Hinweis). Rückgabetypen, Vorgabewerte, Dekoratoren und
+  Block einer Klasse stehen nicht im Diagramm (Hinweis beim Block). Rückgabetypen, Vorgabewerte, Dekoratoren und
   Typ-Parameter stehen nicht im Diagramm. Ein Regex-Literal in einer Anweisung kann wie ein Aufruf
   aussehen (`/f(x)/` nennt `f`).
 - **C#:** „Show #if variants“ und „Frame #if regions“ gelten noch nicht (Hinweis, es wird
@@ -634,6 +661,12 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   nicht im Diagramm. Ein `switch`-Ausdruck tiefer in einem Ausdruck bleibt Text; `goto case` wird im
   Ablauf nicht verfolgt (Hinweis). Mit „All #if branches“ zerfällt Code, dessen Zweige ungleich
   geklammert sind.
+- **Java:** `import` wird im Projekt nicht aufgelöst (Aufrufe über Dateien am Namen). Überladene
+  Methoden sind mehrdeutig wie in C++ und C#. Annotationen, Typ-Parameter, `throws` stehen nicht im
+  Diagramm; ein Methodenaufruf über eine Methodenreferenz (`X::y`) ist Text. Ein `switch`-Ausdruck
+  mit `:` statt `->` und einer tiefer in einem Ausdruck bleibt Text. Die Felder einer anonymen Klasse
+  stehen in keinem Diagramm. In der Entscheidungstabelle verlässt ein `break marke` außerhalb von
+  Schleifen den `switch` (Hinweis).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

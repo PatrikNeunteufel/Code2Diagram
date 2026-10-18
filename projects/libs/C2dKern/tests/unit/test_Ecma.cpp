@@ -189,7 +189,7 @@ function verbinde(knopf) {
 }
 )js");
         const auto& k = funktion(e, "f").rumpf->kinder;
-        REQUIRE(k.size() == 8);
+        REQUIRE(k.size() == 7);
         CHECK(baum(*k[0]) == "EACH:const x of xs[IF:x[CNT]]");
         CHECK(baum(*k[1]) == "EACH:const k in o[B]");
         CHECK(k[2]->init == "let i = 0");
@@ -199,9 +199,48 @@ function verbinde(knopf) {
         CHECK_FALSE(k[4]->ohneDurchfall);
         CHECK(baum(*k[5]) == "TRY[B[E:c()]; EXC[B[E:d()]]; FIN[B[E:e()]]]");
         CHECK(k[5]->kinder[1]->kopf == "catch");
-        CHECK(baum(*k[6]) == "LBL:aussen");
-        REQUIRE(e.meldungen.size() == 1);
-        CHECK(e.meldungen[0].text == "break aussen: shown as a break of the innermost loop or switch");
+        // die Marke gehoert der Schleife, break nennt sie (Entscheid H2)
+        CHECK(baum(*k[6]) == "WH:true[B[BRK:aussen]]");
+        CHECK(k[6]->marke == "aussen");
+        CHECK(e.meldungen.empty());
+    }
+
+    TEST_CASE("break marke und continue marke: an die markierte Schleife, auch durch finally")
+    {
+        const sprache::Ergebnis e = js(R"js(function f(zeilen) {
+  aussen: for (const z of zeilen) {
+    for (const x of z) {
+      if (x < 0) continue aussen
+      try { if (x == 0) break aussen } finally { zu() }
+      tu(x)
+    }
+  }
+  fertig()
+}
+)js");
+        CHECK(e.meldungen.empty());
+        const diagramm::Flussdiagramm d = diagramm::flussVon(funktion(e, "f"));
+        const auto id = [&](std::string_view text) {
+            for (std::size_t i = 0; i < d.knoten().size(); ++i)
+                if (!d.knoten()[i].zeilen.empty() && d.knoten()[i].zeilen.front() == text) return i;
+            FAIL("no node " << text);
+            return std::size_t{0};
+        };
+        const auto kante = [&](std::size_t von, std::size_t nach, std::string_view text) {
+            return std::any_of(d.kanten().begin(), d.kanten().end(), [&](const diagramm::Kante& k) {
+                return k.von == von && k.nach == nach && k.beschriftung == text;
+            });
+        };
+        // continue aussen: an den Kopf der aeusseren Schleife, nicht der inneren
+        CHECK(kante(id("x < 0"), id("const z of zeilen"), "yes"));
+        CHECK_FALSE(kante(id("x < 0"), id("const x of z"), "yes"));
+        // break aussen: durch finally, dann hinter die aeussere Schleife
+        CHECK(kante(id("x == 0"), id("zu()"), "yes"));
+        CHECK(kante(id("zu()"), id("fertig()"), "break aussen"));
+        // im Struktogramm: der Kopf traegt die Marke, der Aussprung nennt sie
+        const diagramm::Struktogramm s = diagramm::struktogrammVon(funktion(e, "f"));
+        REQUIRE_FALSE(s.bloecke.empty());
+        CHECK(s.bloecke.front().text == "aussen: for (const z of zeilen)");
     }
 
     TEST_CASE("TypeScript: Klassen mit Sichtbarkeit, interface, type, enum, implements, Felder aus dem Konstruktor")

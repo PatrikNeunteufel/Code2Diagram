@@ -796,3 +796,30 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=types:Beispiel::Lagerhaltung::Lager`
 - [ ] **X6 Unity-Projekt:** File > Open folder… `../Fundgrube`: im Baum fehlen `Library`, `Logs`, `UserSettings`;
       Project-Meldungen nennen sie `folder skipped (made by Unity)`.
+
+## Y. Java
+
+- [ ] **Y0 Vorbereiten:** `beispiele/Lager.java` öffnen, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/Lager.java` `aktion: ansicht_waehlen name=preview`
+- [ ] **Y1 Gelesen:** Statuszeile `Lager.java, read as Java` ohne Meldungen. Diagram bietet unter anderem
+      `Zustand::VOLL.nimmtAuf()`, `Lager::<static:44>()`, `Lager::suche()`, `Lager::lade()`,
+      `Lager::lade::<anonymous:108>.run()`, `Lager::lade::<lambda:114>()`, `Data types (4)` — kein
+      `#if configuration`. File > Open source file… bietet `Java files (*.java)`.
+- [ ] **Y2 Marken:** `suche()`: `fach == null` → `yes` führt an den Kopf der **äusseren** Schleife
+      (`String[] regal : regale`), `fund = fach` hinter **beide** Schleifen zu `return fund`. Als Nassi-Shneiderman:
+      Kopf `aussen: for (String[] regal : regale)`, Aussprünge `continue aussen` und `break aussen`.
+      `aktion: diagramm_waehlen name=Lager::suche` `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **Y3 switch-Ausdruck:** `zustand()` als Ablauf: Raute `gesamt` mit Kanten `0`, `1, 2, 3`, `default`; unter
+      `1, 2, 3` die Raute `gesamt < grenze` mit `return Zustand.TEILWEISE` / `return Zustand.VOLL` (aus `yield`).
+      `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=Lager::zustand`
+- [ ] **Y4 try mit Ressourcen, anonyme Klasse:** `lade()`: Raute `try (BufferedReader leser = …`, eine Kante
+      `catch (NumberFormatException fehler)`, `finally` auf allen Wegen, danach `throw` ins Ende. Doppelklick auf
+      den Knoten mit `new Runnable() {…}` bietet `<anonymous:108>.run` und `<lambda:114>`; die Wahl zeigt deren Ablauf,
+      Back zurück.
+      `aktion: diagramm_waehlen name=Lager::lade`
+- [ ] **Y5 Datentypen:** Typ `Lager`: vier Felder mit Initialisierer, Methoden mit Rückgabetyp; darüber `«interface»
+      Ablage` mit gestrichelter Kante (`lege` kursiv). Typ `Zustand` («enumeration»): `LEER ("leer")` …, `- String text`,
+      Konstruktor und `nimmtAuf()`. Typ `Posten`: zwei Felder aus den Komponenten.
+      `aktion: diagramm_waehlen name=types:Lager`
+- [ ] **Y6 Maven:** ein Ordner mit `pom.xml` und `target/` als Projekt öffnen: `target` fehlt im Baum, Project-Meldung
+      `folder skipped (made by Maven)`; ein `target/` ohne `pom.xml` daneben wird gelesen.

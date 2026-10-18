@@ -250,6 +250,9 @@ private:
             }
             case AnweisungArt::Auswahl: return auswahl(a, std::move(wege));
             case AnweisungArt::Abbruch:
+                // ausserhalb von Schleifen (die nicht zerlegt werden) verlaesst ein break den switch;
+                // eines mit Marke kann weiter hinaus gehen (ein markierter Block) — selten, aber gesagt
+                if (!a.text.empty()) hinweis("break " + a.text + ": shown as leaving the switch");
                 for (Weg& w : wege) w.raus = true;
                 return wege;
             case AnweisungArt::Sprung:

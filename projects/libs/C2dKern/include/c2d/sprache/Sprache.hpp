@@ -178,4 +178,12 @@ public:
 /// oberster Ebene als `<Main>$`. `#if` wird ausgewertet wie in der C-Familie (ohne Varianten).
 [[nodiscard]] const Sprache& csharp();
 
+/// Java 21 (`.java`), gelesen vom Leser von C# als Dialekt: class, interface (auch `@interface`),
+/// enum mit Rumpf, record; Felder, Methoden, Konstruktoren, Initialisierungsbloecke
+/// (`<static:Zeile>`, `<init:Zeile>`), anonyme Klassen (je Methode `<anonymous:Zeile>.name`),
+/// Lambdas mit Block-Rumpf; if, while, do, for (auch `for (T x : xs)`), switch (auch mit `->` und
+/// als Ausdruck), try/catch/finally (auch mit Ressourcen), synchronized, Marken an Schleifen
+/// (`break marke`). Annotationen, `throws`, `package` werden ueberlesen. Kein Praeprozessor.
+[[nodiscard]] const Sprache& java();
+
 }  // namespace c2d::sprache

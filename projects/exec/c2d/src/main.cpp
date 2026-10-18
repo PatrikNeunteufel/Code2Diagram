@@ -87,11 +87,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -288,20 +286,18 @@ int main(int argc, char* argv[])
         p = c2d::projekt::liesOrdner(alsWeg(ziel), lesen);
     else
     {
-        std::ifstream strom(alsWeg(ziel), std::ios::binary);
-        if (!strom)
+        std::string inhalt;
+        if (!c2d::projekt::liesDatei(alsWeg(ziel), inhalt))
         {
             std::cerr << "c2d: cannot read " << ziel << '\n';
             return 2;
         }
-        std::ostringstream inhalt;
-        inhalt << strom.rdbuf();
         // die Einheit heisst wie die Datei, ohne den Weg dorthin
         const std::size_t strich = ziel.find_last_of("/\\");
         const std::string name = strich == std::string::npos ? ziel : ziel.substr(strich + 1);
         if (c2d::sprache::spracheFuer(name) == nullptr)
             std::cerr << "c2d: no reader for this file type - read as " << c2d::sprache::c().name() << '\n';
-        p = c2d::projekt::liesText(inhalt.str(), name, lesen);
+        p = c2d::projekt::liesText(inhalt, name, lesen);
     }
 
     // Meldungen: je Datei mit Zeile und Spalte, dann die des Projekts

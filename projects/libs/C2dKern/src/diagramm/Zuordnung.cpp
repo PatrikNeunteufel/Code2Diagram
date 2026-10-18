@@ -66,7 +66,10 @@ std::optional<Lieferung> lieferung(const Fall& f, bool ohneDurchfall)
     if (s.size() == 1 && s[0]->art == AnweisungArt::Ruecksprung && !s[0]->text.empty())
         return Lieferung{true, {{"return", s[0]->text}}};
     const std::size_t zuweisungen = ohneDurchfall ? s.size() : s.size() - (s.empty() ? 0 : 1);
-    if (ohneDurchfall ? s.empty() : (s.size() < 2 || s.back()->art != AnweisungArt::Abbruch)) return std::nullopt;
+    // ein break mit Marke verlaesst mehr als den switch: dann ist es keine Zuordnung
+    if (ohneDurchfall ? s.empty()
+                      : (s.size() < 2 || s.back()->art != AnweisungArt::Abbruch || !s.back()->text.empty()))
+        return std::nullopt;
     Lieferung l;
     for (std::size_t i = 0; i < zuweisungen; ++i)
     {

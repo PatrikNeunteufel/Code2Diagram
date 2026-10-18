@@ -1,22 +1,30 @@
 /**
  * @file CSharp.cpp
- * @brief C#: die Sprachtabelle und der Leser in rekursivem Abstieg
+ * @brief C# und Java: die Sprachtabellen und der Leser in rekursivem Abstieg
  *
- * Bedingte Uebersetzung (`#if`, `#define`) wird vorher ausgewertet wie in der C-Familie
+ * C#: bedingte Uebersetzung (`#if`, `#define`) wird vorher ausgewertet wie in der C-Familie
  * (sprache/Bedingt.hpp); die uebrigen Direktiven (`#region`, `#pragma`, `#nullable`) uebergeht
  * der Leser. Er versteht die Gliederung: Namensraeume, Typen (class, struct, record,
  * interface, enum, delegate) mit Feldern, Eigenschaften, Methoden, Konstruktoren, Operatoren,
  * und die Anweisungen der Ruempfe; Ausdruecke bleiben Text — ausser einem Lambda mit
  * Block-Rumpf (eine eigene Funktion, wie in JavaScript) und einem `switch`-Ausdruck auf
  * oberster Ebene von return, Zuweisung oder Deklaration (eine Auswahl ohne Durchfallen).
+ *
+ * Java (Dialekt::java, Entscheide G1, H1–H4): dieselbe Gliederung ohne Namensraeume,
+ * Eigenschaften, Operatoren; dazu anonyme Klassen (je Methode eine Funktion
+ * `<anonymous:Zeile>.name`), Initialisierungsbloecke (`<static:Zeile>`, `<init:Zeile>`), enum mit
+ * Rumpf, Marken an Schleifen. Annotationen, `throws` und `package` werden ueberlesen.
  */
-#include "c2d/sprache/Sprache.hpp"
+#include "CSharp.hpp"
 
 #include "../Bedingt.hpp"
 #include "../Leser.hpp"
 #include "../Logik.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,8 +60,6 @@ constexpr std::string_view kOperatoren[] = {
     "^",    "<",   ">",   "=",   "@",
 };
 
-constexpr std::string_view kEndungen[] = {"cs"};
-
 constexpr lexer::Sprachtabelle kTabelle{
     .schluesselwoerter = kSchluesselwoerter,
     .operatoren = kOperatoren,
@@ -64,6 +70,36 @@ constexpr lexer::Sprachtabelle kTabelle{
     .ziffernTrenner = '_',
     .dreifachZeichenketten = true,
     .csharpZeichenketten = true,
+};
+
+// Die reservierten Woerter von Java 21 (samt den Literalen); die kontextabhaengigen (var, yield,
+// record, sealed, permits, when …) sind Namen und werden an ihrer Stelle erkannt.
+constexpr std::string_view kSchluesselwoerterJava[] = {
+    "abstract",  "assert",     "boolean",  "break",     "byte",     "case",       "catch",     "char",
+    "class",     "const",      "continue", "default",   "do",       "double",     "else",      "enum",
+    "extends",   "false",      "final",    "finally",   "float",    "for",        "goto",      "if",
+    "implements", "import",    "instanceof", "int",     "interface", "long",      "native",    "new",
+    "null",      "package",    "private",  "protected", "public",   "return",     "short",     "static",
+    "strictfp",  "super",      "switch",   "synchronized", "this",  "throw",      "throws",    "transient",
+    "true",      "try",        "void",     "volatile",  "while",
+};
+
+constexpr std::string_view kOperatorenJava[] = {
+    ">>>=", ">>=", "<<=", ">>>", "...", "->", "::", "++", "--", "&&", "||", "==", "!=", "<=", ">=", "+=",
+    "-=",   "*=",  "/=",  "%=",  "&=",  "|=", "^=", "<<", "{",  "}",  "[",  "]",  "(",  ")",  ";",  ",",
+    ".",    ":",   "?",   "~",   "!",   "+",  "-",  "*",  "/",  "%",  "&",  "|",  "^",  "<",  ">",  "=",
+    "@",
+};
+
+constexpr lexer::Sprachtabelle kTabelleJava{
+    .schluesselwoerter = kSchluesselwoerterJava,
+    .operatoren = kOperatorenJava,
+    .zeilenKommentar = "//",
+    .blockKommentarAuf = "/*",
+    .blockKommentarZu = "*/",
+    .ziffernTrenner = '_',
+    .dreifachZeichenketten = true,  // Textbloecke """…"""
+    .namensZeichen = "$",           // erlaubt, und erzeugter Code nutzt es (javacc: jj_3R_12$)
 };
 
 constexpr std::string_view kZuweisungen[] = {"=",  "+=", "-=", "*=",  "/=",  "%=",  "&=",
@@ -83,10 +119,16 @@ constexpr std::string_view kModifikatoren[] = {
     "async",    "required", "file",     "implicit", "explicit", "ref",      "fixed",
 };
 
+/// Java: Woerter vor einer Deklaration (`sealed` ist weich, `non-sealed` drei Token).
+constexpr std::string_view kModifikatorenJava[] = {
+    "public", "private",      "protected", "static",   "abstract", "final", "native",
+    "synchronized", "transient", "volatile", "strictfp", "default",  "sealed",
+};
+
 /// Das eingebaute Typwort (`int`, `string` …): es kann einen Typ beginnen.
 constexpr std::string_view kTypWoerter[] = {"bool",   "byte",   "char",  "decimal", "double", "float", "int",
                                             "long",   "object", "sbyte", "short",   "string", "uint",  "ulong",
-                                            "ushort", "void"};
+                                            "ushort", "void",   "boolean"};
 
 /// Der Name, unter dem der Compiler die Anweisungen auf oberster Ebene fuehrt (C# 9).
 constexpr std::string_view kOberste = "<Main>$";
@@ -106,7 +148,8 @@ std::string_view ohneAt(std::string_view name)
 class CsLeser final : public Leser
 {
 public:
-    CsLeser(std::string_view text, Ergebnis& aus) : Leser(text, kTabelle, aus)
+    CsLeser(std::string_view text, Ergebnis& aus, csjava::Dialekt dialekt)
+        : Leser(text, csjava::tabelle(dialekt), aus), m_java(dialekt.java)
     {
         // die Direktiven, die nach dem Auswerten bleiben (#region, #pragma, #nullable …): nicht gelesen
         std::erase_if(m_t, [](const Token& t) { return t.art == TokenArt::Direktive; });
@@ -117,7 +160,7 @@ public:
         const Ort oben;
         std::vector<AnweisungPtr> code;
         liesFolgeVonGliedern(oben, code, false);
-        ordneBasenZu();
+        if (!m_java) ordneBasenZu();  // Java nennt Schnittstellen selbst (implements)
         // Anweisungen auf oberster Ebene (C# 9): die Methode, die der Compiler daraus macht
         if (code.empty()) return;
         Funktion f;
@@ -163,6 +206,11 @@ private:
         std::size_t typ = kKeiner;   ///< in einem Typ: sein Platz unter Einheit::typen
         std::string typName;         ///< sein Name ohne Bereich (Konstruktor)
         std::string funktion;        ///< der volle Name der Funktion, in der gelesen wird
+        /// Java, im Rumpf einer anonymen Klasse (oder einer enum-Konstante): ihre Methoden heissen
+        /// `<vorsatz>.name` im Bereich `anonymBereich`, mit `anonymAussen` als aeusserer Funktion.
+        std::string anonym;
+        std::string anonymBereich;
+        std::string anonymAussen;
     };
 
     // --- Token -------------------------------------------------------------------------
@@ -237,10 +285,12 @@ private:
         }
         for (;;)
         {
-            if (tok(j).istOp("?") || tok(j).istOp("*"))
+            if (!m_java && (tok(j).istOp("?") || tok(j).istOp("*")))  // C#: Nullable, Zeiger
                 ++j;
             else if (tok(j).istOp("[") && (tok(j + 1).istOp("]") || tok(j + 1).istOp(",")))
                 j = nachKlammer(j);
+            else if (m_java && tok(j).istOp("..."))  // Java: varargs `String... namen`
+                ++j;
             else
                 break;
         }
@@ -263,9 +313,24 @@ private:
         return b;
     }
 
-    void ueberAttribute()
+    /// C# `[Attribut]`, Java `@Annotation`, `@a.b.C(…)` (nicht `@interface`): ueberlesen.
+    void ueberAttribute() { m_p = nachAttributen(m_p); }
+
+    [[nodiscard]] std::size_t nachAttributen(std::size_t i) const
     {
-        while (akt().istOp("[")) m_p = ueberKlammer(m_p);
+        if (!m_java)
+        {
+            while (tok(i).istOp("[")) i = nachKlammer(i);
+            return i;
+        }
+        while (tok(i).istOp("@") && !tok(i + 1).istWort("interface"))
+        {
+            ++i;
+            while (namenhaft(i) && tok(i + 1).istOp(".") && namenhaft(i + 2)) i += 2;
+            if (namenhaft(i)) ++i;
+            if (tok(i).istOp("(")) i = nachKlammer(i);
+        }
+        return i;
     }
 
     /// Die Stelle der ersten Zuweisung `=` in [a, b) auf oberster Ebene; b = keine.
@@ -286,10 +351,19 @@ private:
     /// Ein Parameter `[attr] [ref|out|in|params|this] Typ name [= vorgabe]`: Typ und Name (ohne Vorgabe).
     [[nodiscard]] Parameter parameter(const Bereich& s) const
     {
-        std::size_t a = s.first;
-        while (a < s.second && tok(a).istOp("[")) a = nachKlammer(a);
+        std::size_t a = std::min(nachAttributen(s.first), s.second);
+        if (m_java)
+            while (a < s.second && tok(a).istWort("final")) a = std::min(nachAttributen(a + 1), s.second);
         const std::size_t ende = gleichIn(a, s.second);
         Parameter p;
+        // Java in der Form von C: `String namen[]` — der Name vor den Klammern, sie gehoeren zum Typ
+        if (m_java && ende >= a + 4 && tok(ende - 1).istOp("]") && tok(ende - 2).istOp("[") &&
+            tok(ende - 3).art == TokenArt::Bezeichner)
+        {
+            p.typ = textVon(a, ende - 3) + "[]";
+            p.name = std::string(tok(ende - 3).text);
+            return p;
+        }
         if (ende > a + 1 && tok(ende - 1).art == TokenArt::Bezeichner)
         {
             p.typ = textVon(a, ende - 1);
@@ -342,6 +416,12 @@ private:
         {
             f.aussen = ort.funktion;
             f.bereich = ort.funktion;
+        }
+        else if (!ort.anonym.empty())  // Java: eine Methode einer anonymen Klasse (Entscheid H1)
+        {
+            f.name = ort.anonym + "." + f.name;
+            f.bereich = ort.anonymBereich;
+            f.aussen = ort.anonymAussen;
         }
         else
             f.bereich = ort.bereich;
@@ -398,11 +478,24 @@ private:
         std::size_t j = a;
         while (j < b && !amEnde(j))
         {
+            // Java: eine anonyme Klasse `new Typ(…) { … }` — ihre Methoden werden Funktionen (H1)
+            if (m_java && tok(j).istWort("new"))
+            {
+                const std::size_t typ = typEnde(j + 1);
+                if (typ > j + 1 && tok(typ).istOp("(") && tok(nachKlammer(typ)).istOp("{"))
+                {
+                    const std::size_t koerper = nachKlammer(typ);
+                    const std::size_t danach = liesAnonymeKlasse(koerper, anonymerName(tok(j), ort), ort, innere);
+                    ruempfe.emplace_back(koerper, danach);
+                    j = danach;
+                    continue;
+                }
+            }
             std::size_t anfang = j;
             std::size_t rumpf = kKeiner;
             std::size_t auf = kKeiner;
             std::size_t zu = kKeiner;
-            if (tok(j).istOp("=>") && tok(j + 1).istOp("{") && j > a)
+            if (tok(j).istOp(m_java ? "->" : "=>") && tok(j + 1).istOp("{") && j > a)
             {
                 rumpf = j + 1;
                 if (tok(j - 1).art == TokenArt::Bezeichner)
@@ -473,12 +566,16 @@ private:
             const std::size_t platz = neueFunktion(std::move(f), ort);
             innere.push_back(m_aus.einheit.funktionen[platz].vollerName());
             const std::size_t gemerkt = m_p;
+            std::vector<std::string> gemerktInnere = std::exchange(m_innere, {});  // die Anweisung draussen sammelt weiter
+            const std::string gemerktYield = std::exchange(m_yieldVorn, {});
             m_p = rumpf;
             AnweisungPtr r = liesBlock(innenVon(platz, ort));
             m_aus.einheit.funktionen[platz].rumpf = std::move(r);
             m_aus.einheit.funktionen[platz].bisZeile = m_letzteZeile;
             const std::size_t danach = m_p;
             m_p = gemerkt;
+            m_innere = std::move(gemerktInnere);
+            m_yieldVorn = gemerktYield;
             ruempfe.emplace_back(rumpf, danach);
             j = danach;
         }
@@ -498,6 +595,71 @@ private:
             s += m_t[i].text;
         }
         return s;
+    }
+
+    /// Der Vorsatz der Methoden einer anonymen Klasse, die bei `bei` beginnt: `<anonymous:Zeile>`,
+    /// zweimal in einer Zeile desselben Bereichs `<anonymous:Zeile:Spalte>`.
+    std::string anonymerName(const Token& bei, const Ort& ort)
+    {
+        const std::string bereich = ort.ebene == Ebene::Funktion ? ort.funktion : ort.bereich;
+        std::string name = "<anonymous:" + std::to_string(bei.ort.zeile) + ">";
+        if (!m_anonyme.insert(vollerName(bereich, name)).second)
+        {
+            name = "<anonymous:" + std::to_string(bei.ort.zeile) + ":" + std::to_string(bei.ort.spalte) + ">";
+            m_anonyme.insert(vollerName(bereich, name));
+        }
+        return name;
+    }
+
+    /// Java: der Rumpf einer anonymen Klasse (oder einer enum-Konstante) ab `auf` (die `{`). Ihre
+    /// Methoden werden Funktionen `<vorsatz>.name` (Entscheid H1), ihre vollen Namen kommen nach
+    /// `innere`; Felder und die Klasse selbst kommen in kein Diagramm. Liefert die Stelle hinter `}`;
+    /// m_p bleibt.
+    std::size_t liesAnonymeKlasse(std::size_t auf, const std::string& vorsatz, const Ort& ort,
+                                  std::vector<std::string>& innere)
+    {
+        Ort innen;
+        innen.ebene = Ebene::Typ;
+        innen.typ = m_aus.einheit.typen.size();
+        innen.funktion = ort.funktion;
+        innen.anonym = vorsatz;
+        innen.anonymBereich = ort.ebene == Ebene::Funktion ? ort.funktion : ort.bereich;
+        innen.anonymAussen = ort.ebene == Ebene::Funktion ? ort.funktion : std::string();
+        innen.bereich = vollerName(innen.anonymBereich, vorsatz);  // fuer benannte Typen darin
+        Typ huelle;  // nur zum Lesen: liesMitglied legt Felder und Methoden in einen Typ
+        huelle.name = vorsatz;
+        m_aus.einheit.typen.push_back(std::move(huelle));
+        const std::size_t vorher = m_aus.einheit.funktionen.size();
+        const std::size_t gemerkt = m_p;
+        std::vector<std::string> gemerktInnere = std::exchange(m_innere, {});
+        const std::string gemerktYield = std::exchange(m_yieldVorn, {});
+        m_p = auf + 1;
+        std::vector<AnweisungPtr> code;  // bleibt leer: im Rumpf einer Klasse stehen keine Anweisungen
+        liesFolgeVonGliedern(innen, code, true);
+        if (!nimm("}")) melde(Schwere::Fehler, akt(), "'}' is missing");
+        const std::size_t danach = m_p;
+        m_p = gemerkt;
+        m_innere = std::move(gemerktInnere);
+        m_yieldVorn = gemerktYield;
+        m_aus.einheit.typen.erase(m_aus.einheit.typen.begin() + static_cast<std::ptrdiff_t>(innen.typ));
+        const std::string vorn = vorsatz + ".";
+        for (std::size_t i = vorher; i < m_aus.einheit.funktionen.size(); ++i)
+        {
+            const Funktion& f = m_aus.einheit.funktionen[i];
+            if (f.bereich == innen.anonymBereich && f.name.starts_with(vorn)) innere.push_back(f.vollerName());
+        }
+        return danach;
+    }
+
+    /// Java: `{ … }` bzw. `static { … }` in einer Klasse ab m_p (die `{`): eine Funktion
+    /// `<init:Zeile>` bzw. `<static:Zeile>` (Entscheid H3).
+    void liesInitialisierer(const Ort& ort, bool statisch)
+    {
+        Funktion f;
+        f.name = std::string(statisch ? "<static:" : "<init:") + std::to_string(akt().ort.zeile) + ">";
+        f.zeile = akt().ort.zeile;
+        const std::size_t platz = neueFunktion(std::move(f), ort);
+        liesRumpfVon(platz, ort, false);
     }
 
     // --- Glieder: Namensraum, Typen, Mitglieder ------------------------------------------------
@@ -523,6 +685,23 @@ private:
     void liesGlied(const Ort& ort, std::vector<AnweisungPtr>& code)
     {
         if (nimm(";")) return;
+        if (m_java && ort.ebene == Ebene::Namensraum && (akt().istWort("package") || akt().istWort("import")))
+        {
+            // package: ueberlesen (die Namen blieben sonst lang); import: eine Einbindung wie using
+            const bool einbinden = akt().istWort("import");
+            ++m_p;
+            if (einbinden && akt().istWort("static")) ++m_p;
+            const std::size_t e = suche(m_p, {";"});
+            if (einbinden) m_aus.einheit.einbindungen.push_back({textVon(m_p, e), false, tok(m_p).ort.zeile});
+            m_p = e;
+            nimm(";");
+            return;
+        }
+        if (m_java)
+        {
+            liesGliedJava(ort, code);
+            return;
+        }
         // global using / using static / using A = B;  (nicht: using (…) oder using var, die sind Anweisungen)
         const std::size_t vorUsing = istName(m_p, "global") && tok(m_p + 1).istWort("using") ? m_p + 1 : m_p;
         if (tok(vorUsing).istWort("using") && !tok(vorUsing + 1).istOp("(") && !istName(vorUsing + 1, "var") &&
@@ -609,6 +788,189 @@ private:
         if (code.size() > vorher) code[vorher]->innere = std::move(m_innere);
     }
 
+    /// Java: ein Glied — ein Typ, ein Initialisierungsblock, ein Feld, eine Methode, ein Konstruktor;
+    /// davor Annotationen und Modifikatoren in beliebiger Folge, vor dem Rueckgabetyp `<T>`.
+    void liesGliedJava(const Ort& ort, std::vector<AnweisungPtr>& code)
+    {
+        Sichtbarkeit sicht = Sichtbarkeit::Keine;
+        bool statisch = false;
+        bool abstrakt = false;
+        for (;;)
+        {
+            ueberAttribute();
+            if (namenhaft(m_p) && enthaelt(kModifikatorenJava, tok(m_p).text) &&
+                !(tok(m_p).art == TokenArt::Bezeichner &&
+                  (tok(m_p + 1).istOp("(") || tok(m_p + 1).istOp("=") || tok(m_p + 1).istOp(";"))))
+            {
+                const std::string_view w = tok(m_p).text;
+                if (w == "public") sicht = Sichtbarkeit::Oeffentlich;
+                if (w == "protected") sicht = Sichtbarkeit::Geschuetzt;
+                if (w == "private") sicht = Sichtbarkeit::Privat;
+                statisch = statisch || w == "static";
+                abstrakt = abstrakt || w == "abstract";
+                ++m_p;
+                continue;
+            }
+            if (istName(m_p, "non") && tok(m_p + 1).istOp("-") && istName(m_p + 2, "sealed"))
+            {
+                m_p += 3;
+                continue;
+            }
+            break;
+        }
+        const bool typWort = akt().istWort("class") || akt().istWort("interface") || akt().istWort("enum") ||
+                             (akt().istOp("@") && tok(m_p + 1).istWort("interface")) ||
+                             (istName(m_p, "record") && tok(m_p + 1).art == TokenArt::Bezeichner);
+        if (typWort)
+        {
+            liesTyp(ort, code);
+            return;
+        }
+        if (ort.ebene != Ebene::Typ)
+        {
+            // Java kennt keine Anweisungen ausserhalb einer Klasse
+            melde(Schwere::Fehler, akt(), "unexpected '" + std::string(akt().text) + "' outside a class");
+            const std::size_t davor = m_p;
+            m_p = suche(m_p, {";"});
+            nimm(";");
+            if (m_p == davor) ++m_p;
+            return;
+        }
+        if (akt().istOp("{"))
+        {
+            liesInitialisierer(ort, statisch);
+            return;
+        }
+        if (akt().istOp("<")) m_p = spitzeEnde(m_p);  // <T extends X> T f(…)
+        ueberAttribute();
+        const Token& bei = akt();
+        const bool schnittstelle = m_aus.einheit.typen[ort.typ].art == TypArt::Schnittstelle;
+        if (akt().art == TokenArt::Bezeichner && akt().text == ort.typName && !ort.typName.empty())
+        {
+            if (tok(m_p + 1).istOp("("))
+            {
+                ++m_p;
+                liesMethode(ort, ort.typName, {}, sicht, statisch, false, false, bei);
+                return;
+            }
+            if (tok(m_p + 1).istOp("{"))
+            {
+                // der kompakte Konstruktor eines record: `Punkt { … }`, mit den Komponenten
+                ++m_p;
+                Funktion f;
+                f.name = ort.typName;
+                f.zeile = bei.ort.zeile;
+                for (const Methode& m : m_aus.einheit.typen[ort.typ].methoden)
+                    if (m.name == ort.typName) f.parameter = m.parameter;
+                const std::size_t platz = neueFunktion(std::move(f), ort);
+                liesRumpfVon(platz, ort, false);
+                return;
+            }
+        }
+        const std::size_t typAnfang = m_p;
+        const std::size_t typNach = typEnde(m_p);
+        if (typNach == m_p || tok(typNach).art != TokenArt::Bezeichner)
+        {
+            melde(Schwere::Fehler, akt(), "unexpected '" + std::string(akt().text) + "'");
+            const std::size_t davor = m_p;
+            m_p = suche(m_p, {";"});
+            nimm(";");
+            if (m_p == davor) ++m_p;
+            return;
+        }
+        const std::string typ = textVon(typAnfang, typNach);
+        m_p = typNach;
+        if (tok(m_p + 1).istOp("("))
+        {
+            const std::string name(tok(m_p++).text);
+            liesMethode(ort, name, typ, sicht, statisch, abstrakt || schnittstelle, abstrakt, bei);
+            return;
+        }
+        // Felder: Typ a = 1, b[] = {…};
+        const std::size_t e = suche(m_p, {";"});
+        for (const Bereich& s : teileSpitz(typNach, e))
+        {
+            Feld f;
+            f.typ = typ;
+            const std::size_t gleich = gleichIn(s.first, s.second);
+            f.name = textVon(s.first, gleich);
+            if (gleich < s.second) f.zusatz = "= " + funktionsText(gleich + 1, s.second, ort);
+            f.sicht = sicht;
+            f.zeile = tok(s.first).ort.zeile;
+            m_aus.einheit.typen[ort.typ].felder.push_back(std::move(f));
+        }
+        m_p = e;
+        nimm(";");
+    }
+
+    /// Java, nach dem Namen eines Typs: `extends A`, `implements B, C`, `permits D` bis zur `{`.
+    /// extends ist eine Basis (auch die Schnittstellen, die eine Schnittstelle erweitert),
+    /// implements eine Realisierung; permits wird ueberlesen.
+    void liesKopfJava(Typ& typ)
+    {
+        while (!amEnde(m_p) && !akt().istOp("{") && !akt().istOp(";"))
+        {
+            const bool basis = akt().istWort("extends");
+            const bool realisiert = akt().istWort("implements");
+            if (!basis && !realisiert && !istName(m_p, "permits"))
+            {
+                melde(Schwere::Fehler, akt(), "unexpected '" + std::string(akt().text) + "'");
+                ++m_p;
+                continue;
+            }
+            ++m_p;
+            std::size_t e = m_p;
+            while (!amEnde(e) && !tok(e).istOp("{") && !tok(e).istWort("extends") && !tok(e).istWort("implements") &&
+                   !istName(e, "permits"))
+                e = tok(e).istOp("<") ? std::max(spitzeEnde(e), e + 1) : e + 1;
+            for (const Bereich& s : teileSpitz(m_p, e))
+            {
+                if (basis) typ.basen.push_back(textVon(s.first, s.second));
+                if (realisiert) typ.realisiert.push_back(textVon(s.first, s.second));
+            }
+            m_p = e;
+        }
+    }
+
+    /// Java: die Konstanten eines enum ab m_p (hinter der `{`) bis `;` oder `}` — `ROT`, `GRUEN(2)`,
+    /// `BLAU { … }` (ein Rumpf wie eine anonyme Klasse: Methoden `BLAU.name`). Dahinter, nach `;`,
+    /// die uebrigen Glieder.
+    void liesKonstantenJava(const Ort& innen, std::size_t platz, std::vector<AnweisungPtr>& code)
+    {
+        while (!amEnde(m_p) && !akt().istOp("}"))
+        {
+            ueberAttribute();
+            if (nimm(";"))
+            {
+                liesFolgeVonGliedern(innen, code, true);
+                return;
+            }
+            if (nimm(",")) continue;
+            if (akt().art != TokenArt::Bezeichner)
+            {
+                melde(Schwere::Fehler, akt(), "unexpected '" + std::string(akt().text) + "'");
+                ++m_p;
+                continue;
+            }
+            Feld f;
+            f.name = std::string(akt().text);
+            f.zeile = akt().ort.zeile;
+            ++m_p;
+            if (akt().istOp("("))
+            {
+                const std::size_t zu = ueberKlammer(m_p);
+                f.zusatz = funktionsText(m_p, zu, innen);  // Argumente als Wert: `(5000)`
+                m_p = zu;
+            }
+            if (akt().istOp("{"))
+            {
+                std::vector<std::string> methoden;
+                m_p = liesAnonymeKlasse(m_p, f.name, innen, methoden);
+            }
+            m_aus.einheit.typen[platz].felder.push_back(std::move(f));
+        }
+    }
+
     /// class, struct, interface, enum, record [class|struct]: ein Typ, mit seinen Gliedern.
     void liesTyp(const Ort& ort, std::vector<AnweisungPtr>& code)
     {
@@ -616,7 +978,17 @@ private:
         Typ typ;
         typ.zeile = t.ort.zeile;
         bool istStruct = false;
-        if (istName(m_p, "record"))
+        if (m_java && akt().istOp("@"))  // @interface: ein Annotationstyp
+        {
+            m_p += 2;
+            typ.art = TypArt::Schnittstelle;
+        }
+        else if (m_java && istName(m_p, "record"))  // die Komponenten sind Felder (festgelegt)
+        {
+            ++m_p;
+            typ.art = TypArt::Struktur;
+        }
+        else if (istName(m_p, "record"))
         {
             ++m_p;
             typ.art = TypArt::Klasse;
@@ -639,10 +1011,11 @@ private:
         }
         typ.name = std::string(ohneAt(tok(m_p++).text));
         typ.bereich = ort.ebene == Ebene::Funktion ? ort.funktion : ort.bereich;
-        // `A` und `A<T>` sind verschiedene Typen: ihre Glieder tragen die Typ-Parameter im Bereich
+        // `A` und `A<T>` sind in C# verschiedene Typen: ihre Glieder tragen die Typ-Parameter im
+        // Bereich; Java erlaubt beide nicht nebeneinander — dort waeren sie nur laenger
         const std::size_t parameterAnfang = m_p;
         m_p = spitzeEnde(m_p);
-        const std::string typParameter = textVon(parameterAnfang, m_p);
+        const std::string typParameter = m_java ? std::string() : textVon(parameterAnfang, m_p);
         // record Punkt(int X, int Y): ein Konstruktor mit Eigenschaften
         std::vector<Parameter> primaer;
         const bool mitPrimaer = akt().istOp("(");
@@ -652,8 +1025,9 @@ private:
             primaer = parameterIn(m_p, zu);
             m_p = zu;
         }
+        if (m_java) liesKopfJava(typ);
         // : Basis, Schnittstelle …  — wo der erste eine Klasse ist, sind die uebrigen Schnittstellen
-        if (nimm(":"))
+        if (!m_java && nimm(":"))
         {
             std::size_t e = m_p;
             while (!amEnde(e) && !tok(e).istOp("{") && !tok(e).istOp(";") && !istName(e, "where"))
@@ -692,7 +1066,7 @@ private:
             Feld f;
             f.typ = p.typ;
             f.name = p.name;
-            f.zusatz = "{ get; init; }";
+            if (!m_java) f.zusatz = "{ get; init; }";
             f.zeile = typ.zeile;
             f.sicht = Sichtbarkeit::Oeffentlich;
             typ.felder.push_back(std::move(f));
@@ -721,7 +1095,9 @@ private:
             melde(Schwere::Fehler, akt(), "'{' expected");
             return;
         }
-        if (aufzaehlung)
+        if (aufzaehlung && m_java)
+            liesKonstantenJava(innen, platz, code);
+        else if (aufzaehlung)
         {
             const std::size_t zu = nachKlammer(m_p - 1);
             const std::size_t innenEnde = tok(zu - 1).istOp("}") ? zu - 1 : zu;
@@ -969,6 +1345,15 @@ private:
         const std::size_t zu = ueberKlammer(m_p);
         m.parameter = parameterIn(m_p, zu);
         m_p = zu;
+        if (m_java)
+        {
+            // `int f()[]` (Form von C), `throws A, B`, im Annotationstyp `default wert`: nicht in der Signatur
+            while (akt().istOp("[") && tok(m_p + 1).istOp("]")) m_p += 2;
+            if (akt().istWort("throws"))
+                while (!amEnde(m_p) && !akt().istOp("{") && !akt().istOp(";"))
+                    m_p = tok(m_p).istOp("<") ? std::max(spitzeEnde(m_p), m_p + 1) : m_p + 1;
+            if (akt().istWort("default")) m_p = suche(m_p, {";"});  // auch `default {"a", "b"}`
+        }
         // : base(…) / : this(…) eines Konstruktors, where-Einschraenkungen
         if (akt().istOp(":"))
         {
@@ -1067,6 +1452,30 @@ private:
         return nach > i && tok(nach).art == TokenArt::Bezeichner && (tok(nach + 1).istOp("=") || tok(nach + 1).istOp(";"));
     }
 
+    /// i auf `(` eines for: Java `for (T x : xs)` — ein `:` ausserhalb von Klammern, kein `;`.
+    [[nodiscard]] bool istJedes(std::size_t i) const
+    {
+        const std::size_t zu = nachKlammer(i);
+        int fragen = 0;  // ein `:` nach `?` gehoert zu `?:`
+        for (std::size_t j = i + 1; j + 1 < zu; ++j)
+        {
+            if (oeffnet(tok(j)))
+            {
+                j = nachKlammer(j) - 1;
+                continue;
+            }
+            if (tok(j).istOp("<") && spitzeEnde(j) > j)  // List<? extends T>: kein ?:
+            {
+                j = spitzeEnde(j) - 1;
+                continue;
+            }
+            if (tok(j).istOp(";")) return false;
+            if (tok(j).istOp("?")) ++fragen;
+            if (tok(j).istOp(":") && fragen-- == 0) return true;
+        }
+        return false;
+    }
+
     void liesAnweisung(const Ort& ort, std::vector<AnweisungPtr>& aus)
     {
         const Token& t = akt();
@@ -1076,7 +1485,7 @@ private:
             aus.push_back(liesBlock(ort));
             return;
         }
-        if (t.istOp("["))  // Attribute vor einer lokalen Funktion
+        if (t.istOp(m_java ? "@" : "["))  // Attribute vor einer lokalen Funktion, Annotationen vor einer Deklaration
         {
             ueberAttribute();
             return;
@@ -1124,7 +1533,13 @@ private:
         {
             ++m_p;
             AnweisungPtr a = neu(AnweisungArt::Fuer, t);
-            if (akt().istOp("("))
+            if (m_java && akt().istOp("(") && istJedes(m_p))
+            {
+                // for (T x : xs): je Element (wie range-for)
+                a->art = AnweisungArt::FuerJedes;
+                a->text = liesBedingung(ort);
+            }
+            else if (akt().istOp("("))
             {
                 const std::size_t zu = ueberKlammer(m_p);
                 const std::size_t ende = tok(zu - 1).istOp(")") ? zu - 1 : zu;
@@ -1154,7 +1569,18 @@ private:
         }
         if (t.istWort("switch"))
         {
-            aus.push_back(liesAuswahl(ort));
+            aus.push_back(m_java ? liesAuswahlJava(ort) : liesAuswahl(ort));
+            return;
+        }
+        if (m_java && t.istWort("synchronized") && tok(m_p + 1).istOp("("))
+        {
+            // ein Block unter einer Sperre: wie lock in C#
+            ++m_p;
+            AnweisungPtr a = neu(AnweisungArt::Mit, t);
+            a->text = liesBedingung(ort);
+            a->kopf = "synchronized (" + a->text + ")";
+            a->kinder.push_back(liesRumpf(ort));
+            aus.push_back(std::move(a));
             return;
         }
         if (t.istWort("try"))
@@ -1195,6 +1621,20 @@ private:
             nimm(";");
             return;
         }
+        if (m_java && istName(m_p, "yield") && !m_yieldVorn.empty() && !tok(m_p + 1).istOp("(") &&
+            !tok(m_p + 1).istOp("=") && !tok(m_p + 1).istOp("."))
+        {
+            // Java: der Wert eines Arms eines switch-Ausdrucks — `return wert` bzw. `x = wert`
+            ++m_p;
+            const std::size_t e = suche(m_p, {";"});
+            if (m_yieldVorn == "return")
+                aus.push_back(neu(AnweisungArt::Ruecksprung, t, funktionsText(m_p, e, ort)));
+            else
+                aus.push_back(neu(AnweisungArt::Einfach, t, m_yieldVorn + " " + funktionsText(m_p, e, ort)));
+            m_p = e;
+            nimm(";");
+            return;
+        }
         if (istName(m_p, "yield") && (tok(m_p + 1).istWort("return") || tok(m_p + 1).istWort("break")))
         {
             const bool ende = tok(m_p + 1).istWort("break");
@@ -1215,8 +1655,10 @@ private:
         if (t.istWort("break") || t.istWort("continue"))
         {
             ++m_p;
+            std::string marke;  // Java: break marke — die markierte Schleife (Entscheid H2)
+            if (m_java && akt().art == TokenArt::Bezeichner) marke = std::string(tok(m_p++).text);
             nimm(";");
-            aus.push_back(neu(t.istWort("break") ? AnweisungArt::Abbruch : AnweisungArt::Fortsetzung, t));
+            aus.push_back(neu(t.istWort("break") ? AnweisungArt::Abbruch : AnweisungArt::Fortsetzung, t, std::move(marke)));
             return;
         }
         if (t.istWort("goto"))
@@ -1237,10 +1679,26 @@ private:
         if (t.art == TokenArt::Bezeichner && tok(m_p + 1).istOp(":") && !tok(m_p + 2).istOp(":"))
         {
             m_p += 2;
+            // Java: vor einer Schleife, einem switch, einem Block ist es deren Marke (Ziel von break
+            // marke); C# kennt das nicht — dort ist eine Marke das Ziel eines goto
+            const Token& n = akt();
+            if (m_java && (n.istWort("for") || n.istWort("while") || n.istWort("do") || n.istWort("switch") || n.istOp("{")))
+            {
+                std::vector<AnweisungPtr> eine;
+                liesAnweisung(ort, eine);
+                if (eine.size() == 1)
+                {
+                    eine.front()->marke = std::string(t.text);
+                    aus.push_back(std::move(eine.front()));
+                    return;
+                }
+                for (AnweisungPtr& a : eine) aus.push_back(std::move(a));
+                return;
+            }
             aus.push_back(neu(AnweisungArt::Marke, t, std::string(t.text)));
             return;
         }
-        if (istLokaleFunktion(m_p))
+        if (!m_java && istLokaleFunktion(m_p))  // Java kennt keine lokalen Funktionen
         {
             liesLokaleFunktion(ort, aus);
             return;
@@ -1248,6 +1706,13 @@ private:
         if ((t.istWort("class") || t.istWort("struct") || t.istWort("interface") || t.istWort("enum") ||
              istName(m_p, "record")) && tok(m_p + 1).art == TokenArt::Bezeichner)
         {
+            liesTyp(ort, aus);
+            return;
+        }
+        if (m_java && (t.istWort("final") || t.istWort("abstract") || t.istWort("static")) &&
+            (tok(m_p + 1).istWort("class") || tok(m_p + 1).istWort("interface") || istName(m_p + 1, "record")))
+        {
+            ++m_p;  // eine lokale Klasse mit Modifikator
             liesTyp(ort, aus);
             return;
         }
@@ -1346,6 +1811,9 @@ private:
         const Token& t = akt();
         ++m_p;
         AnweisungPtr a = neu(AnweisungArt::Versuch, t);
+        // Java: try (Ressourcen) — sie werden am Ende geschlossen; catch und finally duerfen fehlen
+        const bool mitRessourcen = m_java && akt().istOp("(");
+        if (mitRessourcen) a->kopf = "try (" + liesBedingung(ort) + ")";
         a->kinder.push_back(akt().istOp("{") ? liesBlock(ort) : liesRumpf(ort));
         while (akt().istWort("catch"))
         {
@@ -1379,8 +1847,139 @@ private:
             schluss->kinder.push_back(akt().istOp("{") ? liesBlock(ort) : liesRumpf(ort));
             a->kinder.push_back(std::move(schluss));
         }
-        if (a->kinder.size() == 1) melde(Schwere::Fehler, akt(), "'catch' or 'finally' after try is missing");
+        if (a->kinder.size() == 1 && !mitRessourcen)
+            melde(Schwere::Fehler, akt(), "'catch' or 'finally' after try is missing");
         return a;
+    }
+
+    /// Java: `switch (x) { case A, B: … }` mit Durchfallen, oder `case A, B -> anweisung;` ohne;
+    /// `default` als Fall ohne Wert.
+    AnweisungPtr liesAuswahlJava(const Ort& ort)
+    {
+        const Token& t = akt();
+        ++m_p;
+        AnweisungPtr a = neu(AnweisungArt::Auswahl, t);
+        a->text = liesBedingung(ort);
+        AnweisungPtr rumpf = neu(AnweisungArt::Block, akt());
+        if (!nimm("{"))
+        {
+            melde(Schwere::Fehler, akt(), "'{' expected");
+            a->kinder.push_back(std::move(rumpf));
+            return a;
+        }
+        while (!amEnde(m_p) && !akt().istOp("}"))
+        {
+            const std::size_t davor = m_p;
+            if (const std::optional<bool> pfeil = liesFallJava(rumpf->kinder))
+            {
+                a->ohneDurchfall = a->ohneDurchfall || *pfeil;
+                if (*pfeil)
+                {
+                    // ein Arm: eine Anweisung, ein Block oder throw; danach der naechste Fall
+                    const std::size_t vorher = rumpf->kinder.size();
+                    liesAnweisung(ort, rumpf->kinder);
+                    if (rumpf->kinder.size() > vorher) rumpf->kinder[vorher]->innere = std::move(m_innere);
+                    m_innere.clear();
+                }
+            }
+            else
+            {
+                const std::size_t vorher = rumpf->kinder.size();
+                liesAnweisung(ort, rumpf->kinder);
+                if (rumpf->kinder.size() > vorher) rumpf->kinder[vorher]->innere = std::move(m_innere);
+                m_innere.clear();
+            }
+            if (m_p == davor) ++m_p;
+        }
+        if (!nimm("}")) melde(Schwere::Fehler, akt(), "'}' is missing");
+        a->kinder.push_back(std::move(rumpf));
+        return a;
+    }
+
+    /// Java: steht m_p auf `case …` oder `default`, kommt ein Fall nach `faelle`: true = mit `->`,
+    /// false = mit `:`; nullopt = kein Fall (m_p bleibt).
+    std::optional<bool> liesFallJava(std::vector<AnweisungPtr>& faelle)
+    {
+        const Token& s = akt();
+        if (!s.istWort("case") && !(s.istWort("default") && (tok(m_p + 1).istOp(":") || tok(m_p + 1).istOp("->"))))
+            return std::nullopt;
+        ++m_p;
+        std::size_t e = m_p;
+        while (!amEnde(e) && !tok(e).istOp(":") && !tok(e).istOp("->") && !tok(e).istOp(";") && !tok(e).istOp("}"))
+            e = oeffnet(tok(e)) ? nachKlammer(e) : e + 1;
+        faelle.push_back(neu(AnweisungArt::Fall, s, s.istWort("case") ? textVon(m_p, e) : std::string()));
+        m_p = e;
+        if (nimm("->")) return true;
+        if (!nimm(":")) melde(Schwere::Fehler, akt(), "':' or '->' after case is missing");
+        return false;
+    }
+
+    /// Java: [a, e) ist `switch (x) { case A -> wert; … }` (ganz, nur Arme mit `->`): eine Auswahl ohne
+    /// Durchfallen, je Arm die Anweisung `vorn wert` (`return 1`, `int y = 1`); ein Block darin endet
+    /// mit `yield wert`, das ebenso wird; throw bleibt ein Wurf. false = nicht.
+    bool liesSwitchAusdruckJava(const Ort& ort, std::size_t a, std::size_t e, const std::string& vorn,
+                                std::vector<AnweisungPtr>& aus)
+    {
+        if (!tok(a).istWort("switch") || !tok(a + 1).istOp("(")) return false;
+        const std::size_t auf = nachKlammer(a + 1);
+        if (!tok(auf).istOp("{") || nachKlammer(auf) != e) return false;
+        // nur die Form mit Pfeilen: mit `:` liefe ein Fall in den naechsten
+        for (std::size_t i = auf + 1; i + 1 < e; ++i)
+        {
+            if (oeffnet(tok(i)))
+            {
+                i = nachKlammer(i) - 1;
+                continue;
+            }
+            if (tok(i).istWort("case") || tok(i).istWort("default"))
+            {
+                std::size_t k = i + 1;
+                while (k + 1 < e && !tok(k).istOp(":") && !tok(k).istOp("->"))
+                    k = oeffnet(tok(k)) ? nachKlammer(k) : k + 1;
+                if (!tok(k).istOp("->")) return false;
+                i = k;
+            }
+        }
+        const std::size_t gemerkt = m_p;
+        m_p = a;
+        const Token& t = akt();
+        ++m_p;
+        AnweisungPtr auswahl = neu(AnweisungArt::Auswahl, t);
+        auswahl->text = liesBedingung(ort);
+        auswahl->ohneDurchfall = true;
+        AnweisungPtr rumpf = neu(AnweisungArt::Block, akt());
+        ++m_p;  // {
+        const std::string gemerktYield = std::exchange(m_yieldVorn, vorn);
+        while (!amEnde(m_p) && m_p + 1 < e)
+        {
+            const std::size_t davor = m_p;
+            if (liesFallJava(rumpf->kinder))
+            {
+                const Token& w = akt();
+                if (w.istOp("{"))
+                    rumpf->kinder.push_back(liesBlock(ort));
+                else
+                {
+                    const std::size_t ende = suche(m_p, {";"});
+                    if (w.istWort("throw"))
+                        rumpf->kinder.push_back(neu(AnweisungArt::Wurf, w, funktionsText(m_p + 1, ende, ort)));
+                    else if (vorn == "return")
+                        rumpf->kinder.push_back(neu(AnweisungArt::Ruecksprung, w, funktionsText(m_p, ende, ort)));
+                    else
+                        rumpf->kinder.push_back(neu(AnweisungArt::Einfach, w, vorn + " " + funktionsText(m_p, ende, ort)));
+                    m_p = ende;
+                    nimm(";");
+                }
+                rumpf->kinder.back()->innere = std::move(m_innere);
+                m_innere.clear();
+            }
+            if (m_p == davor) ++m_p;
+        }
+        m_yieldVorn = gemerktYield;
+        m_p = gemerkt;
+        auswahl->kinder.push_back(std::move(rumpf));
+        aus.push_back(std::move(auswahl));
+        return true;
     }
 
     /// [a, e) ist `subjekt switch { muster => wert, … }` (ganz): eine Auswahl ohne Durchfallen, je Arm
@@ -1388,6 +1987,7 @@ private:
     bool liesSwitchAusdruck(const Ort& ort, std::size_t a, std::size_t e, const std::string& vorn,
                             std::vector<AnweisungPtr>& aus)
     {
+        if (m_java) return liesSwitchAusdruckJava(ort, a, e, vorn, aus);
         std::size_t sw = a;
         while (sw < e && !(tok(sw).istWort("switch") && tok(sw + 1).istOp("{")))
         {
@@ -1441,49 +2041,46 @@ private:
 
     std::vector<std::string> m_innere;  ///< die Funktionen, die in der laufenden Anweisung definiert wurden
     int m_letzteZeile = 0;
-};
-
-class CSharp final : public Sprache
-{
-public:
-    [[nodiscard]] std::string_view name() const override { return "C#"; }
-    [[nodiscard]] std::span<const std::string_view> endungen() const override { return kEndungen; }
-    [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return kTabelle; }
-    [[nodiscard]] bool hatPraeprozessor() const override { return true; }
-
-    [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
-                                const LeseOptionen& optionen) const override
-    {
-        Ergebnis ergebnis;
-        ergebnis.einheit.name = std::string(einheitName);
-        if (optionen.alleZweige)
-        {
-            CsLeser(text, ergebnis).liesEinheit();
-        }
-        else
-        {
-            // erst entscheiden, welche Zweige gelten; die Token des Lesers zeigen in diesen Text
-            const std::string geltend =
-                werteBedingteAus(text, kTabelle, optionen.definitionen, false, ergebnis.meldungen,
-                                 ergebnis.unbekannteNamen, nullptr, &ergebnis.schalter, &ergebnis.weichen, true);
-            CsLeser(geltend, ergebnis).liesEinheit();
-            ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
-            if ((optionen.varianten || optionen.bereiche) && !ergebnis.weichen.empty())
-                ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {0, ergebnis.weichen.front().zeile, 1},
-                                              "#if variants and frames are not shown for C# yet - evaluated"});
-            return ergebnis;
-        }
-        ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
-        return ergebnis;
-    }
+    bool m_java = false;
+    /// Java, im Block eines Arms eines switch-Ausdrucks: was ein `yield wert` daraus macht (`return`,
+    /// `x =`, `int x =`); leer = kein switch-Ausdruck.
+    std::string m_yieldVorn;
+    std::set<std::string> m_anonyme;  ///< die vergebenen `<anonymous:…>`, je mit Bereich
 };
 
 }  // namespace
 
-const Sprache& csharp()
+namespace csjava
 {
-    static const CSharp sprache;
-    return sprache;
+
+const lexer::Sprachtabelle& tabelle(Dialekt dialekt)
+{
+    return dialekt.java ? kTabelleJava : kTabelle;
 }
+
+Ergebnis lies(std::string_view text, std::string_view einheitName, const LeseOptionen& optionen, Dialekt dialekt)
+{
+    Ergebnis ergebnis;
+    ergebnis.einheit.name = std::string(einheitName);
+    if (dialekt.java || optionen.alleZweige)
+    {
+        // Java hat keine bedingte Uebersetzung
+        CsLeser(text, ergebnis, dialekt).liesEinheit();
+        ergaenzeLogik(ergebnis.einheit, tabelle(dialekt), kRegeln);
+        return ergebnis;
+    }
+    // erst entscheiden, welche Zweige gelten; die Token des Lesers zeigen in diesen Text
+    const std::string geltend =
+        werteBedingteAus(text, kTabelle, optionen.definitionen, false, ergebnis.meldungen, ergebnis.unbekannteNamen,
+                         nullptr, &ergebnis.schalter, &ergebnis.weichen, true);
+    CsLeser(geltend, ergebnis, dialekt).liesEinheit();
+    ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
+    if ((optionen.varianten || optionen.bereiche) && !ergebnis.weichen.empty())
+        ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {0, ergebnis.weichen.front().zeile, 1},
+                                      "#if variants and frames are not shown for C# yet - evaluated"});
+    return ergebnis;
+}
+
+}  // namespace csjava
 
 }  // namespace c2d::sprache

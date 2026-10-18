@@ -95,6 +95,10 @@ struct Projekt
 /// Was nicht geht, wird eine Meldung; das Ergebnis ist immer brauchbar.
 [[nodiscard]] Projekt liesOrdner(const std::filesystem::path& wurzel, const ProjektOptionen& optionen = {});
 
+/// Liest eine Datei ganz, wie sie ist (Bytes); unter Windows auch ueber einen Weg ab 260 Zeichen.
+/// false = sie liess sich nicht oeffnen.
+[[nodiscard]] bool liesDatei(const std::filesystem::path& weg, std::string& text);
+
 /// Ein Projekt aus einem einzigen Text, ohne Ordner und ohne Projektdatei.
 /// `name` entscheidet ueber die Sprache (wie sprache::spracheFuer); fehlt eine, wird C gelesen.
 [[nodiscard]] Projekt liesText(std::string_view text, std::string_view name, const ProjektOptionen& optionen = {});
