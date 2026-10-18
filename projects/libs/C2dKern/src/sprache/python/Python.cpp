@@ -129,15 +129,6 @@ private:
         return tok(i).art == TokenArt::Bezeichner && tok(i).text == name;
     }
 
-    /// i steht auf einer oeffnenden Klammer: dahinter; fehlt die schliessende, eine Meldung.
-    std::size_t ueberKlammer(std::size_t i)
-    {
-        const std::size_t zu = nachKlammer(i);
-        if (!schliesst(tok(zu - 1)) || zu - 1 == i)
-            melde(Schwere::Fehler, tok(i), "'" + std::string(tok(i).text) + "' is not closed");
-        return zu;
-    }
-
     /// Ab i bis zum Ende der einfachen Anweisung: `;` oder Zeilenende (Klammern tragen keins).
     std::size_t anweisungsEnde(std::size_t i)
     {

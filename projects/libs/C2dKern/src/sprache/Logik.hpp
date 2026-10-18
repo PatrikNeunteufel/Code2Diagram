@@ -24,11 +24,13 @@ namespace c2d::sprache
 /// Was an Ausdruecken je Sprache anders ist.
 struct Ausdrucksregeln
 {
-    /// Die bedingte Auswahl: `c ? a : b` (C-Familie) oder `a if c else b` (Python).
+    /// Die bedingte Auswahl: `c ? a : b` (C-Familie) oder `a if c else b` (Python); Kotlin hat
+    /// keine (`?:` ist der Elvis-Operator, `if` als Wert verzweigt der Leser selbst).
     enum class Wahl
     {
         Fragezeichen,
         NachgestelltesWenn,
+        Keine,
     };
     Wahl wahl = Wahl::Fragezeichen;
     /// `not` bindet schwaecher als ein Vergleich: `not a == b` ist `not (a == b)` (Python).

@@ -49,6 +49,33 @@ std::size_t Leser::nachKlammer(std::size_t i) const
     return i;
 }
 
+std::size_t Leser::ueberKlammer(std::size_t i)
+{
+    const std::size_t zu = nachKlammer(i);
+    if (zu == i + 1 || !schliesst(tok(zu - 1)))
+        melde(quelle::Schwere::Fehler, tok(i), "'" + std::string(tok(i).text) + "' is not closed");
+    return zu;
+}
+
+void Leser::trenneZeilen()
+{
+    std::vector<Token> ohne;
+    m_neueZeile.clear();
+    bool neu = false;
+    for (const Token& t : m_t)
+    {
+        if (t.art == TokenArt::Zeilenende)
+        {
+            neu = true;
+            continue;
+        }
+        ohne.push_back(t);
+        m_neueZeile.push_back(neu);
+        neu = false;
+    }
+    m_t = std::move(ohne);
+}
+
 std::size_t Leser::suche(std::size_t i, std::initializer_list<std::string_view> stopps) const
 {
     while (!amEnde(i))

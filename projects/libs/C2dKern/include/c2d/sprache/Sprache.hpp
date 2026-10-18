@@ -186,4 +186,14 @@ public:
 /// (`break marke`). Annotationen, `throws`, `package` werden ueberlesen. Kein Praeprozessor.
 [[nodiscard]] const Sprache& java();
 
+/// Kotlin 2.0 (`.kt`; `.kts` noch nicht): class, interface, object, enum class, data/sealed …
+/// mit primaerem Konstruktor (`val`/`var` sind Felder), Eigenschaften mit `get()`/`set()` (Funktionen
+/// `x.get`/`x.set`), Funktionen auch als Erweiterung (`String.kuerze`), `companion object` (statische
+/// Glieder des Typs), `init` (`<init:Zeile>`), anonyme Objekte (je Methode `<anonymous:Zeile>.name`),
+/// Lambdas — mehr als ein Ausdruck in einer Zeile — als `<lambda:Zeile>`; if, when (mit Gegenstand
+/// eine Auswahl ohne Durchfallen, ohne eine Kette if/else), for, while, do, try/catch/finally,
+/// Marken (`break@aussen`); `if`/`when`/`try` als Wert verzweigen. Ende einer Anweisung am
+/// Zeilenende wie Kotlin; kein Praeprozessor.
+[[nodiscard]] const Sprache& kotlin();
+
 }  // namespace c2d::sprache

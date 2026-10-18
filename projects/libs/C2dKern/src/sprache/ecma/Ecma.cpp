@@ -59,7 +59,7 @@ constexpr lexer::Sprachtabelle kTabelle{
     .ziffernTrenner = '_',
     .zeilenEnde = true,
     .klammernOhneZeilenende = "([",
-    .vorlagenZeichenketten = true,
+    .vorlagenBegrenzer = '`',
     .regexLiterale = true,
     .woerterVorRegex = kVorRegex,
     .namensZeichen = "$",
@@ -99,21 +99,7 @@ class EcmaLeser final : public Leser
 public:
     EcmaLeser(std::string_view text, Dialekt dialekt, Ergebnis& aus) : Leser(text, kTabelle, aus), m_ts(dialekt.ts)
     {
-        // die Zeilenenden heraus; je Token, ob vor ihm eine neue Zeile beginnt
-        std::vector<Token> ohne;
-        bool neu = false;
-        for (const Token& t : m_t)
-        {
-            if (t.art == TokenArt::Zeilenende)
-            {
-                neu = true;
-                continue;
-            }
-            ohne.push_back(t);
-            m_neueZeile.push_back(neu);
-            neu = false;
-        }
-        m_t = std::move(ohne);
+        trenneZeilen();  // je Token, ob vor ihm eine neue Zeile beginnt
     }
 
     void liesModul()
@@ -149,8 +135,6 @@ private:
 
     // --- Token -----------------------------------------------------------------------
 
-    [[nodiscard]] bool neueZeile(std::size_t i) const { return i < m_neueZeile.size() && m_neueZeile[i]; }
-
     [[nodiscard]] bool istName(std::size_t i, std::string_view name) const
     {
         return tok(i).art == TokenArt::Bezeichner && tok(i).text == name;
@@ -164,15 +148,6 @@ private:
     }
 
     [[nodiscard]] int zeileVor(std::size_t i) const { return i > 0 ? tok(i - 1).ort.zeile : 0; }
-
-    /// i auf einer oeffnenden Klammer: dahinter; fehlt die schliessende, eine Meldung.
-    std::size_t ueberKlammer(std::size_t i)
-    {
-        const std::size_t zu = nachKlammer(i);
-        if (zu == i + 1 || !schliesst(tok(zu - 1)))
-            melde(Schwere::Fehler, tok(i), "'" + std::string(tok(i).text) + "' is not closed");
-        return zu;
-    }
 
     /// i auf `<` von Typ-Parametern (`<T, U extends X<Y>>`): dahinter; sonst i.
     [[nodiscard]] std::size_t spitzeEnde(std::size_t i) const
@@ -283,20 +258,8 @@ private:
     /// oeffnende, eine neue Zeile, die nicht fortsetzt, oder das Ende.
     std::size_t anweisungsEnde(std::size_t i)
     {
-        std::size_t j = i;
-        while (!amEnde(j))
-        {
-            const Token& t = tok(j);
-            if (j > i && neueZeile(j) && !fortsetzung(j)) return j;
-            if (t.istOp(";") || schliesst(t)) return j;
-            if (oeffnet(t))
-            {
-                j = ueberKlammer(j);
-                continue;
-            }
-            ++j;
-        }
-        return j;
+        return Leser::anweisungsEnde(
+            i, [this](std::size_t j) { return fortsetzung(j); }, [](std::size_t) { return false; });
     }
 
     /// Die erste Stelle in [a, b) mit diesem Operator auf oberster Ebene (auch ausserhalb von `<…>`,
@@ -1483,7 +1446,6 @@ private:
     }
 
     bool m_ts;
-    std::vector<bool> m_neueZeile;  ///< je Token: vor ihm beginnt eine neue Zeile (ausser in `(`/`[`)
     bool m_ablauf = false;          ///< auf oberster Ebene laeuft etwas ab
     bool m_standard = false;        ///< hinter `export default`
     std::vector<std::string> m_innere;  ///< die Funktionen, die in der laufenden Anweisung definiert wurden

@@ -47,7 +47,13 @@ bool schliesst(const Token& t)
 /// Steht hier die bedingte Auswahl der Sprache (`?` bzw. `if` mitten im Ausdruck)?
 bool istWahl(const Token& t, const Ausdrucksregeln& regeln)
 {
-    return regeln.wahl == Ausdrucksregeln::Wahl::Fragezeichen ? t.istOp("?") : t.istWort("if");
+    switch (regeln.wahl)
+    {
+        case Ausdrucksregeln::Wahl::Fragezeichen: return t.istOp("?");
+        case Ausdrucksregeln::Wahl::NachgestelltesWenn: return t.istWort("if");
+        case Ausdrucksregeln::Wahl::Keine: break;
+    }
+    return false;
 }
 
 /// Wo die Token eines Ausdrucks enden: am Token `Ende` (oder einem Zeilenende).

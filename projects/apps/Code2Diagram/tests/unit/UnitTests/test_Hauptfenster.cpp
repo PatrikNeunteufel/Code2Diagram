@@ -958,6 +958,24 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.markiert().contains("h.post"));
     }
 
+    TEST_CASE("Kotlin: ein mehrzeiliges Lambda ist eine Funktion; dorthin und zurueck; kein #if")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("class K {\n    fun f(k: View) {\n        k.setOnClickListener {\n            tu()\n        }\n"
+                      "    }\n}\n",
+                      "K.kt");
+        CHECK(fenster.meldungen() == 0);
+        CHECK(fenster.diagramme().contains("K::f::<lambda:3>"));
+        CHECK_FALSE(fenster.diagramme().contains("ifnames"));
+        REQUIRE(fenster.waehleDiagramm("K::f"));
+        CHECK(fenster.ziele("K::f::<lambda:3>") == QStringList{"K.kt:3"});
+        REQUIRE(fenster.springe("K::f::<lambda:3>"));
+        CHECK(fenster.diagrammText().contains("tu()"));
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "K::f");
+        CHECK(fenster.markiert().contains("setOnClickListener"));
+    }
+
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
         // aus sprachen() gebildet: eine neue Sprache braucht hier keine neue Zeile

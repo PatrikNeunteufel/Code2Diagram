@@ -53,6 +53,39 @@ protected:
     /// Klammer. Fehlt sie, die Stelle des Tokens `Ende`.
     [[nodiscard]] std::size_t nachKlammer(std::size_t i) const;
 
+    /// Wie nachKlammer; fehlt die schliessende Klammer, eine Meldung.
+    std::size_t ueberKlammer(std::size_t i);
+
+    // --- Zeilenende (Sprachtabelle::zeilenEnde, ohne Einrueckung: JavaScript, Kotlin) ---------
+
+    /// Nimmt die Token Zeilenende heraus und merkt je Token, ob vor ihm eine neue Zeile beginnt.
+    void trenneZeilen();
+
+    /// Beginnt vor dem Token i eine neue Zeile (nach trenneZeilen)?
+    [[nodiscard]] bool neueZeile(std::size_t i) const { return i < m_neueZeile.size() && m_neueZeile[i]; }
+
+    /// Ab i bis zum Ende der Anweisung: `;` (nicht genommen), eine schliessende Klammer ohne
+    /// oeffnende, eine neue Zeile vor j, ueber die `fortsetzung(j)` nicht weiterfuehrt, ein Token j,
+    /// an dem `haeltAn(j)` sie beendet, oder das Ende. Klammern werden ganz uebersprungen.
+    template <class Fortsetzung, class HaeltAn>
+    std::size_t anweisungsEnde(std::size_t i, Fortsetzung fortsetzung, HaeltAn haeltAn)
+    {
+        std::size_t j = i;
+        while (!amEnde(j))
+        {
+            const Token& t = tok(j);
+            if (j > i && neueZeile(j) && !fortsetzung(j)) return j;
+            if (t.istOp(";") || schliesst(t) || (j > i && haeltAn(j))) return j;
+            if (oeffnet(t))
+            {
+                j = ueberKlammer(j);
+                continue;
+            }
+            ++j;
+        }
+        return j;
+    }
+
     /// Ab i das erste Token ausserhalb von Klammern, das einer der `stopps`
     /// ist — oder eine schliessende Klammer ohne oeffnende, oder `Ende`.
     [[nodiscard]] std::size_t suche(std::size_t i, std::initializer_list<std::string_view> stopps) const;
@@ -66,6 +99,7 @@ protected:
     Ergebnis& m_aus;
     std::vector<Token> m_t;
     std::size_t m_p = 0;
+    std::vector<bool> m_neueZeile;  ///< nach trenneZeilen: je Token, ob vor ihm eine neue Zeile beginnt
 };
 
 }  // namespace c2d::sprache

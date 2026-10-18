@@ -92,9 +92,11 @@ struct Sprachtabelle
     /// keine fruehere Stufe zurueck, gibt es eine Meldung. Am Ende des Texts schliessen
     /// Auszuege jede offene Stufe.
     bool einrueckung = false;
-    /// Zeichenketten in Gravis mit eingebetteten Ausdruecken (JavaScript: `a${x}b`, auch
-    /// verschachtelt und ueber Zeilen): ein Token.
-    bool vorlagenZeichenketten = false;
+    /// Der Begrenzer von Zeichenketten mit eingebetteten Ausdruecken `${…}` (auch verschachtelt):
+    /// JavaScript '`' (`a${x}b`, ueber Zeilen), Kotlin '"' (`"a $x ${f("b")}"`; endet wie ein
+    /// gewoehnliches Literal an der Zeile, ist er ein zeichenkettenBegrenzer — mit
+    /// dreifachZeichenketten auch `"""…"""`, roh, ueber Zeilen). Je ein Token; '\0' = keiner.
+    char vorlagenBegrenzer = '\0';
     /// `/` beginnt ein Regex-Literal (`/a+b/gi`, ein Token der Art Zeichenkette), wo kein Wert
     /// davor steht: am Anfang, nach einem Operator ausser `)`, `]`, `}`, `++`, `--`, und nach
     /// einem der Woerter in woerterVorRegex. Sonst ist es die Division.
@@ -106,6 +108,10 @@ struct Sprachtabelle
     /// Ausdruecke, `{{` ist eine `{`), beide zusammen (`$@"`, `@$"`) und `$` vor dreifachen
     /// Anfuehrungszeichen: je ein Token.
     bool csharpZeichenketten = false;
+    /// Blockkommentare lassen sich schachteln: `/* a /* b */ c */` ist einer (Kotlin).
+    bool verschachtelteKommentare = false;
+    /// Ein Name in Gravis: `` `ein Test` `` ist ein Bezeichner, samt Gravis (Kotlin).
+    bool gravisNamen = false;
 };
 
 struct LexerOptionen

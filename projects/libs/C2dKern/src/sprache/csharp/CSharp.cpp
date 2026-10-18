@@ -228,14 +228,6 @@ private:
 
     [[nodiscard]] int zeileVor(std::size_t i) const { return i > 0 ? tok(i - 1).ort.zeile : 0; }
 
-    std::size_t ueberKlammer(std::size_t i)
-    {
-        const std::size_t zu = nachKlammer(i);
-        if (zu == i + 1 || !schliesst(tok(zu - 1)))
-            melde(Schwere::Fehler, tok(i), "'" + std::string(tok(i).text) + "' is not closed");
-        return zu;
-    }
-
     /// i auf `<` von Typ-Argumenten: dahinter; sonst i.
     [[nodiscard]] std::size_t spitzeEnde(std::size_t i) const
     {

@@ -190,28 +190,52 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
         gib(kette ? TokenArt::Zeichenkette : TokenArt::Zeichen, ort);
     };
 
-    /// i steht auf einem Gravis: die Zeichenkette bis zu ihrem Ende, samt `${…}` (darin Klammern,
-    /// Zeichenketten und weitere Vorlagen).
+    /// i steht auf dem vorlagenBegrenzer: die Zeichenkette bis zu ihrem Ende, samt `${…}` (darin
+    /// Klammern, Zeichenketten und weitere Vorlagen); mit dreifachZeichenketten auch `"""…"""`.
     const auto liesVorlage = [&](const quelle::Position& ort) {
-        std::string modi = "`";  // innen zuletzt: ` = im Text einer Vorlage, { = in einem Ausdruck
-        vor(1);
+        const char d = sprache.vorlagenBegrenzer;
+        const std::string drei(3, d);
+        // ist der Begrenzer der eines gewoehnlichen Literals, endet eine einfache an der Zeile
+        const bool zeilenweise = sprache.zeichenkettenBegrenzer.find(d) != std::string_view::npos;
+        std::string modi;  // innen zuletzt: d = im Text, R = im Text einer rohen """…""", { = in einem Ausdruck
+        const auto oeffne = [&] {
+            if (sprache.dreifachZeichenketten && text.substr(i, 3) == drei)
+            {
+                modi += 'R';
+                vor(3);
+            }
+            else
+            {
+                modi += d;
+                vor(1);
+            }
+        };
+        oeffne();
         while (i < text.size() && !modi.empty())
         {
             const char z = text[i];
-            if (modi.back() == '`')
+            const char m = modi.back();
+            if (m == d || m == 'R')
             {
-                if (z == '\\' && i + 1 < text.size())
+                if (m == d && z == '\\' && i + 1 < text.size())
                     vor(2);
-                else if (z == '`')
+                else if (m == d && z == d)
                 {
                     modi.pop_back();
                     vor(1);
+                }
+                else if (m == 'R' && text.substr(i, 3) == drei)
+                {
+                    while (i < text.size() && text[i] == d) vor(1);  // `""""` endet mit einem `"` darin
+                    modi.pop_back();
                 }
                 else if (z == '$' && text.substr(i + 1, 1) == "{")
                 {
                     modi += '{';
                     vor(2);
                 }
+                else if (m == d && zeilenweise && z == '\n')
+                    break;
                 else
                     vor(1);
                 continue;
@@ -221,10 +245,9 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
                 modi += '{';
             else if (z == '}')
                 modi.pop_back();
-            else if (z == '`')
+            else if (z == d)
             {
-                modi += '`';
-                vor(1);
+                oeffne();
                 continue;
             }
             else if (z == '"' || z == '\'')
@@ -402,7 +425,23 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             else
             {
                 vor(sprache.blockKommentarAuf.size());
-                while (i < text.size() && !beginnt(sprache.blockKommentarZu)) vor(1);
+                int tiefe = 1;  // verschachtelteKommentare: je `/*` eine Stufe mehr
+                while (i < text.size())
+                {
+                    if (sprache.verschachtelteKommentare && beginnt(sprache.blockKommentarAuf))
+                    {
+                        ++tiefe;
+                        vor(sprache.blockKommentarAuf.size());
+                        continue;
+                    }
+                    if (beginnt(sprache.blockKommentarZu))
+                    {
+                        if (--tiefe == 0) break;
+                        vor(sprache.blockKommentarZu.size());
+                        continue;
+                    }
+                    vor(1);
+                }
                 if (i >= text.size())
                     melde(quelle::Schwere::Fehler, ort, "comment is not closed");
                 else
@@ -499,7 +538,19 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             gib(TokenArt::Bezeichner, ort);
             continue;
         }
-        if (sprache.vorlagenZeichenketten && c == '`')
+        if (sprache.gravisNamen && c == '`')
+        {
+            // `ein Name`: bis zum naechsten Gravis in der Zeile
+            vor(1);
+            while (i < text.size() && text[i] != '`' && text[i] != '\n') vor(1);
+            if (i < text.size() && text[i] == '`')
+                vor(1);
+            else
+                melde(quelle::Schwere::Fehler, ort, "name in backticks is not closed");
+            gib(TokenArt::Bezeichner, ort);
+            continue;
+        }
+        if (sprache.vorlagenBegrenzer != '\0' && c == sprache.vorlagenBegrenzer)
         {
             liesVorlage(ort);
             continue;

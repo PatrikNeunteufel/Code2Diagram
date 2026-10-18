@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ort_fehlt">Bitte einen Ort eingeben</string>
+    <string name="suche_laeuft">Suche Wetter fuer %1$s …</string>
+    <string name="keine_daten">Keine Daten</string>
+</resources>

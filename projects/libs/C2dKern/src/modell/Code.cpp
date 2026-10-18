@@ -117,7 +117,9 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         // Woerter von Python, die im Text einer Anweisung vor `(` stehen koennen (`not (a)`, `del (x)`)
         "not", "and", "or", "in", "is", "assert", "del", "yield",
         // JavaScript: eine Funktion ohne Namen (`function (x) {…}`), `typeof (x)`
-        "function", "typeof"};
+        "function", "typeof",
+        // Kotlin: `when (x) {…}` als Wert im Text einer Anweisung
+        "when"};
     std::vector<std::string> aus;
     std::string_view davor;      // der Name vor dem laufenden
     std::size_t davorEnde = 0;   // wo er endet
@@ -143,16 +145,21 @@ std::vector<std::string> aufrufeIn(std::string_view text)
         const std::size_t anfang = i;
         while (i < text.size() && istNamenZeichen(text[i])) ++i;
         const std::string_view name = text.substr(anfang, i - anfang);
-        // gleich hinter `def`, `class`, `function` (nur Leerraum dazwischen) wird definiert, nicht gerufen
+        // gleich hinter `def`, `class`, `function`, `fun` (nur Leerraum dazwischen) wird definiert, nicht gerufen
         const std::string_view zwischen = text.substr(davorEnde, anfang - davorEnde);
-        const bool definiert = (davor == "def" || davor == "class" || davor == "function") && !zwischen.empty() &&
+        const bool definiert = (davor == "def" || davor == "class" || davor == "function" || davor == "fun") &&
+                               !zwischen.empty() &&
                                zwischen.find_first_not_of(' ') == std::string_view::npos;
         davor = name;
         davorEnde = i;
         std::size_t k = i;
         while (k < text.size() && text[k] == ' ') ++k;
         if (k >= text.size() || text[k] != '(' || definiert) continue;
-        if (std::find(std::begin(kKeineFunktion), std::end(kKeineFunktion), name) != std::end(kKeineFunktion)) continue;
+        // ein Wort der Tabelle ruft nichts — ausser als Methode hinter `.`: `F.when(…)` (pyspark),
+        // `map.delete(k)`, `p.catch(f)` (JavaScript)
+        const bool methode = anfang > 0 && text[anfang - 1] == '.';
+        if (!methode && std::find(std::begin(kKeineFunktion), std::end(kKeineFunktion), name) != std::end(kKeineFunktion))
+            continue;
         // ein Bereich davor gehoert dazu (`N::q`, `a::N::q`); `::q` meint den globalen
         std::size_t vorn = anfang;
         while (vorn >= 2 && text.substr(vorn - 2, 2) == "::")

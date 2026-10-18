@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java | weitere: je Sprache eine Tabelle und ein Leser (vorgemerkt: Kotlin) |
+| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -42,9 +42,9 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | Schicht (`projects/libs/C2dKern/…/c2d/`) | Inhalt | kennt |
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
-| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#; ein BOM am Anfang wird übergangen) | quelle |
+| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#, Vorlagen `"a ${x}"` in Kotlin, verschachtelte Blockkommentare, Namen in Gravis; ein BOM am Anfang wird übergangen) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), C# und Java den Leser `csharp/` (Java als `Dialekt`), Python hat einen eigenen (`python/`). Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), C# und Java den Leser `csharp/` (Java als `Dialekt`), Python und Kotlin haben je einen eigenen (`python/`, `kotlin/`). Das Ende einer Anweisung am Zeilenende (JavaScript, Kotlin) liegt in der Basis `Leser`, je Sprache mit eigener Tabelle der Fortsetzer. Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -225,6 +225,36 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   JavaScript.)
 - Ohne Präprozessor: keine `#if`-Diagramme. Ein Maven-Ordner `target` neben einer `pom.xml` wird
   übergangen. Beispiel: `beispiele/Lager.java`.
+
+**Kotlin** (`.kt`, Kotlin 2.0; `.kts` noch nicht):
+
+- `package` wird überlesen, `import` ist eine Einbindung, `typealias` ein Alias; `class`,
+  `interface` (auch `fun interface`), `object`, `enum class` (Konstanten mit Argumenten und Rumpf wie
+  in Java), `data`/`sealed`/`open`/`inner` … werden überlesen; innere Typen als `Aussen::Innen`
+- der **primäre Konstruktor**: `val`/`var` darin sind Felder, die übrigen nur Parameter; `init { }`
+  ist `<init:Zeile>`, `constructor(…)` ein weiterer Konstruktor. Basen: `: Basis(…)` mit Klammern ist
+  eine Basis, ohne Klammern (und `I by x`) eine Realisierung; eine Schnittstelle erweitert Schnittstellen
+- **Eigenschaften** sind Felder (`name: Typ`), mit `get()`/`set(…)` samt Rumpf zusätzlich Funktionen
+  `name.get`/`name.set`; das Feld trägt `{ get; set; }`
+- **Erweiterungen** heißen mit ihrem Empfänger: `String.kuerze`, `List<Any>.nurVom`, freie Funktionen,
+  keine Glieder des Kastens. Die Glieder eines **`companion object`** sind statische Glieder des Typs
+  darum (kein Kasten `Companion`); `object X` ist eine Klasse
+- **Lambdas:** eines, das nur aus einem Ausdruck in einer Zeile besteht (`xs.map { it * 2 }`), bleibt
+  Text; jedes andere ist eine Funktion `<lambda:Zeile>` (nach `val NAME = {` heißt es `NAME`) mit
+  ihren Parametern `{ a, b -> …`, in der Anweisung `{…}`, Doppelklick hin — auch die von `let`,
+  `apply`, `launch` und Compose. Ein **anonymes Objekt** `object : TextWatcher { … }` gibt je Methode
+  eine Funktion `<anonymous:Zeile>.name`
+- Anweisungen: `if`, `when` (mit Gegenstand eine Auswahl ohne Durchfallen, Kopf `when (x)`, `else` als
+  `default`; ohne Gegenstand eine Kette `if`/`else if`/`else`, `a, b ->` als `a || b`), `for (x in xs)`,
+  `while`, `do … while`, `try`/`catch`/`finally`, `return@marke`, `break@marke`/`continue@marke` an
+  `marke@ for …` (wie Java), lokale Funktionen und Klassen
+- **`if`, `when`, `try` als Wert** auf oberster Ebene eines `return`, eines `= ausdruck`-Rumpfs, einer
+  Zuweisung oder Deklaration verzweigen: jeder Zweig endet mit `val s = wert` bzw. `return wert`
+  (die letzte Anweisung eines Blocks ist sein Wert); geht der Ausdruck weiter
+  (`when (x) {…}.uppercase()`), bleibt er Text
+- Das Ende einer Anweisung wie Kotlin: am Zeilenende, wenn die nächste Zeile nicht mit `.`, `?.`,
+  `?:`, `&&`, `||` … beginnt und die Zeile nicht mit einem Operator endet; `+1` am Zeilenanfang ist
+  eine eigene Anweisung. Kein Präprozessor. Musterprojekte: `beispiele/kotlin/` (siehe dort).
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -667,6 +697,13 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   mit `:` statt `->` und einer tiefer in einem Ausdruck bleibt Text. Die Felder einer anonymen Klasse
   stehen in keinem Diagramm. In der Entscheidungstabelle verlässt ein `break marke` außerhalb von
   Schleifen den `switch` (Hinweis).
+- **Kotlin:** `.kts` (Gradle) liest Code2Diagram noch nicht. `import` wird im Projekt nicht aufgelöst
+  (Aufrufe über Dateien am Namen); `super.f()` meint im Aufrufgraph die eigene `f`. Ein `return` in
+  einem Lambda (nicht-lokal) verlässt im Ablauf das Lambda, nicht die äußere Funktion. Ein Feld mit
+  dem Typ einer Klasse gilt als *enthalten* (wie in C++), auch wenn Kotlin nur verweist.
+  Rückgabetypen, Vorgabewerte, Annotationen und Typ-Parameter stehen nicht im Diagramm; ein zweiter
+  Konstruktor ohne Rumpf (`: this(…)`) steht nur als Methode im Kasten. `when`, `if`, `try` tiefer
+  in einem Ausdruck bleiben Text. Geprüft nur an eigenen Musterprojekten — fremder Kotlin-Code fehlt.
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

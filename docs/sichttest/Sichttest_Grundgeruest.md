@@ -823,3 +823,26 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: diagramm_waehlen name=types:Lager`
 - [ ] **Y6 Maven:** ein Ordner mit `pom.xml` und `target/` als Projekt öffnen: `target` fehlt im Baum, Project-Meldung
       `folder skipped (made by Maven)`; ein `target/` ohne `pom.xml` daneben wird gelesen.
+
+## Z. Kotlin
+
+- [ ] **Z0 Vorbereiten:** File > Open folder… `beispiele/kotlin/wetter`, Vorschau.
+      `aktion: ordner_oeffnen pfad=beispiele/kotlin/wetter` `aktion: ansicht_waehlen name=preview`
+- [ ] **Z1 Gelesen:** im Baum fünf `.kt`, keine `.gradle.kts`, keine Meldungen. In `MainActivity.kt` bietet Diagram
+      `MainActivity::onCreate()`, `MainActivity::onCreate::<anonymous:58>.afterTextChanged()`,
+      `MainActivity::onCreate::<lambda:48>()`, `Data types (1)` — kein `#if configuration`. File > Open source file…
+      bietet `Kotlin files (*.kt)`.
+- [ ] **Z2 Lambda und anonymes Objekt:** `onCreate()`: Doppelklick auf den Knoten mit `suchen.setOnClickListener {…}`
+      bietet `<lambda:48>`, `<anonymous:58>.beforeTextChanged` … ; `<lambda:48>` zeigt `ortFeld.error = …` und
+      `return@setOnClickListener`, Back zurück.
+- [ ] **Z3 when als Wert:** `wechsleEinheit()`: Raute `einheit` mit `Einheit.CELSIUS`, `Einheit.FAHRENHEIT`,
+      `Einheit.KELVIN`, je `einheit = Einheit.…`; das Tabellensymbol öffnet die Zuordnung mit drei Zeilen und
+      `otherwise`. Diagram bietet dazu den Zustandsautomaten `einheit`.
+- [ ] **Z4 Marken und Automat:** `netz/JsonLeser.kt`, `JsonLeser::zeichenkette()`: `++ziffern < 4` → `yes` an den Kopf
+      `p < text.length`; als Nassi-Shneiderman Kopf `zeichen: while (p < text.length)`, Aussprung `continue zeichen`.
+      `aktion: diagramm_waehlen name=JsonLeser::zeichenkette` `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **Z5 Datentypen:** `daten/Vorhersage.kt`, Typ `Wetterlage`: `gefaehrlich: Boolean { get; }`, `STARKREGEN_MM = 25.0`,
+      `aus(…)`; darunter `Klar`, `Regen`, `Gewitter`, `Unbekannt` mit Vererbung (durchgezogen, `: Wetterlage()`).
+      `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=types:Wetterlage`
+- [ ] **Z6 Compose:** `beispiele/kotlin/notizen`, `ui/NotizenScreen.kt`: viele `<lambda:…>` unter `NotizenScreen`,
+      einzeilige wie `topBar = { TopAppBar(title = { Text(…) }) }` bleiben Text in ihrer Anweisung.
