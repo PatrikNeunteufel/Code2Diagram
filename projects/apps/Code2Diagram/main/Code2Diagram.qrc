@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<!-- Das Programm-Icon (assets/images/Logo/icons, gewaehlt C2D_Session10).
+     Liegt in der Exe, nicht in Code2Diagram.Core: eine Ressource in einer
+     statischen Bibliothek braeuchte Q_INIT_RESOURCE. -->
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="code2diagram.svg">../../../../assets/images/Logo/icons/app_2_zeilen_zu_knoten.svg</file>
+    </qresource>
+</RCC>

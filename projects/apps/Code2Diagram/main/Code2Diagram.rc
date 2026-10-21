@@ -1,0 +1,3 @@
+// Icon der Exe im Explorer und in der Taskleiste (nur Windows).
+// Quelle: assets/images/Logo/icons, gewaehlt C2D_Session10.
+IDI_ICON1 ICON "../../../../assets/images/Logo/icons/app_2_zeilen_zu_knoten.ico"

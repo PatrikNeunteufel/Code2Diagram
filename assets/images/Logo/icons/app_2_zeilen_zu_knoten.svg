@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="128" height="128" viewBox="0 0 128 128">
+<rect x="4" y="4" width="120" height="120" rx="24" fill="#2A2340"/>
+<g transform="translate(4,4) scale(1.3636)">
+<path d="M6,18 h26 M12,30 h22 M12,54 h18 M6,66 h14" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#8C86A8" stroke-width="4.5"/>
+<path d="M12,42 h24" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#FAC775" stroke-width="4.5"/>
+<polyline points="41,37 47,43 41,49" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#F1EEF8" stroke-width="4"/>
+<path d="M68,24 v8 M68,56 v8" stroke="#B9B3D0" stroke-width="3.5"/>
+<rect x="55" y="11" width="26" height="13" rx="3" fill="#85B7EB"/>
+<polygon points="68,31 80,44 68,57 56,44" fill="#FAC775"/>
+<rect x="55" y="64" width="26" height="13" rx="3" fill="#5DCAA5"/>
+</g>
+</svg>

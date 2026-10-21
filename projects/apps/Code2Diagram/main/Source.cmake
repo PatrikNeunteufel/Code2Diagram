@@ -9,7 +9,11 @@ dbg(DBG_OFTEN
 
 set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/Code2Diagram.qrc"
 )
+if(WIN32)
+    list(APPEND _local_sources "${CMAKE_CURRENT_LIST_DIR}/Code2Diagram.rc")
+endif()
 
 list(APPEND ${TARGET_NAME}_SOURCES ${_local_sources})
 

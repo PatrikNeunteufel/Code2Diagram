@@ -8,6 +8,9 @@
 set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
 )
+if(WIN32)
+    list(APPEND _local_sources "${CMAKE_CURRENT_LIST_DIR}/c2d.rc")
+endif()
 
 list(APPEND ${TARGET_NAME}_SOURCES ${_local_sources})
 

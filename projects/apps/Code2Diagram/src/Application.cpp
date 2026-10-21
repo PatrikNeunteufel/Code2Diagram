@@ -14,6 +14,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QIcon>
 #include <QPainter>
 #include <QPixmap>
 
@@ -450,6 +451,8 @@ bool Application::init(int argc, char* argv[])
     QCoreApplication::setApplicationName(ausStd(c2d::appName()));
     QCoreApplication::setOrganizationName(ausStd(c2d::appName()));  // fuer QSettings (Open recent)
     QCoreApplication::setApplicationVersion(ausStd(c2d::appVersion()));
+    // Die Ressource liegt in der Exe (main/Code2Diagram.qrc); in den Tests fehlt sie, das Icon bleibt leer.
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/code2diagram.svg")));
 
     const QStringList argumente = QCoreApplication::arguments();
     // das Thema vor dem Fenster: aus File > Settings, oder fuer diesen Lauf --thema (nicht gespeichert)
