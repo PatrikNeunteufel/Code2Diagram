@@ -1,7 +1,8 @@
 // c2d — Code2Diagram fuer die Kommandozeile.
 //
 // Aufruf:  c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]...
-//                             [--struktur] [-D NAME[=wert] | -D !NAME | -U NAME]...
+//                             [--struktur [--typ <name>] [--notation <n>] [--attribute <a>]]
+//                             [-D NAME[=wert] | -D !NAME | -U NAME]...
 //                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
 //                                            [--ohne-fremde]]
 //                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
@@ -24,6 +25,10 @@
 //                  umrahmt — im Projekt auch aus einer anderen Datei
 //   --struktur     das Diagramm der Datentypen (im Projekt: aller Dateien, mit --datei: einer)
 //   --typ          die Datentypen, nur dieser Typ und seine Nachbarn in seiner Datei (im Projekt: --datei)
+//   --notation     wie Tabellen gezeichnet werden: tabellen (Vorgabe, Multiplizitaeten), kraehenfuss,
+//                  chen, minmax; Klassen bleiben UML (meint --struktur)
+//   --attribute    in chen und minmax: alle Spalten ausser Fremdschluesseln als Ellipsen (Vorgabe),
+//                  nur der Schluessel, keine (meint --struktur)
 //   --automat      das Zustandsdiagramm des Automaten mit dieser Variable (auch nur ihr
 //                  letztes Glied: Bus_State); --liste nennt die erkannten
 //   --aufrufgraph  der Aufrufgraph ab dieser Funktion (wie --funktion; steht das Ziel
@@ -117,7 +122,8 @@ std::string alsText(const fs::path& weg)
 int aufruf()
 {
     std::cerr << "usage: c2d <file|folder> [--liste] [--datei <path>] [--funktion <name>] [--einbetten <name>]...\n"
-                 "                         [--struktur [--typ <name>]] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
+                 "                         [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax]\n"
+                 "                                     [--attribute alle|schluessel|keine]] [--automat <variable>] [-D NAME[=value] | -D !NAME | -U NAME]...\n"
                  "                         [--aufrufgraph [<function>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]\n"
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
@@ -225,6 +231,8 @@ int main(int argc, char* argv[])
     std::string objekt;  // --abhaengigkeiten <objekt>
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
+    c2d::diagramm::ErNotation notation = c2d::diagramm::ErNotation::Tabellen;  // --notation (Entscheid N5)
+    c2d::diagramm::ErAttribute attribute = c2d::diagramm::ErAttribute::Alle;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -264,6 +272,24 @@ int main(int argc, char* argv[])
             struktur = true;
         }
         else if (a == "--einbetten") einbetten.push_back(wert());
+        else if (a == "--notation")
+        {
+            const std::string n = wert();
+            const auto liste = c2d::diagramm::erNotationen();
+            const auto x = std::find_if(liste.begin(), liste.end(), [&](const auto& e) { return e.name == n; });
+            if (x == liste.end()) return aufruf();
+            notation = x->notation;
+            struktur = true;
+        }
+        else if (a == "--attribute")
+        {
+            const std::string n = wert();
+            if (n == "alle") attribute = c2d::diagramm::ErAttribute::Alle;
+            else if (n == "schluessel") attribute = c2d::diagramm::ErAttribute::Schluessel;
+            else if (n == "keine") attribute = c2d::diagramm::ErAttribute::Keine;
+            else return aufruf();
+            struktur = true;
+        }
         else if (a == "--aufrufgraph")
         {
             aufrufgraph = true;
@@ -706,7 +732,9 @@ int main(int argc, char* argv[])
             std::cerr << "c2d: --typ needs --datei in a folder\n";
             return 1;
         }
-        const c2d::diagramm::Strukturdiagramm d = c2d::diagramm::strukturVon(p.dateien[gewaehlteDatei].ergebnis.einheit, typ);
+        c2d::diagramm::Strukturdiagramm d = c2d::diagramm::strukturVon(p.dateien[gewaehlteDatei].ergebnis.einheit, typ);
+        d.notation = notation;
+        d.attribute = attribute;
         if (d.kaesten.empty())
         {
             std::cerr << "c2d: no type '" << typ << "' in " << vorn(p.dateien[gewaehlteDatei].pfad) << '\n';
@@ -731,5 +759,8 @@ int main(int argc, char* argv[])
         std::cerr << "c2d: nothing to draw in " << ziel << '\n';
         return 1;
     }
-    return schreibe(c2d::ausgabe::Diagrammart::Datentypen, c2d::diagramm::strukturVon(alle));
+    c2d::diagramm::Strukturdiagramm d = c2d::diagramm::strukturVon(alle);
+    d.notation = notation;
+    d.attribute = attribute;
+    return schreibe(c2d::ausgabe::Diagrammart::Datentypen, d);
 }

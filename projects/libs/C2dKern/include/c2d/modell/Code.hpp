@@ -274,6 +274,7 @@ struct Feld
     Sichtbarkeit sicht = Sichtbarkeit::Keine;
     int zeile = 0;
     bool typHinten = false;  ///< `name: typ` (Python)
+    bool nichtNull = false;  ///< nur Tabelle: die Spalte ist NOT NULL (auch als Teil des Primaerschluessels)
 };
 
 /// Eine Funktion, die zu einem Typ gehoert. Hat sie einen Rumpf, steht sie
@@ -333,6 +334,9 @@ struct Typ
     std::vector<std::string> basen;  ///< wovon der Typ erbt (C: leer); bei einer Schnittstelle: extends
     std::vector<std::string> realisiert;  ///< welche Schnittstellen er umsetzt (`implements`)
     std::vector<Verweis> verweise;        ///< nur Tabelle: ihre Fremdschluessel
+    std::vector<std::string> primaer;     ///< nur Tabelle: die Spalten ihres Primaerschluessels
+    /// nur Tabelle: je UNIQUE (Spalte, Bedingung, `CREATE UNIQUE INDEX` ohne WHERE) seine Spalten
+    std::vector<std::vector<std::string>> eindeutig;
     int zeile = 0;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }

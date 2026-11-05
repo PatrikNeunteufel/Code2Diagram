@@ -870,6 +870,34 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: datei_oeffnen pfad=beispiele/sql/lager_db.py` `aktion: diagramm_waehlen name=types:*`
 - [ ] **AA6 Dialekt:** `beispiele/sql/fremd/dbdemos` als Ordner (Projektdatei `"sql": "spark"`) — keine Meldung
       „quoted name is not closed“; Project > Edit project file… zeigt `"sql": "spark"`.
+- [ ] **AA7 Notationen:** `beispiele/sql/schule.sql`, Diagram `Data types`, `All types (6)`.
+      - Rechts neben der Darstellung steht das Feld *Notation* (Tables). In *Tables* trägt jeder
+        Fremdschlüssel an seinen Enden `1`, `0..1` oder `*`: `schueler` `*` → `1` `klasse`,
+        `klasse` `0..1` → `0..1` `lehrer`.
+      - Bei einer C-Datei mit `struct` fehlt das Feld.
+      `aktion: datei_oeffnen pfad=beispiele/sql/schule.sql` `aktion: diagramm_waehlen name=types:*`
+- [ ] **AA8 Crow's foot:** Krähenfüße statt Spitzen.
+      - An `klasse` zwei Striche (genau eins), an `schueler` Kreis und drei Striche (null oder viele).
+      - An `lehrer` beim `klassenlehrer` Strich und Kreis.
+      - Kein Spaltenname liegt auf einem Zeichen.
+      `aktion: notation_waehlen name=kraehenfuss`
+- [ ] **AA9 Chen:** Rechtecke mit Ellipsen links und rechts, die Primärschlüssel unterstrichen, kein
+      Fremdschlüssel als Ellipse.
+      - Rauten `klassenlehrer`, `klasse_id`, `leitet`, `gehoert`; `belegt` ist eine Raute mit der Ellipse
+        `note`, `m` an `schueler`, `n` an `kurs`.
+      - Daneben das Feld *Attributes: all*; *keys* lässt nur die Schlüssel, *none* keine Ellipse.
+      `aktion: notation_waehlen name=chen attribute=alle`
+- [ ] **AA10 (min,max) und Klick:**
+      - An den Linien `(0,*)` bei `klasse`, `(1,1)` bei `schueler`, `(1,1)` bei `ausweis`.
+      - Klick auf die Ellipse `note` zeigt Zeile 39, auf die Raute `leitet` Zeile 31 (die Spalte `lehrer_id`),
+        auf `klasse` Zeile 13.
+      - Nach einem Neustart steht die Notation noch auf (min,max). Hell und dunkel lesbar.
+      `aktion: notation_waehlen name=minmax` `aktion: klicken name=belegt::note`
+- [ ] **AA11 Formate:**
+      - mermaid in Crow's foot ist ein `erDiagram` (`klasse ||--o{ schueler`), in Chen ein `flowchart`
+        mit `<u>…</u>`.
+      - dot `arrowtail=crowodot` bzw. `shape=diamond`; drawio `ERmandOne` bzw. `rhombus`.
+      - Zurück auf *Tables*: `notation_waehlen name=tabellen attribute=alle`.
 
 ## AB. Abhängigkeiten der Daten
 

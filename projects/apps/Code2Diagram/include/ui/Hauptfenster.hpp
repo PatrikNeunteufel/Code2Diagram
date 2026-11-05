@@ -277,6 +277,17 @@ public:
     /// false = so heisst keine Darstellung.
     bool waehleDarstellung(const QString& name);
     [[nodiscard]] QString darstellung() const;
+    /// Wie Tabellen in Data types gezeichnet werden (Entscheid N5): `tabellen`, `kraehenfuss`, `chen`,
+    /// `minmax` (die Namen von c2d --notation); gemerkt ueber QSettings. false = so heisst keine.
+    bool waehleNotation(const QString& name);
+    [[nodiscard]] QString notation() const;
+    /// In Chen und (min,max): `alle`, `schluessel`, `keine`; gemerkt. false = so heisst keine Wahl.
+    bool waehleAttribute(const QString& name);
+    [[nodiscard]] QString attribute() const;
+    /// Wie waehleNotation / waehleAttribute, ohne es zu merken (fuer ein Bild von der Kommandozeile).
+    bool setzeNotation(const QString& name, const QString& attribute = {});
+    /// Ist das Feld Notation zu sehen (Data types mit einer Tabelle)?
+    [[nodiscard]] bool notationSichtbar() const;
     /// `preview` oder `text`; false = so heisst keine Ansicht.
     bool waehleAnsicht(const QString& name);
 
@@ -421,6 +432,10 @@ private:
     void baueNeu();
     /// Das Diagramm, wie es jetzt ist, zeichnen und als Text schreiben.
     void zeichne();
+    /// Notation und Attribute: zu sehen bei Data types mit Tabellen (Attribute nur in Chen, (min,max)).
+    void zeigeNotationsfelder();
+    [[nodiscard]] c2d::diagramm::ErNotation gewaehlteNotation() const;
+    [[nodiscard]] c2d::diagramm::ErAttribute gewaehlteAttribute() const;
     void speichereUnter();
     /// Einen Pfad vorn in die Liste Open recent nehmen (und speichern).
     void merkeZuletzt(const QString& pfad);
@@ -527,6 +542,8 @@ private:
     std::size_t m_schalterZahl = 0;                  ///< wie viele Namen die Dateien des Projekts fragen
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
+    QComboBox* m_notation = nullptr;   ///< bei Data types mit Tabellen: Tables, Crow's foot, Chen, (min,max)
+    QComboBox* m_attribute = nullptr;  ///< in Chen und (min,max): welche Spalten Ellipsen werden
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
     c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph

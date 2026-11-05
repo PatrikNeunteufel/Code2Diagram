@@ -264,6 +264,27 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   mit seinen Spalten. `ALTER TABLE … ADD [COLUMN]` fügt Spalten hinzu. Ein Name mit Schema bleibt so
   (`public.actor`); Namen gelten ohne Rücksicht auf Groß/klein, außer in Begrenzern (`"Album"`,
   `[dbo]`, `` `x` ``), und ein Fremdschlüssel ohne Schema findet seine Tabelle über den letzten Teil.
+- **Notationen** (Feld *Notation* in der Leiste, wenn Data types Tabellen zeigt; gemerkt; `c2d --notation`):
+  - *Tables* (Vorgabe): wie bisher, dazu an jedem Ende eines Fremdschlüssels die Multiplizität (`1`,
+    `0..1`, `*`).
+  - *Crow's foot*: Kästen mit Spalten und Krähenfüßen. Mermaid schreibt `erDiagram`, solange keine Klasse
+    daneben steht.
+  - *Chen*: Entitäten als Rechtecke, Attribute als Ellipsen (der Primärschlüssel unterstrichen),
+    Beziehungen als Rauten mit `1` / `n` / `m` an der Entität.
+  - *(min,max)*: dieselben Formen, an den Linien `(min,max)`: wie oft die Entität an der Beziehung
+    teilnimmt.
+  - Woher die Zahlen kommen: aus NOT NULL und UNIQUE (an der Spalte, als Bedingung der Tabelle, aus
+    `CREATE UNIQUE INDEX` ohne WHERE, aus `ALTER COLUMN … SET NOT NULL`).
+    - Die Tabelle, auf die gezeigt wird, steht genau einmal da, wenn alle Spalten des Fremdschlüssels
+      NOT NULL sind, sonst höchstens einmal.
+    - Die Tabelle mit dem Fremdschlüssel steht höchstens einmal da, wenn seine Spalten eindeutig sind,
+      sonst beliebig oft.
+  - Eine Tabelle, deren Primärschlüssel ganz aus Fremdschlüsseln besteht (mindestens zwei), ist in Chen
+    und (min,max) die Raute m:n; ihre übrigen Spalten sind Attribute der Beziehung. Eine Raute 1:n heißt
+    nach dem Namen des Fremdschlüssels, sonst nach seinen Spalten.
+  - *Attributes: all / keys / none* wählt die Ellipsen. Klassen neben Tabellen bleiben UML.
+  - Ein Klick auf eine Ellipse oder Raute zeigt die Spalte im Quelltext.
+  - Beispiel: `beispiele/sql/schule.sql`.
 - Getrennt wird an `;`, einer Zeile `GO` (T-SQL), dem Trenner von `DELIMITER` (MySQL) und `SET TERM`
   (Firebird); ein `CREATE`, `ALTER`, `DROP` am Zeilenanfang beginnt auch ohne `;` eine neue Anweisung.
   `BEGIN … END` und `CASE … END` (auch auf oberster Ebene, Spark und T-SQL) halten die `;` darin
@@ -544,7 +565,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax] [--attribute alle|schluessel|keine]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -556,6 +577,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--automat Bus_State` zeichnet den Zustandsautomaten über diese Variable (ganz oder ihr
   letztes Glied); `--liste` nennt die erkannten als `automaton …`
 - `--typ Regler` (mit `--datei` im Projekt) zeichnet nur diesen Typ und seine Nachbarn
+- `--notation chen` zeichnet Tabellen in Chen (`tabellen` Vorgabe, `kraehenfuss`, `chen`, `minmax`);
+  `--attribute schluessel|keine` wählt in Chen und (min,max) die Ellipsen; beide meinen `--struktur`
 - `--aufrufgraph main` zeichnet den Aufrufgraph ab `main` (wie `--funktion`: im Projekt
   eindeutig, sonst `--datei`; der Name darf gleich folgen, wenn das Ziel davor steht, sonst
   `--aufrufgraph --funktion main`); ohne Funktion den der Datei (im Projekt mit `--datei`).
@@ -763,7 +786,15 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und `LIKE` haben
   keine Spalten (Hinweis). In einer Vorlage zeigt ein Kasten, was dasteht: setzt ein Platzhalter erst den
   Primärschlüssel ein (UART: `projekt_id %1` mit `d.pk()`), fehlt das `PK`. Stehen mehrere Literale auf
-  verschiedenen Zeilen, gilt ein Zeilenwechsel dazwischen (für SQL Leerraum).
+  verschiedenen Zeilen, gilt ein Zeilenwechsel dazwischen (für SQL Leerraum). Die Notationen kennen nur,
+  was das Schema sagt:
+  - Eine Tabelle, auf die ein Fremdschlüssel zeigt, nimmt mindestens 0-mal teil, denn kein Schema
+    erzwingt ein Kind.
+  - Ein eindeutiger Index in einer anderen Datei als seine Tabelle wirkt nicht.
+  - Eine Verbindungstabelle mit einem Fremdschlüssel außerhalb ihres Primärschlüssels bleibt eine
+    Entität.
+  - In Mermaid steht in Chen und (min,max) der Text auf der Linie, nicht an ihrem Ende; Crow's foot mit
+    Klassen daneben wird ein classDiagram mit Multiplizitäten (Kommentar).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

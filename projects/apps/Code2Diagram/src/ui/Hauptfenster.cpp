@@ -269,6 +269,26 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_darstellung->addItem(QStringLiteral("Decision table"), QString::fromLatin1(kEntscheidungstabelle));
     m_darstellung->setToolTip(
         QStringLiteral("How a function is shown: its flowchart, its structogram (Nassi-Shneiderman) or its decision table"));
+    // wie Tabellen gezeichnet werden (Entscheid N5): gemerkt, Vorgabe Tables
+    m_notation = new QComboBox(rechts);
+    m_notation->setObjectName(QStringLiteral("notation"));
+    for (const c2d::diagramm::ErNotationName& n : c2d::diagramm::erNotationen())
+        m_notation->addItem(ausStd(n.titel), ausStd(n.name));
+    m_notation->setToolTip(QStringLiteral("How tables are drawn: Tables (multiplicities), Crow's foot, Chen, (min,max) - "
+                                          "classes stay UML"));
+    m_attribute = new QComboBox(rechts);
+    m_attribute->setObjectName(QStringLiteral("attribute"));
+    m_attribute->addItem(QStringLiteral("Attributes: all"), QStringLiteral("alle"));
+    m_attribute->addItem(QStringLiteral("Attributes: keys"), QStringLiteral("schluessel"));
+    m_attribute->addItem(QStringLiteral("Attributes: none"), QStringLiteral("keine"));
+    m_attribute->setToolTip(QStringLiteral("In Chen and (min,max): which columns are drawn as ellipses (foreign keys never)"));
+    {
+        const QSettings einstellungen;
+        waehle(m_notation, einstellungen.value(QStringLiteral("datentypen/notation")).toString());
+        waehle(m_attribute, einstellungen.value(QStringLiteral("datentypen/attribute")).toString());
+    }
+    m_notation->hide();
+    m_attribute->hide();
     m_richtung = new QComboBox(rechts);
     m_richtung->setObjectName(QStringLiteral("richtung"));
     m_richtung->addItem(QStringLiteral("Top-down"), QStringLiteral("TD"));
@@ -289,6 +309,8 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     leiste->addWidget(m_auswahl, 1);
     leiste->addWidget(m_typAuswahl, 1);
     leiste->addWidget(m_darstellung);
+    leiste->addWidget(m_notation);
+    leiste->addWidget(m_attribute);
     leiste->addWidget(new QLabel(QStringLiteral("Format:"), rechts));
     leiste->addWidget(m_format);
     leiste->addWidget(m_richtung);
@@ -313,6 +335,15 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         connect(liste, &QComboBox::currentIndexChanged, this, [this] { zeichne(); });
     // die Darstellung gilt fuer jede Funktion: neu bauen, was gezeigt ist (Einbettungen gehen dabei)
     connect(m_darstellung, &QComboBox::currentIndexChanged, this, [this] { baueNeu(); });
+    // die Notation gilt fuer jede Datei und bleibt gemerkt
+    for (QComboBox* liste : {m_notation, m_attribute})
+        connect(liste, &QComboBox::currentIndexChanged, this, [this] {
+            QSettings einstellungen;
+            einstellungen.setValue(QStringLiteral("datentypen/notation"), notation());
+            einstellungen.setValue(QStringLiteral("datentypen/attribute"), attribute());
+            zeigeNotationsfelder();
+            zeichne();
+        });
     connect(m_typAuswahl, &QComboBox::currentIndexChanged, this, [this] {
         const QString neu = m_typAuswahl->currentData().toString();
         if (neu.isEmpty() || neu == m_typ) return;
@@ -1909,6 +1940,69 @@ QString Hauptfenster::darstellung() const
     return m_darstellung->currentData().toString();
 }
 
+bool Hauptfenster::waehleNotation(const QString& name)
+{
+    return waehle(m_notation, name);
+}
+
+QString Hauptfenster::notation() const
+{
+    return m_notation->currentData().toString();
+}
+
+bool Hauptfenster::waehleAttribute(const QString& name)
+{
+    return waehle(m_attribute, name);
+}
+
+QString Hauptfenster::attribute() const
+{
+    return m_attribute->currentData().toString();
+}
+
+bool Hauptfenster::setzeNotation(const QString& name, const QString& attribute)
+{
+    {
+        const QSignalBlocker sperre1(m_notation);
+        const QSignalBlocker sperre2(m_attribute);
+        if (!name.isEmpty() && !waehle(m_notation, name)) return false;
+        if (!attribute.isEmpty() && !waehle(m_attribute, attribute)) return false;
+    }
+    zeigeNotationsfelder();
+    zeichne();
+    return true;
+}
+
+bool Hauptfenster::notationSichtbar() const
+{
+    return !m_notation->isHidden();
+}
+
+void Hauptfenster::zeigeNotationsfelder()
+{
+    // nur bei Data types einer Datei mit Tabellen; Attribute nur in Chen und (min,max)
+    bool tabellen = false;
+    if (m_gezeigt == QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
+        for (const c2d::modell::Typ& t : m_projekt.dateien[m_datei].ergebnis.einheit.typen)
+            tabellen = tabellen || t.art == c2d::modell::TypArt::Tabelle;
+    m_notation->setVisible(tabellen);
+    m_attribute->setVisible(tabellen && (notation() == QLatin1String("chen") || notation() == QLatin1String("minmax")));
+}
+
+c2d::diagramm::ErNotation Hauptfenster::gewaehlteNotation() const
+{
+    for (const c2d::diagramm::ErNotationName& n : c2d::diagramm::erNotationen())
+        if (ausStd(n.name) == notation()) return n.notation;
+    return c2d::diagramm::ErNotation::Tabellen;
+}
+
+c2d::diagramm::ErAttribute Hauptfenster::gewaehlteAttribute() const
+{
+    if (attribute() == QLatin1String("schluessel")) return c2d::diagramm::ErAttribute::Schluessel;
+    if (attribute() == QLatin1String("keine")) return c2d::diagramm::ErAttribute::Keine;
+    return c2d::diagramm::ErAttribute::Alle;
+}
+
 bool Hauptfenster::zeigtStruktogramm() const
 {
     return !m_struktogramm.titel.empty();
@@ -2469,6 +2563,7 @@ void Hauptfenster::baueNeu()
     // ein anderer Aufrufgraph beginnt zugeklappt
     if (m_gezeigt != bisher) m_aufgeklappt.clear();
     m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
+    zeigeNotationsfelder();
     leiteAufrufgraphAb();
     leiteAbhaengigkeitenAb();
     if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
@@ -2587,6 +2682,8 @@ void Hauptfenster::zeichne()
         const c2d::modell::Einheit& einheit = m_projekt.dateien[m_datei].ergebnis.einheit;
         m_struktur = m_typ == QLatin1String("*") || m_typ.isEmpty() ? strukturVon(einheit)
                                                                      : strukturVon(einheit, m_typ.toStdString());
+        m_struktur.notation = gewaehlteNotation();
+        m_struktur.attribute = gewaehlteAttribute();
         // je Glied die Namen, die zu einem Typ fuehren
         std::vector<std::vector<std::vector<std::string>>> links(m_struktur.kaesten.size());
         for (std::size_t k = 0; k < m_struktur.kaesten.size(); ++k)

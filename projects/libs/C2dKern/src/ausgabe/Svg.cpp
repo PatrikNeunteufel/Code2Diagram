@@ -73,6 +73,7 @@ std::string farbRegeln(bool dunkel, std::string_view einzug)
            e + ".getoent { fill: " + f(Farbe::Getoent) + "; }\n" +
            e + ".flaeche, .getoent, .linie, .spitze, .hohl { stroke: " + f(Farbe::Strich) + "; }\n" +
            e + ".spitze { fill: " + f(Farbe::Strich) + "; }\n" +
+           e + ".kreis { fill: " + f(Farbe::Grund) + "; stroke: " + f(Farbe::Strich) + "; stroke-width: 1.2; }\n" +
            e + ".rahmen { stroke: " + f(Farbe::Rahmen) + "; }\n" +
            e + ".fremd { fill: " + f(Farbe::Fremd) + "; stroke: " + f(Farbe::FremdStrich) + "; }\n" +
            e + "text { fill: " + f(Farbe::Text) + "; }\n" +
@@ -272,6 +273,56 @@ std::string kasten(const Kasten& k, const Rechteck& r, const AnordnungOptionen& 
     return aus;
 }
 
+/// Eine Linie einer Beziehung (gestrichelt bei Realisiert).
+std::string linie(const Linienzug& l, BeziehungArt art)
+{
+    return "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" +
+           (art == BeziehungArt::Realisiert ? " style=\"stroke-dasharray:6 4\"" : "") + "/>\n";
+}
+
+/// Das Zeichen am Ende einer Beziehung: Raute beim Besitzer, Spitze beim Ziel, hohle Spitze bei der Basis.
+std::string ende(const Linienzug& l, BeziehungArt art)
+{
+    switch (art)
+    {
+        case BeziehungArt::Enthaelt: return raute(l[0], l[1]);
+        case BeziehungArt::Verweist: return spitze(l[l.size() - 2], l.back(), true);
+        case BeziehungArt::Erbt:
+        case BeziehungArt::Realisiert: return spitze(l[l.size() - 2], l.back(), false, kSpitzeErbt);
+    }
+    return {};
+}
+
+/// Ein Kasten des ER-Diagramms (eine Klasse neben Tabellen): wie kasten(), aus den Zeilen des Knotens.
+std::string erKasten(const ErKnoten& k, const Rechteck& r, const AnordnungOptionen& o)
+{
+    const double kopfhoehe = kopfHoehe(o);
+    std::string aus = rechteck(r, "flaeche") + rechteck({r.x, r.y, r.breite, kopfhoehe}, "getoent");
+    const std::string name = kuerze(k.name, o.maxZeilenLaenge);
+    const double mitteX = r.x + r.breite / 2;
+    if (k.stereotyp.empty())
+        aus += textMittig({name}, {mitteX, r.y + kopfhoehe / 2}, o.zeilenHoehe, "font-weight=\"bold\"");
+    else
+    {
+        aus += textMittig({"\xC2\xAB" + k.stereotyp + "\xC2\xBB"}, {mitteX, r.y + 2 + kopfhoehe / 4}, o.zeilenHoehe,
+                          "font-style=\"italic\"");
+        aus += textMittig({name}, {mitteX, r.y - 2 + kopfhoehe * 3 / 4}, o.zeilenHoehe, "font-weight=\"bold\"");
+    }
+    double y = r.y + kopfhoehe + 5;
+    for (std::size_t i = 0; i < k.zeilen.size(); ++i)
+    {
+        if (i == k.felder)
+        {
+            y += 3;
+            aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x, y}, {r.x + r.breite, y}}) + "\"/>\n";
+            y += 5;
+        }
+        aus += textLinks(kuerze(k.zeilen[i], o.maxZeilenLaenge), r.x + 8, y, o.zeilenHoehe);
+        y += o.zeilenHoehe;
+    }
+    return aus;
+}
+
 /// Eine Tabelle: Zellen (der volle Text als Tooltip), die doppelte Linie, die Textzeilen.
 std::string tabelle(const TabellenAnordnung& a, const std::string& titel, const AnordnungOptionen& o)
 {
@@ -345,23 +396,25 @@ public:
     [[nodiscard]] std::string schreibe(const Strukturdiagramm& diagramm, const Optionen& optionen) const override
     {
         const AnordnungOptionen o = anordnung(optionen);
+        if (alsErDiagramm(diagramm)) return erDiagramm(erDiagrammVon(diagramm), o);
         const StrukturAnordnung a = ordneAn(diagramm, o);
         std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
+        const bool kraehenfuss = diagramm.notation == ErNotation::Kraehenfuss;
 
         for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
         {
             const Linienzug& l = a.beziehungen[e];
             const Beziehung& b = diagramm.beziehungen[e];
             if (l.size() < 2) continue;
-            const bool realisiert = b.art == BeziehungArt::Realisiert;
-            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" +
-                   (realisiert ? " style=\"stroke-dasharray:6 4\"" : "") + "/>\n";
-            switch (b.art)
+            aus += linie(l, b.art);
+            // in Crow's foot traegt ein Fremdschluessel keine Spitze, sondern seine Enden
+            if (!(kraehenfuss && b.fremdschluessel)) aus += ende(l, b.art);
+            for (const StrukturAnordnung::Ende& x : a.enden[e])
             {
-                case BeziehungArt::Enthaelt: aus += raute(l[0], l[1]); break;
-                case BeziehungArt::Verweist: aus += spitze(l[l.size() - 2], l.back(), true); break;
-                case BeziehungArt::Erbt:
-                case BeziehungArt::Realisiert: aus += spitze(l[l.size() - 2], l.back(), false, kSpitzeErbt); break;
+                for (const Linienzug& s : x.striche) aus += "  <polyline class=\"linie\" points=\"" + punkte(s) + "\"/>\n";
+                for (const Punkt& k : x.kreise)
+                    aus += "  <circle class=\"kreis\" cx=\"" + zahl(k.x) + "\" cy=\"" + zahl(k.y) + "\" r=\"" + zahl(kKreis) + "\"/>\n";
+                if (!x.text.empty()) aus += textMittig({x.text}, x.textMitte, o.zeilenHoehe);
             }
             if (b.beschriftung.empty()) continue;
             // wo die Anordnung sie hinstellt: neben der Linie, frei von anderen Schildern und Kaesten
@@ -369,6 +422,60 @@ public:
                               "font-style=\"italic\"");
         }
         for (std::size_t i = 0; i < a.kaesten.size(); ++i) aus += kasten(diagramm.kaesten[i], a.kaesten[i], o);
+        return aus + "</svg>\n";
+    }
+
+    /// Chen und (min,max): Linien, darauf Rechtecke, Rauten, Kaesten und Ellipsen, vorn die Texte.
+    [[nodiscard]] static std::string erDiagramm(const ErDiagramm& d, const AnordnungOptionen& o)
+    {
+        const ErAnordnung a = ordneAn(d, o);
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        {
+            const Linienzug& l = a.kanten[e];
+            if (l.size() < 2) continue;
+            const ErKante& k = d.kanten[e];
+            aus += linie(l, k.zwischenKaesten ? k.art : BeziehungArt::Verweist);
+            if (k.zwischenKaesten) aus += ende(l, k.art);
+        }
+        for (const ErAnordnung::Ellipse& el : a.ellipsen) aus += "  <polyline class=\"linie\" points=\"" + punkte(el.linie) + "\"/>\n";
+        for (std::size_t v = 0; v < a.knoten.size(); ++v)
+        {
+            const ErKnoten& k = d.knoten[v];
+            const Rechteck& r = a.knoten[v];
+            const std::string name = kuerze(k.name, o.maxZeilenLaenge);
+            switch (k.art)
+            {
+                case ErKnotenArt::Entitaet:
+                    aus += rechteck(r, "flaeche") + textMittig({name}, r.mitte(), o.zeilenHoehe, "font-weight=\"bold\"");
+                    break;
+                case ErKnotenArt::Beziehung:
+                {
+                    const Punkt m = r.mitte();
+                    aus += "  <polygon class=\"flaeche\" points=\"" +
+                           punkte({{m.x, r.y}, {r.x + r.breite, m.y}, {m.x, r.y + r.hoehe}, {r.x, m.y}}) + "\"/>\n";
+                    aus += textMittig({name}, m, o.zeilenHoehe);
+                    break;
+                }
+                case ErKnotenArt::Kasten: aus += erKasten(k, r, o); break;
+            }
+        }
+        for (const ErAnordnung::Ellipse& el : a.ellipsen)
+        {
+            const ErAttribut& at = d.knoten[el.knoten].attribute[el.attribut];
+            const Punkt m = el.ort.mitte();
+            aus += "  <ellipse class=\"flaeche\" cx=\"" + zahl(m.x) + "\" cy=\"" + zahl(m.y) + "\" rx=\"" + zahl(el.ort.breite / 2) +
+                   "\" ry=\"" + zahl(el.ort.hoehe / 2) + "\"/>\n";
+            aus += textMittig({kuerze(at.name, o.maxZeilenLaenge)}, m, o.zeilenHoehe,
+                              at.schluessel ? "text-decoration=\"underline\"" : "");
+        }
+        for (std::size_t e = 0; e < a.texte.size(); ++e)
+        {
+            const ErKante& k = d.kanten[e];
+            if (k.text.empty()) continue;
+            aus += textMittig({kuerze(k.text, o.maxZeilenLaenge)}, a.texte[e], o.zeilenHoehe,
+                              k.zwischenKaesten ? "font-style=\"italic\"" : "");
+        }
         return aus + "</svg>\n";
     }
 

@@ -387,6 +387,22 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.darstellung());
                      });
 
+    anbindung.aktion(QStringLiteral("notation_waehlen"),
+                     QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
+                                    "columns are ellipses in Chen and (min,max)"),
+                     QStringLiteral("name=<tabellen | kraehenfuss | chen | minmax> [attribute=<alle | schluessel | keine>]"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         const QString attribute = st::argument(argumente, QStringLiteral("attribute"));
+                         if (!name.isEmpty() && !fenster.waehleNotation(name))
+                             return st::ungueltig(
+                                 QStringLiteral("No notation '%1' - there are: tabellen, kraehenfuss, chen, minmax").arg(name));
+                         if (!attribute.isEmpty() && !fenster.waehleAttribute(attribute))
+                             return st::ungueltig(
+                                 QStringLiteral("No choice '%1' - there are: alle, schluessel, keine").arg(attribute));
+                         return st::ok(fenster.notation() + QLatin1Char(' ') + fenster.attribute());
+                     });
+
     anbindung.aktion(QStringLiteral("einstellungen_zeigen"), QStringLiteral("Opens File > Settings"), QString(),
                      [&fenster](const QJsonObject&) -> st::Ergebnis {
                          fenster.zeigeEinstellungen();
@@ -498,7 +514,7 @@ bool Application::init(int argc, char* argv[])
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
-    QString tiefe, hoechstens, aufrufRichtung;
+    QString tiefe, hoechstens, aufrufRichtung, notation, attribute;
     bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false, struktogramm = false,
          entscheidungstabelle = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
@@ -522,6 +538,8 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--thema")) wert();  // schon oben gesetzt
         else if (a == QLatin1String("--einstellungen")) m_impl->einstellungen = true;
         else if (a == QLatin1String("--struktogramm")) struktogramm = true;
+        else if (a == QLatin1String("--notation")) notation = wert();
+        else if (a == QLatin1String("--attribute")) attribute = wert();
         else if (a == QLatin1String("--entscheidungstabelle")) entscheidungstabelle = true;
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
         else if (a == QLatin1String("--beide")) aufrufRichtung = QStringLiteral("both");
@@ -552,6 +570,9 @@ bool Application::init(int argc, char* argv[])
         fenster.zeigeBeispiel();
     if (!imProjekt.isEmpty() && !fenster.waehleDatei(imProjekt))
         qWarning().noquote() << "No file" << imProjekt << "in the project";
+    // fuer ein Bild der Datentypen; nicht gemerkt (wie --thema)
+    if ((!notation.isEmpty() || !attribute.isEmpty()) && !fenster.setzeNotation(notation, attribute))
+        qWarning().noquote() << "No notation" << notation << attribute;
     if (!diagramm.isEmpty() && !fenster.waehleDiagramm(diagramm))
         qWarning().noquote() << "No diagram" << diagramm << "- there are:" << fenster.diagramme().join(QStringLiteral(", "));
     for (const QString& name : einbetten)

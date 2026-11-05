@@ -659,13 +659,52 @@ private:
             const auto g = std::find_if(std::begin(kGebilde), std::end(kGebilde),
                                         [&](const GebildeWort& x) { return x.wort == w; });
             if (g == std::end(kGebilde)) continue;
-            if (g->gebilde == Gebilde::Tabelle)
+            if (w == "index")
+            {
+                bool eindeutig = false;
+                for (std::size_t u = a + 1; u < k; ++u) eindeutig = eindeutig || wort(u, "unique");
+                if (eindeutig) liesEindeutigenIndex(k + 1, b);
+            }
+            else if (g->gebilde == Gebilde::Tabelle)
                 liesCreateTable(k + 1, b);
             else if (g->gebilde == Gebilde::Objekt)
                 liesObjekt(g->objekt, a, k + 1, b);
             return;
         }
         melde(Schwere::Warnung, tok(a), "CREATE statement is not understood");
+    }
+
+    /// Ab i (hinter `UNIQUE … INDEX`): `[CONCURRENTLY] [IF NOT EXISTS] [name] ON [ONLY] tabelle [USING m]
+    /// (spalten) …` — die Spalten sind eindeutig (Entscheid N2). Nicht, wenn ein WHERE folgt (dann nur ein
+    /// Teil der Zeilen) oder eine Spalte ein Ausdruck ist (`lower(x)`).
+    void liesEindeutigenIndex(std::size_t i, std::size_t b)
+    {
+        std::size_t on = i;
+        while (on < b && !wort(on, "on")) ++on;
+        if (on >= b) return;
+        std::size_t k = on + 1;
+        if (wort(k, "only")) ++k;
+        std::size_t e = k;
+        const std::string name = liesNamen(k, e);
+        if (wort(e, "using")) e += 2;
+        if (!tok(e).istOp("(")) return;
+        const std::size_t zu = ueberKlammer(e);
+        for (std::size_t j = zu; j < b; ++j)
+            if (wort(j, "where")) return;
+        std::vector<std::string> spalten;
+        for (const auto& [x, y] : teile(e + 1, zu - 1))
+        {
+            if (!istName(x) || (x + 1 < y && tok(x + 1).istOp("("))) return;  // ein Ausdruck
+            spalten.push_back(ohneBegrenzer(tok(x).text));
+        }
+        if (spalten.empty()) return;
+        Typ* typ = tabelle(name);
+        if (typ == nullptr)
+        {
+            melde(Schwere::Hinweis, tok(k), "UNIQUE INDEX: table '" + name + "' is not defined in this file");
+            return;
+        }
+        typ->eindeutig.push_back(std::move(spalten));
     }
 
     /// Ab i (hinter `TABLE`): `[IF NOT EXISTS] name ( Spalten und Bedingungen ) …`.
@@ -756,6 +795,18 @@ private:
                 k += 2;
                 continue;
             }
+            if (wort(k, "not") && wort(k + 1, "null"))
+            {
+                feld.nichtNull = true;
+                k += 2;
+                continue;
+            }
+            if (wort(k, "unique"))  // auch `UNIQUE KEY` (MySQL)
+            {
+                typ.eindeutig.push_back({feld.name});
+                k += wort(k + 1, "key") ? 2 : 1;
+                continue;
+            }
             if (wort(k, "references"))
             {
                 Verweis v;
@@ -776,7 +827,7 @@ private:
     }
 
     /// Eine Bedingung der Tabelle `[x, y)`: `[CONSTRAINT n] PRIMARY KEY (…)`, `FOREIGN KEY (…)
-    /// REFERENCES t (…)`; die anderen (UNIQUE, CHECK, INDEX …) tragen nichts bei.
+    /// REFERENCES t (…)`, `UNIQUE [KEY|INDEX] [name] (…)`; die anderen (CHECK, INDEX …) tragen nichts bei.
     void liesTabellenBedingung(std::size_t x, std::size_t y, Typ& typ, std::vector<std::string>& primaer)
     {
         std::string name;
@@ -784,6 +835,15 @@ private:
         {
             name = ohneBegrenzer(tok(x + 1).text);
             x += 2;
+        }
+        if (wort(x, "unique"))
+        {
+            // `UNIQUE (a, b)`, `UNIQUE KEY name (a)` (MySQL), `UNIQUE NONCLUSTERED (a)` (T-SQL)
+            std::size_t k = x + 1;
+            while (k < y && !tok(k).istOp("(")) ++k;
+            std::vector<std::string> spalten = liesNamensliste(k, k);
+            if (!spalten.empty()) typ.eindeutig.push_back(std::move(spalten));
+            return;
         }
         if (wort(x, "primary") && wort(x + 1, "key"))
         {
@@ -837,6 +897,18 @@ private:
         {
             std::size_t x = x0;
             while (x < y && (wort(x, "with") || wort(x, "check") || wort(x, "nocheck"))) ++x;  // T-SQL
+            if (wort(x, "alter"))
+            {
+                // Postgres: `ALTER [COLUMN] x SET NOT NULL` / `DROP NOT NULL`
+                std::size_t c = x + 1;
+                if (wort(c, "column")) ++c;
+                const bool setzt = wort(c + 1, "set") && wort(c + 2, "not") && wort(c + 3, "null");
+                const bool nimmt = wort(c + 1, "drop") && wort(c + 2, "not") && wort(c + 3, "null");
+                if (istName(c) && (setzt || nimmt))
+                    for (Feld& f : neu.felder)
+                        if (klein(f.name) == klein(ohneBegrenzer(tok(c).text))) f.nichtNull = setzt;
+                continue;
+            }
             if (!wort(x, "add")) continue;
             ++x;
             if (beginntBedingung(x))
@@ -1251,14 +1323,17 @@ private:
         return treffer == 1 ? letzterTeil : nullptr;
     }
 
-    /// Schreibt `PK` und `FK` in den Zusatz der Spalten (ohne Ruecksicht auf Gross/klein).
+    /// Nimmt die Spalten eines Primaerschluessels in Typ::primaer auf (ein spaeterer ersetzt ihn) und
+    /// schreibt `PK` und `FK` in den Zusatz der Spalten (ohne Ruecksicht auf Gross/klein); eine Spalte
+    /// des Primaerschluessels ist NOT NULL.
     static void markiereSchluessel(Typ& typ, const std::vector<std::string>& primaer)
     {
+        if (!primaer.empty()) typ.primaer = primaer;
         for (Feld& f : typ.felder)
         {
             const std::string n = klein(f.name);
-            const bool pk = std::any_of(primaer.begin(), primaer.end(), [&](const std::string& p) { return klein(p) == n; }) ||
-                            f.zusatz.find("PK") != std::string::npos;
+            const bool pk = std::any_of(typ.primaer.begin(), typ.primaer.end(), [&](const std::string& p) { return klein(p) == n; });
+            if (pk) f.nichtNull = true;
             const bool fk = std::any_of(typ.verweise.begin(), typ.verweise.end(), [&](const Verweis& v) {
                 return std::any_of(v.felder.begin(), v.felder.end(), [&](const std::string& s) { return klein(s) == n; });
             });

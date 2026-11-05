@@ -37,6 +37,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Kotlin.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Sql.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_SqlEingebettet.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_ErNotation.cpp"
 )
 
 set(_local_headers

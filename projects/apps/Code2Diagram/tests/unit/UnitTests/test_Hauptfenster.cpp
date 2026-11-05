@@ -6,11 +6,16 @@
 
 #include "ui/Hauptfenster.hpp"
 #include "ui/Konfiguration.hpp"
+#include "ui/Vorschau.hpp"
 
+#include "c2d/diagramm/Ableitung.hpp"
+#include "c2d/diagramm/Anordnung.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
+#include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 
 using c2d::ui::Hauptfenster;
@@ -1022,5 +1027,106 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.aufrufgraphKnoten() == QStringList{"knapp", "artikel", "bestand"});
         CHECK(fenster.zurueck());
         CHECK(fenster.diagramm() == "deps");
+    }
+
+    // die Schule aus beispiele/sql/schule.sql, gekuerzt
+    constexpr const char* kSchule =
+        "CREATE TABLE lehrer (lehrer_id INTEGER PRIMARY KEY, name VARCHAR(60) NOT NULL);\n"
+        "CREATE TABLE kurs (kurs_id INTEGER PRIMARY KEY, lehrer_id INTEGER REFERENCES lehrer (lehrer_id));\n"
+        "CREATE TABLE schueler (schueler_id INTEGER PRIMARY KEY, name VARCHAR(60));\n"
+        "CREATE TABLE belegt (schueler_id INTEGER REFERENCES schueler (schueler_id),\n"
+        "                     kurs_id INTEGER REFERENCES kurs (kurs_id), note INTEGER,\n"
+        "                     PRIMARY KEY (schueler_id, kurs_id));\n";
+
+    TEST_CASE("Notation: das Feld nur bei Tabellen, Chen und (min,max) im Text, gemerkt")
+    {
+        {
+            Hauptfenster fenster;
+            fenster.zeige(kSchule, "s.sql");
+            REQUIRE(fenster.waehleDiagramm("types"));
+            REQUIRE(fenster.waehleTyp("*"));
+            CHECK(fenster.notationSichtbar());
+            CHECK(fenster.notation() == "tabellen");
+            CHECK(fenster.diagrammText().contains(">0..1</tspan>"));
+            CHECK(fenster.vorschauFormen() == 4);
+            CHECK_FALSE(fenster.waehleNotation("uml"));
+            REQUIRE(fenster.waehleNotation("chen"));
+            CHECK(fenster.diagrammText().contains("<ellipse"));
+            // vier Entitaeten -- belegt ist selbst die Raute m:n -- und die Raute von kurs.lehrer_id
+            CHECK(fenster.vorschauFormen() == 5);
+            REQUIRE(fenster.waehleNotation("minmax"));
+            CHECK(fenster.diagrammText().contains(">(0,*)</tspan>"));
+            REQUIRE(fenster.waehleAttribute("keine"));
+            CHECK_FALSE(fenster.diagrammText().contains("<ellipse"));
+            CHECK_FALSE(fenster.waehleAttribute("manche"));
+            // ein Klick auf den Kopf zeigt die Zeile der Tabelle, wie in Tables
+            CHECK(fenster.klicke("belegt"));
+            CHECK(fenster.gezeigteStelle() == "s.sql:4");
+            // eine Datei ohne Tabellen: kein Feld
+            fenster.zeige("struct S { int x; };\n", "s.c");
+            REQUIRE(fenster.waehleDiagramm("types"));
+            CHECK_FALSE(fenster.notationSichtbar());
+        }
+        {
+            // gemerkt (QSettings); setzeNotation merkt nichts
+            Hauptfenster zweites;
+            CHECK(zweites.notation() == "minmax");
+            CHECK(zweites.attribute() == "keine");
+            REQUIRE(zweites.setzeNotation("kraehenfuss", "alle"));
+            CHECK_FALSE(zweites.setzeNotation("uml"));
+        }
+        {
+            Hauptfenster drittes;
+            CHECK(drittes.notation() == "minmax");
+            REQUIRE(drittes.waehleNotation("tabellen"));
+            REQUIRE(drittes.waehleAttribute("alle"));
+        }
+    }
+
+    TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")
+    {
+        using namespace c2d::diagramm;
+        Strukturdiagramm d = strukturVon(c2d::sprache::sql().lies(kSchule, "s.sql", {}).einheit);
+        d.notation = ErNotation::Chen;
+        c2d::ui::Vorschau vorschau;
+        vorschau.resize(3000, 3000);
+        std::size_t kasten = kKeine, eintrag = kKeine;
+        vorschau.beiKlickKasten = [&](std::size_t k, std::size_t e) {
+            kasten = k;
+            eintrag = e;
+        };
+        vorschau.zeige(d, false);
+        const ErDiagramm er = erDiagrammVon(d);
+        const ErAnordnung a = ordneAn(er, {});
+        const auto klick = [&](const Rechteck& r) {
+            kasten = eintrag = kKeine;
+            const QPoint p = vorschau.mapFromScene(QPointF(r.x + r.breite / 2, r.y + r.hoehe / 2));
+            QMouseEvent drueck(QEvent::MouseButtonPress, QPointF(p), vorschau.viewport()->mapToGlobal(QPointF(p)), Qt::LeftButton,
+                               Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent los(QEvent::MouseButtonRelease, QPointF(p), vorschau.viewport()->mapToGlobal(QPointF(p)), Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(vorschau.viewport(), &drueck);
+            QApplication::sendEvent(vorschau.viewport(), &los);
+        };
+        // die Ellipse `note` der Raute belegt (Kasten 3, Glied 2)
+        bool gefunden = false;
+        for (const ErAnordnung::Ellipse& el : a.ellipsen)
+            if (er.knoten[el.knoten].attribute[el.attribut].name == "note")
+            {
+                klick(el.ort);
+                gefunden = true;
+            }
+        REQUIRE(gefunden);
+        CHECK(kasten == 3);
+        CHECK(eintrag == 2);
+        // die Raute von kurs.lehrer_id: Kasten kurs, Glied lehrer_id
+        for (std::size_t v = 0; v < er.knoten.size(); ++v)
+            if (er.knoten[v].name == "lehrer_id") klick(a.knoten[v]);
+        CHECK(kasten == 1);
+        CHECK(eintrag == 1);
+        // eine Entitaet: ihr Kopf
+        klick(a.knoten[0]);
+        CHECK(kasten == 0);
+        CHECK(eintrag == kKeine);
     }
 }

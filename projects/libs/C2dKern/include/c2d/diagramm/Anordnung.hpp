@@ -18,6 +18,7 @@
 
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
+#include "c2d/diagramm/ErDiagramm.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
 #include "c2d/diagramm/Schaltstellen.hpp"
@@ -27,6 +28,7 @@
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
+#include <array>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -104,12 +106,48 @@ struct StrukturAnordnung
     /// je Beziehung: die Mitte ihrer Beschriftung — neben ihrer Linie, wo sie weder eine andere
     /// Beschriftung noch einen Kasten trifft (geschaetzt wie ein Knotentext, kursiv gezeichnet)
     std::vector<Punkt> beschriftungen;
+    /// Was an einem Ende eines Fremdschluessels steht (Strukturdiagramm::notation): in Tables der Text
+    /// der Vielfachheit, mittig bei `textMitte`; in Crow's foot Striche (ein Strich quer = eins, drei
+    /// Striche zum Ende = viele) und Kreise (Radius kKreis, gefuellt mit dem Grund = null).
+    struct Ende
+    {
+        std::vector<Linienzug> striche;
+        std::vector<Punkt> kreise;
+        std::string text;
+        Punkt textMitte;
+    };
+    /// je Beziehung: [0] am Ende `von`, [1] am Ende `nach`; leer ausser bei Fremdschluesseln
+    std::vector<std::array<Ende, 2>> enden;
     double breite = 0;
     double hoehe = 0;
     /// Quer zur Richtung (nach unten die Breite, nach rechts die Hoehe): wie weit die Anordnung
     /// reicht (`quer`), und was ihre breiteste Schicht samt Stuetzpunkten und Abstaenden, Rand,
     /// Rahmen, Platz fuer Rueckwege und Schlaufen und (nach unten) die Legende brauchen
     /// (`querBedarf`). Massstab des Breiten-Tests (querVerhaeltnis).
+    double quer = 0;
+    double querBedarf = 0;
+};
+
+/// Der Radius eines Kreises am Ende in Crow's foot (null).
+inline constexpr double kKreis = 4.5;
+
+/// Ein ER-Diagramm (Chen, (min,max)): je Knoten sein Rechteck — eine Raute steht in ihm —, je
+/// Attribut seine Ellipse und die Linie zu ihrem Knoten, je Kante ihr Weg und die Mitte ihres Texts.
+struct ErAnordnung
+{
+    std::vector<Rechteck> knoten;
+    struct Ellipse
+    {
+        Rechteck ort;
+        std::size_t knoten = 0;    ///< zu welchem Knoten
+        std::size_t attribut = 0;  ///< Stelle in ErKnoten::attribute
+        Linienzug linie;           ///< von der Ellipse zum Knoten
+    };
+    std::vector<Ellipse> ellipsen;
+    std::vector<Linienzug> kanten;
+    std::vector<Punkt> texte;  ///< je Kante: die Mitte ihres Texts (am Ende der Entitaet)
+    double breite = 0;
+    double hoehe = 0;
     double quer = 0;
     double querBedarf = 0;
 };
@@ -225,7 +263,11 @@ inline constexpr std::size_t kAtomZeichen = 30;
 [[nodiscard]] TabellenAnordnung ordneAn(const Schaltstellen& tabelle, const AnordnungOptionen& optionen = {});
 /// Die Namen des Projekts: je Name eine Zeile und ein Knoten; *differs* getoent, von der Sprache Vorgegebenes grau.
 [[nodiscard]] TabellenAnordnung ordneAn(const Schalteruebersicht& tabelle, const AnordnungOptionen& optionen = {});
+/// Ein Strukturdiagramm in Tables oder Crow's foot (fuer Chen und (min,max): erDiagrammVon, dann das ErDiagramm).
 [[nodiscard]] StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+/// Chen und (min,max): die Attribute links und rechts ihres Knotens (nach rechts: darueber und
+/// darunter), die Knoten samt Attributen in Schichten wie die Datentypen.
+[[nodiscard]] ErAnordnung ordneAn(const ErDiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Ein Zustandsdiagramm ordnet sich wie ein Flussdiagramm: je Zustand ein
 /// Knoten, je Uebergang eine Kante (`knoten` und `kanten` in der Reihenfolge

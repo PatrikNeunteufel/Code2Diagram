@@ -8,7 +8,10 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/ErDiagramm.hpp"
 #include "c2d/diagramm/Farben.hpp"
+
+#include <algorithm>
 
 namespace c2d::ausgabe
 {
@@ -212,7 +215,14 @@ public:
 
     [[nodiscard]] std::string schreibe(const Strukturdiagramm& diagramm, const Optionen& optionen) const override
     {
+        if (alsErDiagramm(diagramm)) return erDiagramm(erDiagrammVon(diagramm), optionen);
+        const bool nurTabellen = std::all_of(diagramm.kaesten.begin(), diagramm.kaesten.end(),
+                                             [](const Kasten& k) { return k.art == KastenArt::Tabelle; });
+        if (diagramm.notation == ErNotation::Kraehenfuss && nurTabellen && !diagramm.kaesten.empty())
+            return kraehenfuss(diagramm, optionen);
         std::string aus = kommentar(diagramm.titel);
+        if (diagramm.notation == ErNotation::Kraehenfuss && diagramm.hatTabellen())
+            aus += "%% Crow's foot needs erDiagram, which has no classes - multiplicities as in Tables\n";
         aus += "classDiagram\n";
         if (optionen.richtung != "TD")
         {
@@ -249,6 +259,13 @@ public:
         {
             const std::string von = kennung(diagramm.kaesten[b.von].name);
             const std::string nach = kennung(diagramm.kaesten[b.nach].name);
+            if (b.fremdschluessel)  // die Vielfachheiten an den Enden (Entscheid N1)
+            {
+                aus += "    " + von + " \"" + uml(b.amVon) + "\" --> \"" + uml(b.amNach) + "\" " + nach;
+                if (!b.beschriftung.empty()) aus += " : " + eintragText(b.beschriftung);
+                aus += '\n';
+                continue;
+            }
             switch (b.art)
             {
                 case BeziehungArt::Enthaelt: aus += "    " + von + " *-- " + nach; break;
@@ -258,6 +275,106 @@ public:
             }
             if (!b.beschriftung.empty()) aus += " : " + eintragText(b.beschriftung);
             aus += '\n';
+        }
+        return aus;
+    }
+
+    /// Crow's foot als erDiagram: je Tabelle ihre Spalten (`typ name PK, FK`), je Fremdschluessel
+    /// `ziel ||--o{ tabelle : "spalten"` — links das Ende der Tabelle, auf die er zeigt.
+    [[nodiscard]] static std::string kraehenfuss(const Strukturdiagramm& d, const Optionen& optionen)
+    {
+        std::string aus = kommentar(d.titel);
+        aus += "erDiagram\n";
+        // ein Typ ist ein Wort: Buchstaben, Ziffern, _ - ( ) [ ]; Leerzeichen und Kommas werden _
+        const auto typ = [](std::string_view t) {
+            std::string a;
+            for (std::size_t i = 0; i < t.size(); ++i)
+            {
+                const char c = t[i];
+                if (c == ' ' && i > 0 && t[i - 1] == ',') continue;  // NUMERIC(10, 2) -> NUMERIC(10_2)
+                const bool gut = c == '_' || c == '-' || c == '(' || c == ')' || c == '[' || c == ']' || (c >= '0' && c <= '9') ||
+                                 (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                a += gut ? c : '_';
+            }
+            if (a.empty() || !((a.front() >= 'a' && a.front() <= 'z') || (a.front() >= 'A' && a.front() <= 'Z'))) a = "t_" + a;
+            return a;
+        };
+        for (const Kasten& kasten : d.kaesten)
+        {
+            const std::string id = kennung(kasten.name);
+            aus += "    " + id;
+            if (id != kasten.name) aus += "[\"" + maskiere(kasten.name) + "\"]";
+            aus += " {\n";
+            for (const Eintrag& e : kasten.eintraege)
+            {
+                aus += "        " + typ(kuerze(e.typ, optionen.maxZeilenLaenge)) + " " + kennung(e.name);
+                if (e.schluessel && e.fremd) aus += " PK, FK";
+                else if (e.schluessel) aus += " PK";
+                else if (e.fremd) aus += " FK";
+                aus += '\n';
+            }
+            aus += "    }\n";
+        }
+        for (const Beziehung& b : d.beziehungen)
+        {
+            if (!b.fremdschluessel) continue;
+            // links (das Ziel): genau eins `||` oder hoechstens eins `|o`; rechts (die Tabelle mit ihm):
+            // viele `o{` oder hoechstens eins `o|`
+            aus += "    " + kennung(d.kaesten[b.nach].name) + " " + (b.amNach.min >= 1 ? "||" : "|o") + "--" +
+                   (b.amVon.max == 1 ? "o|" : "o{") + " " + kennung(d.kaesten[b.von].name) + " : \"" +
+                   maskiere(b.beschriftung.empty() ? std::string("references") : b.beschriftung) + "\"\n";
+        }
+        return aus;
+    }
+
+    /// Chen und (min,max) als flowchart: Rechteck, Raute, Ellipsen als Stadion (der Schluessel
+    /// unterstrichen); der Text einer Linie steht auf ihr (Mermaid setzt keine Texte an ein Ende).
+    [[nodiscard]] static std::string erDiagramm(const ErDiagramm& d, const Optionen& optionen)
+    {
+        std::string aus = kommentar(d.titel);
+        aus += "flowchart ";
+        aus += optionen.richtung;
+        aus += '\n';
+        for (std::size_t v = 0; v < d.knoten.size(); ++v)
+        {
+            const ErKnoten& k = d.knoten[v];
+            const std::string id = "k" + std::to_string(v);
+            const std::string name = maskiere(kuerze(k.name, optionen.maxZeilenLaenge));
+            switch (k.art)
+            {
+                case ErKnotenArt::Entitaet: aus += "    " + id + "[\"" + name + "\"]\n"; break;
+                case ErKnotenArt::Beziehung: aus += "    " + id + "{\"" + name + "\"}\n"; break;
+                case ErKnotenArt::Kasten:
+                {
+                    aus += "    " + id + "[\"";
+                    if (!k.stereotyp.empty()) aus += "#171;" + maskiere(k.stereotyp) + "#187;<br>";
+                    aus += "<b>" + name + "</b>";
+                    for (const std::string& z : k.zeilen) aus += "<br>" + maskiere(kuerze(z, optionen.maxZeilenLaenge));
+                    aus += "\"]\n";
+                    break;
+                }
+            }
+            for (std::size_t i = 0; i < k.attribute.size(); ++i)
+            {
+                const ErAttribut& at = k.attribute[i];
+                const std::string text = maskiere(kuerze(at.name, optionen.maxZeilenLaenge));
+                aus += "    " + id + "a" + std::to_string(i) + "([\"" + (at.schluessel ? "<u>" + text + "</u>" : text) + "\"])\n";
+                aus += "    " + id + "a" + std::to_string(i) + " --- " + id + '\n';
+            }
+        }
+        for (const ErKante& k : d.kanten)
+        {
+            const std::string von = "k" + std::to_string(k.von);
+            const std::string nach = "k" + std::to_string(k.nach);
+            if (!k.zwischenKaesten)
+            {
+                aus += "    " + von + " ---|\"" + maskiere(k.text) + "\"| " + nach + '\n';
+                continue;
+            }
+            const std::string_view pfeil = k.art == BeziehungArt::Realisiert ? "-.->" : "-->";
+            aus += "    " + von + " " + std::string(pfeil);
+            if (!k.text.empty()) aus += "|\"" + maskiere(k.text) + "\"|";
+            aus += " " + nach + '\n';
         }
         return aus;
     }

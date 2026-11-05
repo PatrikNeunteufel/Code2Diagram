@@ -89,6 +89,7 @@ public:
         m_fremdStrich = ausTabelle(Farbe::FremdStrich, dunkel);
         m_verweis = QPen(ausTabelle(Farbe::Verweis, dunkel), 2.2);
         m_rahmen = QPen(ausTabelle(Farbe::Rahmen, dunkel), 1.2, Qt::DashLine);
+        m_grund = ausTabelle(Farbe::Grund, dunkel);
     }
 
     /// Text, mittig im Rechteck.
@@ -570,6 +571,64 @@ public:
         return stueck;
     }
 
+    /// Was an einem Ende eines Fremdschluessels steht: Striche und Kreise (Crow's foot), ein Text (Tables).
+    void ende(const StrukturAnordnung::Ende& e)
+    {
+        for (const Linienzug& s : e.striche)
+        {
+            if (s.size() < 2) continue;
+            QPainterPath weg(alsPunkt(s[0]));
+            for (std::size_t i = 1; i < s.size(); ++i) weg.lineTo(alsPunkt(s[i]));
+            m_szene.addPath(weg, m_strich)->setZValue(1.5);
+        }
+        for (const Punkt& k : e.kreise)
+            m_szene.addEllipse(k.x - kKreis, k.y - kKreis, 2 * kKreis, 2 * kKreis, m_strich, m_grund)->setZValue(1.6);
+        if (!e.text.empty()) text(QString::fromStdString(e.text), QRectF(e.textMitte.x - 40, e.textMitte.y - 10, 80, 20));
+    }
+
+    /// Ein Stueck des ER-Diagramms gehoert zu einem Kasten des Strukturdiagramms (und einem Glied darin):
+    /// so treffen Klick, Doppelklick und Kontextmenue dasselbe wie in Tables.
+    static void gehoert(QGraphicsItem* stueck, std::size_t kasten, std::size_t eintrag)
+    {
+        if (kasten == kKeine) return;
+        stueck->setData(kKasten, static_cast<qulonglong>(kasten) + 1);
+        stueck->setData(kEintrag, eintrag == kKeine ? 0ULL : static_cast<qulonglong>(eintrag) + 1);
+    }
+
+    /// Eine Entitaet (Rechteck, fett) oder eine Raute des ER-Diagramms.
+    void erKnoten(const ErKnoten& k, const QRectF& r)
+    {
+        QAbstractGraphicsShapeItem* form = nullptr;
+        if (k.art == ErKnotenArt::Beziehung)
+        {
+            QPolygonF raute;
+            raute << QPointF(r.center().x(), r.top()) << QPointF(r.right(), r.center().y())
+                  << QPointF(r.center().x(), r.bottom()) << QPointF(r.left(), r.center().y());
+            form = m_szene.addPolygon(raute, m_strich, m_flaeche);
+        }
+        else
+            form = m_szene.addRect(r, m_strich, m_flaeche);
+        form->setZValue(2);
+        gehoert(form, k.kasten, k.eintrag);
+        gehoert(text(gekuerzt(k.name), r, k.art == ErKnotenArt::Entitaet), k.kasten, k.eintrag);
+    }
+
+    /// Ein Attribut: eine Ellipse, der Schluessel unterstrichen.
+    void ellipse(const ErAttribut& a, std::size_t kasten, const QRectF& r)
+    {
+        QGraphicsEllipseItem* form = m_szene.addEllipse(r, m_strich, m_flaeche);
+        form->setZValue(2);
+        gehoert(form, kasten, a.eintrag);
+        QFont schrift = m_schrift;
+        schrift.setUnderline(a.schluessel);
+        QGraphicsSimpleTextItem* stueck = m_szene.addSimpleText(gekuerzt(a.name), schrift);
+        stueck->setBrush(m_text);
+        const QRectF masse = stueck->boundingRect();
+        stueck->setPos(r.center().x() - masse.width() / 2, r.center().y() - masse.height() / 2);
+        stueck->setZValue(3);
+        gehoert(stueck, kasten, a.eintrag);
+    }
+
     const QPen& strich() const { return m_strich; }
     QGraphicsScene& szene() { return m_szene; }
 
@@ -584,6 +643,7 @@ private:
     QColor m_getoent;
     QColor m_fremd;
     QColor m_fremdStrich;
+    QColor m_grund;
 };
 
 }  // namespace
@@ -882,27 +942,70 @@ void Vorschau::zeige(const Strukturdiagramm& diagramm, bool nachRechts,
     AnordnungOptionen optionen;
     optionen.nachRechts = nachRechts;
     optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
-    const StrukturAnordnung a = ordneAn(diagramm, optionen);
-
     Zeichner z(*scene(), dunkel());
-    for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
-    {
-        const Linienzug& linie = a.beziehungen[e];
-        const Beziehung& b = diagramm.beziehungen[e];
-        if (linie.size() < 2) continue;
+    // eine Linie und das Zeichen an ihrem Ende, wie es die Art der Beziehung verlangt
+    const auto linieMit = [&](const Linienzug& linie, BeziehungArt art, bool spitze) {
         QPainterPath weg(alsPunkt(linie[0]));
         for (std::size_t i = 1; i < linie.size(); ++i) weg.lineTo(alsPunkt(linie[i]));
         QPen stift = z.strich();
-        if (b.art == BeziehungArt::Realisiert) stift.setStyle(Qt::DashLine);
+        if (art == BeziehungArt::Realisiert) stift.setStyle(Qt::DashLine);
         z.szene().addPath(weg, stift)->setZValue(1);
+        if (!spitze) return;
         const QPointF vorletzter = alsPunkt(linie[linie.size() - 2]);
-        switch (b.art)
+        switch (art)
         {
             case BeziehungArt::Enthaelt: z.raute(alsPunkt(linie[0]), alsPunkt(linie[1])); break;
             case BeziehungArt::Verweist: z.spitze(vorletzter, alsPunkt(linie.back()), true); break;
             case BeziehungArt::Erbt:
             case BeziehungArt::Realisiert: z.spitze(vorletzter, alsPunkt(linie.back()), false, 13); break;
         }
+    };
+
+    if (alsErDiagramm(diagramm))
+    {
+        // Chen, (min,max): jedes Stueck gehoert zu einem Kasten (und Glied) des Strukturdiagramms
+        const ErDiagramm er = erDiagrammVon(diagramm);
+        const ErAnordnung a = ordneAn(er, optionen);
+        for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        {
+            const ErKante& k = er.kanten[e];
+            if (a.kanten[e].size() < 2) continue;
+            linieMit(a.kanten[e], k.zwischenKaesten ? k.art : BeziehungArt::Verweist, k.zwischenKaesten);
+            if (k.text.empty()) continue;
+            QGraphicsSimpleTextItem* text = z.textLinks(gekuerzt(k.text), {}, k.zwischenKaesten);
+            const QRectF masse = text->boundingRect();
+            text->setPos(a.texte[e].x - masse.width() / 2, a.texte[e].y - masse.height() / 2);
+        }
+        for (const ErAnordnung::Ellipse& el : a.ellipsen) linieMit(el.linie, BeziehungArt::Verweist, false);
+        for (std::size_t v = 0; v < a.knoten.size(); ++v)
+        {
+            const ErKnoten& k = er.knoten[v];
+            if (k.art == ErKnotenArt::Kasten)
+                z.kasten(k.kasten, diagramm.kaesten[k.kasten], alsRect(a.knoten[v]), kopfHoehe(optionen), optionen.zeilenHoehe,
+                         k.kasten < links.size() ? links[k.kasten] : std::vector<std::vector<std::string>>{});
+            else
+                z.erKnoten(k, alsRect(a.knoten[v]));
+        }
+        for (const ErAnordnung::Ellipse& el : a.ellipsen)
+            z.ellipse(er.knoten[el.knoten].attribute[el.attribut], er.knoten[el.knoten].kasten, alsRect(el.ort));
+        // markiere() umringt den Knoten eines Kastens: die ersten Knoten sind die der Kaesten, in ihrer Reihenfolge
+        for (std::size_t k = 0; k < diagramm.kaesten.size() && k < a.knoten.size(); ++k) m_orte.push_back(alsRect(a.knoten[k]));
+        scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+        m_formen = static_cast<int>(a.knoten.size());
+        return;
+    }
+
+    const StrukturAnordnung a = ordneAn(diagramm, optionen);
+    const bool kraehenfuss = diagramm.notation == ErNotation::Kraehenfuss;
+    for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
+    {
+        const Linienzug& linie = a.beziehungen[e];
+        const Beziehung& b = diagramm.beziehungen[e];
+        if (linie.size() < 2) continue;
+        // in Crow's foot traegt ein Fremdschluessel keine Spitze, sondern seine Enden
+        linieMit(linie, b.art, !(kraehenfuss && b.fremdschluessel));
+        if (e < a.enden.size())
+            for (const StrukturAnordnung::Ende& x : a.enden[e]) z.ende(x);
         if (!b.beschriftung.empty())
         {
             // mittig dort, wo die Anordnung sie hinstellt

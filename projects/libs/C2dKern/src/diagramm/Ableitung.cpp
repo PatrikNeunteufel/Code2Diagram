@@ -5,6 +5,7 @@
 #include "c2d/diagramm/Ableitung.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <map>
 #include <optional>
@@ -975,6 +976,35 @@ int unerreichbarAb(const Flussdiagramm& diagramm)
     return ab;
 }
 
+namespace
+{
+
+/// Zwei Namen von Spalten sind gleich ohne Ruecksicht auf Gross/klein (wie in SQL).
+bool gleicheSpalte(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+               return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+           });
+}
+
+bool enthaeltSpalte(const std::vector<std::string>& spalten, std::string_view name)
+{
+    return std::any_of(spalten.begin(), spalten.end(), [&](const std::string& s) { return gleicheSpalte(s, name); });
+}
+
+/// Sind diese Spalten in der Tabelle eindeutig? Ja, wenn der Primaerschluessel oder ein UNIQUE ganz in
+/// ihnen liegt (was eine Teilmenge eindeutig macht, macht auch das Ganze eindeutig).
+bool eindeutigeSpalten(const modell::Typ& typ, const std::vector<std::string>& spalten)
+{
+    const auto darin = [&](const std::vector<std::string>& menge) {
+        return !menge.empty() &&
+               std::all_of(menge.begin(), menge.end(), [&](const std::string& s) { return enthaeltSpalte(spalten, s); });
+    };
+    return darin(typ.primaer) || std::any_of(typ.eindeutig.begin(), typ.eindeutig.end(), darin);
+}
+
+}  // namespace
+
 Strukturdiagramm strukturVon(const modell::Einheit& einheit)
 {
     Strukturdiagramm diagramm;
@@ -988,7 +1018,17 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         kasten.name = typ.vollerName();
         kasten.zeile = typ.zeile;
         for (const modell::Feld& feld : typ.felder)
-            kasten.eintraege.push_back({feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht), feld.zeile, feld.typHinten});
+        {
+            Eintrag e{feld.typ, feld.name, feld.zusatz, zeichen(feld.sicht), feld.zeile, feld.typHinten};
+            if (typ.art == modell::TypArt::Tabelle)
+            {
+                e.schluessel = enthaeltSpalte(typ.primaer, feld.name);
+                e.fremd = std::any_of(typ.verweise.begin(), typ.verweise.end(),
+                                      [&](const modell::Verweis& v) { return enthaeltSpalte(v.felder, feld.name); });
+                e.nichtNull = feld.nichtNull;
+            }
+            kasten.eintraege.push_back(std::move(e));
+        }
         for (const modell::Methode& m : typ.methoden)
             kasten.methoden.push_back({m.rueckgabe, m.signatur(), zeichen(m.sicht), m.abstrakt, m.statisch, m.zeile});
         kastenVon.emplace(typ.name, diagramm.kaesten.size());
@@ -1035,7 +1075,22 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
             if (k == kastenVon.end()) continue;  // eine Tabelle einer anderen Datei
             std::string spalten;
             for (const std::string& f : verweis.felder) spalten += (spalten.empty() ? "" : ", ") + f;
-            diagramm.beziehungen.push_back({von, k->second, BeziehungArt::Verweist, spalten});
+            Beziehung b{von, k->second, BeziehungArt::Verweist, spalten};
+            b.fremdschluessel = true;
+            b.name = verweis.name;
+            b.zeile = verweis.zeile;
+            for (const std::string& f : verweis.felder)
+                for (std::size_t e = 0; e < typ.felder.size(); ++e)
+                    if (gleicheSpalte(typ.felder[e].name, f)) b.spalten.push_back(e);
+            b.amVon = {0, eindeutigeSpalten(typ, verweis.felder) ? 1 : kViele};
+            const bool pflicht = !verweis.felder.empty() &&
+                                 std::all_of(verweis.felder.begin(), verweis.felder.end(), [&](const std::string& f) {
+                                     return std::any_of(typ.felder.begin(), typ.felder.end(), [&](const modell::Feld& x) {
+                                         return gleicheSpalte(x.name, f) && x.nichtNull;
+                                     });
+                                 });
+            b.amNach = {pflicht ? 1 : 0, 1};
+            diagramm.beziehungen.push_back(std::move(b));
         }
         // der Typ einer Spalte ist ein Typ der Datenbank, keine der Tabellen
         if (typ.art == modell::TypArt::Tabelle) continue;
@@ -1076,7 +1131,12 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit, std::string_view ty
             if ((b.von == mitte && b.nach == k) || (b.nach == mitte && b.von == k)) nimm(k);
     for (const Beziehung& b : alle.beziehungen)
         if (neu[b.von] != kKeine && neu[b.nach] != kKeine)
-            aus.beziehungen.push_back({neu[b.von], neu[b.nach], b.art, b.beschriftung});
+        {
+            Beziehung kopie = b;
+            kopie.von = neu[b.von];
+            kopie.nach = neu[b.nach];
+            aus.beziehungen.push_back(std::move(kopie));
+        }
     aus.titel = std::string(typ);
     return aus;
 }

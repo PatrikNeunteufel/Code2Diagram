@@ -1137,6 +1137,80 @@ FlussAnordnung ordneAn(const Zustandsdiagramm& diagramm, const AnordnungOptionen
     return ordneAn(alsFluss, optionen);
 }
 
+namespace
+{
+
+/// Die Richtung von `e` zu `weiter`, Laenge 1 (bei gleichen Punkten nach unten).
+Punkt richtung(Punkt e, Punkt weiter)
+{
+    const double l = std::hypot(weiter.x - e.x, weiter.y - e.y);
+    return l < 0.5 ? Punkt{0, 1} : Punkt{(weiter.x - e.x) / l, (weiter.y - e.y) / l};
+}
+
+bool ueberlappt(const Rechteck& r, const std::vector<Rechteck>& belegt)
+{
+    if (r.x < 0 || r.y < 0) return true;
+    return std::any_of(belegt.begin(), belegt.end(), [&](const Rechteck& b) {
+        return r.x < b.x + b.breite && b.x < r.x + r.breite && r.y < b.y + b.hoehe && b.y < r.y + r.hoehe;
+    });
+}
+
+/// Wo ein Text (breite x hoehe) an einem Ende einer Linie steht: am Ende `e`, das zum Punkt `weiter`
+/// fuehrt, ein Stueck die Linie entlang und daneben — zuerst auf der einen Seite, dann auf der anderen,
+/// dann weiter weg; frei von `belegt`. Die Mitte des Texts.
+Punkt textAmEnde(Punkt e, Punkt weiter, double breite, double hoehe, const std::vector<Rechteck>& belegt)
+{
+    const Punkt d = richtung(e, weiter);
+    const Punkt n{-d.y, d.x};
+    const double entlang = 9 + std::abs(d.x) * breite / 2 + std::abs(d.y) * hoehe / 2;
+    const double neben = std::abs(n.x) * breite / 2 + std::abs(n.y) * hoehe / 2 + 4;
+    Punkt erste{};
+    bool gesetzt = false;
+    for (const double weiterWeg : {0.0, 14.0, 28.0})
+        for (const double seite : {1.0, -1.0})
+        {
+            const Punkt m{e.x + d.x * (entlang + weiterWeg) + n.x * neben * seite,
+                          e.y + d.y * (entlang + weiterWeg) + n.y * neben * seite};
+            if (!gesetzt)
+            {
+                erste = m;
+                gesetzt = true;
+            }
+            if (!ueberlappt({m.x - breite / 2, m.y - hoehe / 2, breite, hoehe}, belegt)) return m;
+        }
+    return erste;
+}
+
+/// Crow's foot am Ende `e` einer Linie, die zu `weiter` fuehrt: nah am Kasten das Hoechste (ein Strich
+/// quer = eins, drei Striche zum Ende = viele), weiter draussen das Mindeste (ein Strich = eins, ein
+/// Kreis = null).
+StrukturAnordnung::Ende kraehenfuss(Punkt e, Punkt weiter, Vielfachheit v)
+{
+    StrukturAnordnung::Ende ende;
+    const Punkt d = richtung(e, weiter);
+    const Punkt n{-d.y, d.x};
+    const auto bei = [&](double t, double q) { return Punkt{e.x + d.x * t + n.x * q, e.y + d.y * t + n.y * q}; };
+    double aussen = 0;
+    if (v.max == 1)
+    {
+        ende.striche.push_back({bei(8, -6), bei(8, 6)});
+        aussen = 8;
+    }
+    else
+    {
+        ende.striche.push_back({bei(0, -7), bei(12, 0), bei(0, 7)});
+        ende.striche.push_back({bei(0, 0), bei(12, 0)});
+        aussen = 12;
+    }
+    if (v.min >= 1)
+        ende.striche.push_back({bei(aussen + 6, -6), bei(aussen + 6, 6)});
+    else
+        ende.kreise.push_back(bei(aussen + 3 + kKreis, 0));
+    return ende;
+}
+
+}  // namespace
+
 StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptionen& optionen)
 {
     StrukturAnordnung a;
@@ -1247,8 +1321,47 @@ StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptio
 
     // Die Beschriftungen: wo die Wegefuehrung sie hinstellt, wenn dort weder ein anderes Schild noch
     // ein Kasten steht; sonst neben einem Stueck ihres Wegs, zuerst dem laengsten, auf beiden Seiten,
-    // notfalls weiter draussen.
+    // notfalls weiter draussen. Zuvor die Enden der Fremdschluessel (Entscheid N1): in Tables die
+    // Vielfachheit als Text, in Crow's foot ihr Zeichen — die Beschriftungen weichen ihnen aus.
     std::vector<Rechteck> belegt = a.kaesten;
+    a.enden.resize(a.beziehungen.size());
+    for (std::size_t e = 0; e < a.beziehungen.size(); ++e)
+    {
+        const Beziehung& b = diagramm.beziehungen[e];
+        const Linienzug& l = a.beziehungen[e];
+        if (!b.fremdschluessel || l.size() < 2) continue;
+        if (diagramm.notation == ErNotation::Kraehenfuss)
+        {
+            a.enden[e][0] = kraehenfuss(l.front(), l[1], b.amVon);
+            a.enden[e][1] = kraehenfuss(l.back(), l[l.size() - 2], b.amNach);
+            // die Zeichen belegen ihren Platz: keine Beschriftung auf ihnen
+            for (const StrukturAnordnung::Ende& x : a.enden[e])
+            {
+                double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+                const auto nimm = [&](Punkt p, double r) {
+                    x0 = std::min(x0, p.x - r);
+                    y0 = std::min(y0, p.y - r);
+                    x1 = std::max(x1, p.x + r);
+                    y1 = std::max(y1, p.y + r);
+                };
+                for (const Linienzug& s : x.striche)
+                    for (const Punkt& p : s) nimm(p, 2);
+                for (const Punkt& k : x.kreise) nimm(k, kKreis + 1);
+                if (x1 > x0) belegt.push_back({x0, y0, x1 - x0, y1 - y0});
+            }
+            continue;
+        }
+        const std::array<std::pair<Punkt, Punkt>, 2> stellen{std::pair{l.front(), l[1]}, std::pair{l.back(), l[l.size() - 2]}};
+        for (std::size_t s = 0; s < 2; ++s)
+        {
+            StrukturAnordnung::Ende& ende = a.enden[e][s];
+            ende.text = uml(s == 0 ? b.amVon : b.amNach);
+            const double breite = static_cast<double>(ende.text.size()) * optionen.zeichenBreite + 4;
+            const double hoehe = optionen.zeilenHoehe;
+            ende.textMitte = textAmEnde(stellen[s].first, stellen[s].second, breite, hoehe, belegt);
+            belegt.push_back({ende.textMitte.x - breite / 2, ende.textMitte.y - hoehe / 2, breite, hoehe});
+        }
+    }
     const auto trifft = [&](const Rechteck& r) {
         if (r.x < 0 || r.y < 0) return true;  // nicht ueber den Rand hinaus
         return std::any_of(belegt.begin(), belegt.end(), [&](const Rechteck& b) {
@@ -1302,6 +1415,291 @@ StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptio
     for (const Rechteck& r : a.kaesten) weite(r.x + r.breite, r.y + r.hoehe);
     for (std::size_t r = a.kaesten.size(); r < belegt.size(); ++r) weite(belegt[r].x + belegt[r].breite, belegt[r].y + belegt[r].hoehe);
     for (const Linienzug& l : a.beziehungen)
+        for (const Punkt& p : l) weite(p.x, p.y);
+    a.quer = drehen ? a.hoehe : a.breite;
+    a.querBedarf = querBedarfVon(s, 0, 0);
+    return a;
+}
+
+// ---------------------------------------------------------------------------
+// ER-Diagramm (Chen, (min,max))
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+constexpr double kEllipsenLuft = 22;   // eine Ellipse: so viel breiter als ihr Text
+constexpr double kAttributAbstand = 24;  // zwischen den Ellipsen und ihrem Knoten (nach rechts: darueber)
+constexpr double kEllipsenLuecke = 6;  // zwischen zwei Ellipsen
+
+/// Ein Knoten samt seinen Attributen, im Bild (nicht gedreht): sein Kern (Rechteck, Raute, Kasten)
+/// und die Ellipsen, je relativ zur linken oberen Ecke. Seite A: links (nach rechts: oben), Seite B
+/// rechts (unten).
+struct Verbund
+{
+    double breite = 0;
+    double hoehe = 0;
+    Rechteck kern;
+    std::vector<Rechteck> ellipsen;
+    std::vector<bool> seiteA;
+};
+
+Punkt kernGroesse(const ErKnoten& k, const AnordnungOptionen& o)
+{
+    const auto gekuerzt = [&](std::size_t laenge) { return o.maxZeilenLaenge == 0 ? laenge : std::min(laenge, o.maxZeilenLaenge); };
+    const double text = static_cast<double>(std::max<std::size_t>(gekuerzt(k.name.size()), 3)) * o.zeichenBreite;
+    switch (k.art)
+    {
+        case ErKnotenArt::Entitaet: return {text + 28, o.zeilenHoehe + 16};
+        // der Text steht in der Raute: halbe Diagonalen a, b mit w/2a + h/2b <= 1
+        case ErKnotenArt::Beziehung: return {text * 1.64 + 24, o.zeilenHoehe + 30};
+        case ErKnotenArt::Kasten: break;
+    }
+    std::size_t laenge = std::max<std::size_t>(k.name.size(), 12);
+    for (const std::string& z : k.zeilen) laenge = std::max(laenge, gekuerzt(z.size() + 2));
+    double hoehe = kopfHoehe(o) + static_cast<double>(k.felder) * o.zeilenHoehe + 10;
+    if (k.zeilen.size() > k.felder) hoehe += static_cast<double>(k.zeilen.size() - k.felder) * o.zeilenHoehe + 8;
+    return {static_cast<double>(laenge) * o.zeichenBreite + 24, hoehe};
+}
+
+Verbund verbundVon(const ErKnoten& k, const AnordnungOptionen& o, bool alleAufA)
+{
+    Verbund v;
+    const Punkt kern = kernGroesse(k, o);
+    const auto gekuerzt = [&](std::size_t laenge) { return o.maxZeilenLaenge == 0 ? laenge : std::min(laenge, o.maxZeilenLaenge); };
+    const std::size_t n = k.attribute.size();
+    const std::size_t aufA = alleAufA ? n : (n + 1) / 2;
+    std::vector<Punkt> groesse;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        groesse.push_back({static_cast<double>(gekuerzt(k.attribute[i].name.size())) * o.zeichenBreite + kEllipsenLuft,
+                           o.zeilenHoehe + 8});
+        v.seiteA.push_back(i < aufA);
+    }
+    // je Seite: quer (die Breite einer Spalte, nach rechts die Laenge einer Reihe) und entlang
+    double breiteA = 0, breiteB = 0, laengeA = 0, laengeB = 0;
+    const bool drehen = o.nachRechts;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double quer = drehen ? groesse[i].y : groesse[i].x;
+        const double entlang = drehen ? groesse[i].x : groesse[i].y;
+        double& b = v.seiteA[i] ? breiteA : breiteB;
+        double& l = v.seiteA[i] ? laengeA : laengeB;
+        b = std::max(b, quer);
+        l += (l > 0 ? kEllipsenLuecke : 0) + entlang;
+    }
+    const bool mitA = aufA > 0;
+    const bool mitB = aufA < n;
+    if (mitA && mitB) breiteA = breiteB = std::max(breiteA, breiteB);  // der Kern in der Mitte
+    const double vorKern = mitA ? breiteA + kAttributAbstand : 0;
+    const double hinterKern = mitB ? breiteB + kAttributAbstand : 0;
+    const double kernQuer = drehen ? kern.y : kern.x;
+    const double kernEntlang = drehen ? kern.x : kern.y;
+    const double gesamtEntlang = std::max({kernEntlang, laengeA, laengeB});
+    const double gesamtQuer = vorKern + kernQuer + hinterKern;
+    // quer = die Achse, auf der die Seiten liegen (nach unten: x), entlang = die andere
+    const auto rechteck = [&](double q, double e, double bq, double be) {
+        return drehen ? Rechteck{e, q, be, bq} : Rechteck{q, e, bq, be};
+    };
+    v.breite = drehen ? gesamtEntlang : gesamtQuer;
+    v.hoehe = drehen ? gesamtQuer : gesamtEntlang;
+    v.kern = rechteck(vorKern, (gesamtEntlang - kernEntlang) / 2, kernQuer, kernEntlang);
+    double laufA = (gesamtEntlang - laengeA) / 2;
+    double laufB = (gesamtEntlang - laengeB) / 2;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double quer = drehen ? groesse[i].y : groesse[i].x;
+        const double entlang = drehen ? groesse[i].x : groesse[i].y;
+        if (v.seiteA[i])
+        {
+            v.ellipsen.push_back(rechteck(vorKern - kAttributAbstand - quer, laufA, quer, entlang));
+            laufA += entlang + kEllipsenLuecke;
+        }
+        else
+        {
+            v.ellipsen.push_back(rechteck(vorKern + kernQuer + kAttributAbstand, laufB, quer, entlang));
+            laufB += entlang + kEllipsenLuecke;
+        }
+    }
+    return v;
+}
+
+Rechteck verschoben(const Rechteck& r, double x, double y)
+{
+    return {r.x + x, r.y + y, r.breite, r.hoehe};
+}
+
+}  // namespace
+
+ErAnordnung ordneAn(const ErDiagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    ErAnordnung a;
+    const std::size_t n = diagramm.knoten.size();
+    if (n == 0) return a;
+    const bool drehen = optionen.nachRechts;
+    const auto gekuerzt = [&](std::size_t laenge) {
+        return optionen.maxZeilenLaenge == 0 ? laenge : std::min(laenge, optionen.maxZeilenLaenge);
+    };
+
+    // die Kanten nach unten; zwischen Kaesten wie im Strukturdiagramm (die Basis oben)
+    std::vector<Paar> paare;
+    std::vector<bool> umgedreht;
+    std::vector<double> stuetzBreite, schildLaenge;
+    for (const ErKante& k : diagramm.kanten)
+    {
+        const bool erbt = k.zwischenKaesten && (k.art == BeziehungArt::Erbt || k.art == BeziehungArt::Realisiert);
+        paare.push_back(erbt ? Paar{k.nach, k.von} : Paar{k.von, k.nach});
+        umgedreht.push_back(erbt);
+        const double breite = static_cast<double>(gekuerzt(k.text.size())) * optionen.zeichenBreite + 10;
+        const bool mittig = k.zwischenKaesten && !k.text.empty();
+        stuetzBreite.push_back(!mittig ? 0 : drehen ? optionen.zeilenHoehe + 6 : breite);
+        schildLaenge.push_back(!mittig || !drehen ? 0 : breite);
+    }
+
+    // Ein Knoten mit einer Kante zurueck (sie laeuft rechts aussen herum; nach rechts: unten) traegt
+    // alle Attribute auf Seite A — sonst liefe sie durch seine Ellipsen. Erst danach steht fest, welche.
+    std::vector<bool> alleAufA(n, false);
+    std::vector<Verbund> verbunde;
+    Schichtung s;
+    for (int lauf = 0; lauf < 2; ++lauf)
+    {
+        verbunde.clear();
+        std::vector<Punkt> groesse;
+        for (std::size_t v = 0; v < n; ++v)
+        {
+            verbunde.push_back(verbundVon(diagramm.knoten[v], optionen, alleAufA[v]));
+            const Verbund& x = verbunde.back();
+            groesse.push_back(drehen ? Punkt{x.hoehe, x.breite} : Punkt{x.breite, x.hoehe});
+        }
+        s = schichte(groesse, paare, stuetzBreite, {}, schildLaenge);
+        bool neu = false;
+        for (std::size_t e = 0; e < paare.size(); ++e)
+        {
+            if (s.rang[paare[e].second] > s.rang[paare[e].first]) continue;
+            for (const std::size_t v : {paare[e].first, paare[e].second})
+                if (!alleAufA[v] && !diagramm.knoten[v].attribute.empty())
+                {
+                    alleAufA[v] = true;
+                    neu = true;
+                }
+        }
+        if (!neu) break;
+    }
+    const std::vector<Rechteck>& orte = s.orte;
+
+    // der Kern in der Anordnung (nach unten gerechnet, also gegebenenfalls gedreht)
+    std::vector<Rechteck> kernL;
+    for (std::size_t v = 0; v < n; ++v)
+    {
+        const Rechteck& k = verbunde[v].kern;
+        kernL.push_back(drehen ? Rechteck{orte[v].x + k.y, orte[v].y + k.x, k.hoehe, k.breite}
+                               : Rechteck{orte[v].x + k.x, orte[v].y + k.y, k.breite, k.hoehe});
+    }
+
+    // Wo eine Kante unten aus- und oben eintritt: an einer Raute an der Spitze, sonst nebeneinander
+    // verteilt, geordnet nach der Seite ihres anderen Endes
+    std::vector<double> ausX(paare.size()), einX(paare.size());
+    std::vector<std::vector<std::size_t>> hinaus(n), hinein(n);
+    for (std::size_t e = 0; e < paare.size(); ++e)
+    {
+        const auto [von, nach] = paare[e];
+        ausX[e] = kernL[von].mitte().x;
+        einX[e] = kernL[nach].mitte().x;
+        if (s.rang[nach] <= s.rang[von]) continue;
+        hinaus[von].push_back(e);
+        hinein[nach].push_back(e);
+    }
+    const auto verteile = [&](std::vector<std::size_t>& liste, std::size_t v, bool unten, std::vector<double>& x) {
+        if (diagramm.knoten[v].art == ErKnotenArt::Beziehung) return;
+        std::stable_sort(liste.begin(), liste.end(), [&](std::size_t p, std::size_t q) {
+            const std::size_t anderesP = unten ? paare[p].second : paare[p].first;
+            const std::size_t anderesQ = unten ? paare[q].second : paare[q].first;
+            return kernL[anderesP].mitte().x < kernL[anderesQ].mitte().x;
+        });
+        const Rechteck& r = kernL[v];
+        for (std::size_t i = 0; i < liste.size(); ++i)
+            x[liste[i]] = r.x + r.breite * static_cast<double>(i + 1) / static_cast<double>(liste.size() + 1);
+    };
+    for (std::size_t v = 0; v < n; ++v)
+    {
+        verteile(hinaus[v], v, true, ausX);
+        verteile(hinein[v], v, false, einX);
+    }
+    Wege wege = fuehreKanten(s, orte, paare, stuetzBreite, schildLaenge, ausX, einX);
+
+    // Die Enden sitzen am Rand des Verbunds; sie ruecken an den Kern — durch freien Raum, denn die
+    // Attribute liegen an den Seiten (eine Kante zurueck kommt nur an Knoten ohne Seite B)
+    const auto anDenKern = [](Punkt& p, const Rechteck& verbund, const Rechteck& kern) {
+        if (std::abs(p.y - (verbund.y + verbund.hoehe)) < 0.5)
+            p.y = kern.y + kern.hoehe;
+        else if (std::abs(p.y - verbund.y) < 0.5)
+            p.y = kern.y;
+        else if (std::abs(p.x - (verbund.x + verbund.breite)) < 0.5)
+            p.x = kern.x + kern.breite;
+    };
+    for (std::size_t e = 0; e < wege.linien.size(); ++e)
+    {
+        Linienzug& l = wege.linien[e];
+        if (l.size() < 2) continue;
+        anDenKern(l.front(), orte[paare[e].first], kernL[paare[e].first]);
+        anDenKern(l.back(), orte[paare[e].second], kernL[paare[e].second]);
+        if (umgedreht[e]) std::reverse(l.begin(), l.end());
+    }
+    if (drehen)
+        for (Linienzug& l : wege.linien)
+            for (Punkt& p : l) std::swap(p.x, p.y);
+    a.kanten = std::move(wege.linien);
+
+    // Knoten und Ellipsen im Bild
+    for (std::size_t v = 0; v < n; ++v)
+    {
+        const Rechteck verbund = drehen ? Rechteck{orte[v].y, orte[v].x, orte[v].hoehe, orte[v].breite} : orte[v];
+        const Rechteck kern = verschoben(verbunde[v].kern, verbund.x, verbund.y);
+        a.knoten.push_back(kern);
+        for (std::size_t i = 0; i < verbunde[v].ellipsen.size(); ++i)
+        {
+            ErAnordnung::Ellipse el;
+            el.ort = verschoben(verbunde[v].ellipsen[i], verbund.x, verbund.y);
+            el.knoten = v;
+            el.attribut = i;
+            const Rechteck& o = el.ort;
+            const bool a0 = verbunde[v].seiteA[i];
+            if (!drehen)
+                el.linie = a0 ? Linienzug{{o.x + o.breite, o.mitte().y}, {kern.x, kern.mitte().y}}
+                              : Linienzug{{o.x, o.mitte().y}, {kern.x + kern.breite, kern.mitte().y}};
+            else
+                el.linie = a0 ? Linienzug{{o.mitte().x, o.y + o.hoehe}, {kern.mitte().x, kern.y}}
+                              : Linienzug{{o.mitte().x, o.y}, {kern.mitte().x, kern.y + kern.hoehe}};
+            a.ellipsen.push_back(std::move(el));
+        }
+    }
+
+    // Die Texte: am Ende der Entitaet neben der Linie; zwischen Kaesten mittig, wo die Wegefuehrung
+    // sie hinstellt
+    std::vector<Rechteck> belegt = a.knoten;
+    for (const ErAnordnung::Ellipse& el : a.ellipsen) belegt.push_back(el.ort);
+    for (std::size_t e = 0; e < a.kanten.size(); ++e)
+    {
+        const ErKante& k = diagramm.kanten[e];
+        const Linienzug& l = a.kanten[e];
+        Punkt mitte = drehen ? Punkt{wege.orte[e].y, wege.orte[e].x} : wege.orte[e];
+        if (!k.zwischenKaesten && l.size() >= 2 && !k.text.empty())
+        {
+            const double breite = static_cast<double>(k.text.size()) * optionen.zeichenBreite + 4;
+            const double hoehe = optionen.zeilenHoehe;
+            mitte = k.textAmVon ? textAmEnde(l.front(), l[1], breite, hoehe, belegt)
+                                : textAmEnde(l.back(), l[l.size() - 2], breite, hoehe, belegt);
+            belegt.push_back({mitte.x - breite / 2, mitte.y - hoehe / 2, breite, hoehe});
+        }
+        a.texte.push_back(mitte);
+    }
+
+    const auto weite = [&](double x, double y) {
+        a.breite = std::max(a.breite, x + kRand);
+        a.hoehe = std::max(a.hoehe, y + kRand);
+    };
+    for (const Rechteck& r : belegt) weite(r.x + r.breite, r.y + r.hoehe);
+    for (const Linienzug& l : a.kanten)
         for (const Punkt& p : l) weite(p.x, p.y);
     a.quer = drehen ? a.hoehe : a.breite;
     a.querBedarf = querBedarfVon(s, 0, 0);

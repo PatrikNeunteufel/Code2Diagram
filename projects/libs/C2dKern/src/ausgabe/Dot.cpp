@@ -5,6 +5,7 @@
 #include "c2d/ausgabe/Ausgabe.hpp"
 
 #include "Text.hpp"
+#include "c2d/diagramm/ErDiagramm.hpp"
 #include "c2d/diagramm/Farben.hpp"
 
 namespace c2d::ausgabe
@@ -140,6 +141,7 @@ public:
 
     [[nodiscard]] std::string schreibe(const Strukturdiagramm& diagramm, const Optionen& optionen) const override
     {
+        if (alsErDiagramm(diagramm)) return erDiagramm(erDiagrammVon(diagramm), optionen);
         std::string aus = kopf(diagramm.titel, optionen);
         for (std::size_t id = 0; id < diagramm.kaesten.size(); ++id)
         {
@@ -161,14 +163,100 @@ public:
         for (const Beziehung& b : diagramm.beziehungen)
         {
             aus += "    k" + std::to_string(b.von) + " -> k" + std::to_string(b.nach) + " [";
-            switch (b.art)
+            if (b.fremdschluessel && diagramm.notation == ErNotation::Kraehenfuss)
             {
-                case BeziehungArt::Enthaelt: aus += "dir=back, arrowtail=diamond"; break;
-                case BeziehungArt::Verweist: aus += "arrowhead=vee"; break;
-                case BeziehungArt::Erbt: aus += "arrowhead=empty"; break;
-                case BeziehungArt::Realisiert: aus += "arrowhead=empty, style=dashed"; break;
+                // die erste Form steht am Knoten: viele = crow, eins = tee; aussen null = odot, eins = tee
+                aus += "dir=both, arrowtail=";
+                aus += b.amVon.max == 1 ? "tee" : "crow";
+                aus += b.amVon.min >= 1 ? "tee" : "odot";
+                aus += ", arrowhead=";
+                aus += b.amNach.max == 1 ? "tee" : "crow";
+                aus += b.amNach.min >= 1 ? "tee" : "odot";
             }
+            else
+                aus += pfeil(b.art);
+            if (b.fremdschluessel && diagramm.notation == ErNotation::Tabellen)
+                aus += ", taillabel=\"" + uml(b.amVon) + "\", headlabel=\"" + uml(b.amNach) + "\"";
             if (!b.beschriftung.empty()) aus += ", label=\"" + maskiere(b.beschriftung) + "\"";
+            aus += "];\n";
+        }
+        return aus + "}\n";
+    }
+
+    [[nodiscard]] static std::string_view pfeil(BeziehungArt art)
+    {
+        switch (art)
+        {
+            case BeziehungArt::Enthaelt: return "dir=back, arrowtail=diamond";
+            case BeziehungArt::Verweist: return "arrowhead=vee";
+            case BeziehungArt::Erbt: return "arrowhead=empty";
+            case BeziehungArt::Realisiert: return "arrowhead=empty, style=dashed";
+        }
+        return {};
+    }
+
+    /// Chen und (min,max): Rechtecke, Rauten, Ellipsen (der Schluessel unterstrichen, als HTML-Label);
+    /// der Text einer Linie an ihrem Ende bei der Entitaet (taillabel / headlabel).
+    [[nodiscard]] static std::string erDiagramm(const ErDiagramm& d, const Optionen& optionen)
+    {
+        std::string aus = kopf(d.titel, optionen);
+        const auto html = [](std::string_view text) {
+            std::string a;
+            for (const char c : text)
+            {
+                switch (c)
+                {
+                    case '<': a += "&lt;"; break;
+                    case '>': a += "&gt;"; break;
+                    case '&': a += "&amp;"; break;
+                    case '"': a += "&quot;"; break;
+                    default: a += c; break;
+                }
+            }
+            return a;
+        };
+        for (std::size_t v = 0; v < d.knoten.size(); ++v)
+        {
+            const ErKnoten& k = d.knoten[v];
+            const std::string id = "k" + std::to_string(v);
+            const std::string name = maskiere(kuerze(k.name, optionen.maxZeilenLaenge));
+            switch (k.art)
+            {
+                case ErKnotenArt::Entitaet: aus += "    " + id + " [shape=box, label=\"" + name + "\"];\n"; break;
+                case ErKnotenArt::Beziehung: aus += "    " + id + " [shape=diamond, label=\"" + name + "\"];\n"; break;
+                case ErKnotenArt::Kasten:
+                {
+                    aus += "    " + id + " [shape=record, label=\"{";
+                    if (!k.stereotyp.empty()) aus += maskiere(k.stereotyp, true) + ' ';
+                    aus += maskiere(k.name, true) + '|';
+                    for (std::size_t i = 0; i < k.zeilen.size(); ++i)
+                    {
+                        if (i == k.felder) aus += '|';
+                        aus += maskiere(kuerze(k.zeilen[i], optionen.maxZeilenLaenge), true) + "\\l";
+                    }
+                    aus += "}\"];\n";
+                    break;
+                }
+            }
+            for (std::size_t i = 0; i < k.attribute.size(); ++i)
+            {
+                const ErAttribut& at = k.attribute[i];
+                const std::string text = html(kuerze(at.name, optionen.maxZeilenLaenge));
+                aus += "    " + id + "a" + std::to_string(i) + " [shape=ellipse, label=<" +
+                       (at.schluessel ? "<U>" + text + "</U>" : text) + ">];\n";
+                aus += "    " + id + "a" + std::to_string(i) + " -> " + id + " [dir=none];\n";
+            }
+        }
+        for (const ErKante& k : d.kanten)
+        {
+            aus += "    k" + std::to_string(k.von) + " -> k" + std::to_string(k.nach) + " [";
+            if (k.zwischenKaesten)
+            {
+                aus += pfeil(k.art);
+                if (!k.text.empty()) aus += ", label=\"" + maskiere(k.text) + "\"";
+            }
+            else
+                aus += std::string("dir=none, ") + (k.textAmVon ? "taillabel" : "headlabel") + "=\"" + maskiere(k.text) + "\"";
             aus += "];\n";
         }
         return aus + "}\n";

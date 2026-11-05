@@ -263,6 +263,7 @@ public:
 
     [[nodiscard]] std::string schreibe(const Strukturdiagramm& diagramm, const Optionen& optionen) const override
     {
+        if (alsErDiagramm(diagramm)) return erDiagramm(erDiagrammVon(diagramm), optionen);
         const StrukturAnordnung a = ordneAn(diagramm, anordnung(optionen));
         std::string aus = kopf(diagramm.titel, a.breite, a.hoehe);
 
@@ -295,16 +296,104 @@ public:
         for (std::size_t e = 0; e < diagramm.beziehungen.size(); ++e)
         {
             const Beziehung& b = diagramm.beziehungen[e];
-            std::string_view stil;
-            switch (b.art)
+            const std::string id = "e" + std::to_string(e);
+            std::string stil(spitzen(b.art));
+            if (b.fremdschluessel && diagramm.notation == ErNotation::Kraehenfuss)
             {
-                case BeziehungArt::Enthaelt: stil = "startArrow=diamondThin;startFill=1;startSize=14;endArrow=none;"; break;
-                case BeziehungArt::Verweist: stil = "endArrow=open;endSize=10;"; break;
-                case BeziehungArt::Erbt: stil = "endArrow=block;endFill=0;endSize=12;"; break;
-                case BeziehungArt::Realisiert: stil = "endArrow=block;endFill=0;endSize=12;dashed=1;"; break;
+                // die Enden aus der Formenleiste Entity Relation von draw.io
+                stil = std::string("startArrow=") + (b.amVon.max == 1 ? "ERzeroToOne" : "ERzeroToMany") + ";startFill=0;endArrow=" +
+                       (b.amNach.min >= 1 ? "ERmandOne" : "ERzeroToOne") + ";endFill=0;";
             }
-            aus += kante("e" + std::to_string(e), html(b.beschriftung), std::string(stil) + "html=1;" + std::string(kSchrift),
-                         "k" + std::to_string(b.von), "k" + std::to_string(b.nach));
+            aus += kante(id, html(b.beschriftung), stil + "html=1;" + std::string(kSchrift), "k" + std::to_string(b.von),
+                         "k" + std::to_string(b.nach));
+            if (b.fremdschluessel && diagramm.notation == ErNotation::Tabellen)
+                aus += amEnde(id, "a", uml(b.amVon), true) + amEnde(id, "b", uml(b.amNach), false);
+        }
+        return aus + std::string(kFuss);
+    }
+
+    [[nodiscard]] static std::string_view spitzen(BeziehungArt art)
+    {
+        switch (art)
+        {
+            case BeziehungArt::Enthaelt: return "startArrow=diamondThin;startFill=1;startSize=14;endArrow=none;";
+            case BeziehungArt::Verweist: return "endArrow=open;endSize=10;";
+            case BeziehungArt::Erbt: return "endArrow=block;endFill=0;endSize=12;";
+            case BeziehungArt::Realisiert: return "endArrow=block;endFill=0;endSize=12;dashed=1;";
+        }
+        return {};
+    }
+
+    /// Ein Text an einem Ende der Kante `kante` (draw.io haelt ihn dort, wenn sie wandert).
+    [[nodiscard]] static std::string amEnde(const std::string& kante, std::string_view zusatz, const std::string& text, bool quelle)
+    {
+        return "        <mxCell id=\"" + kante + std::string(zusatz) + "\" value=\"" + xml(html(text)) +
+               "\" style=\"edgeLabel;resizable=0;html=1;align=" + (quelle ? "left" : "right") + ";verticalAlign=bottom;" +
+               std::string(kSchrift) + "\" vertex=\"1\" connectable=\"0\" parent=\"" + kante + "\">\n" +
+               "          <mxGeometry x=\"" + (quelle ? "-0.85" : "0.85") + "\" relative=\"1\" as=\"geometry\"/>\n" +
+               "        </mxCell>\n";
+    }
+
+    /// Chen und (min,max): Rechtecke, Rauten, Ellipsen (der Schluessel unterstrichen) an ihren Orten;
+    /// Linien ohne Spitze, der Text am Ende der Entitaet.
+    [[nodiscard]] static std::string erDiagramm(const ErDiagramm& d, const Optionen& optionen)
+    {
+        const ErAnordnung a = ordneAn(d, anordnung(optionen));
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        const std::string schrift(kSchrift);
+        for (std::size_t v = 0; v < d.knoten.size(); ++v)
+        {
+            const ErKnoten& k = d.knoten[v];
+            const std::string id = "k" + std::to_string(v);
+            const std::string name = html(kuerze(k.name, optionen.maxZeilenLaenge));
+            switch (k.art)
+            {
+                case ErKnotenArt::Entitaet:
+                    aus += ecke(id, "<b>" + name + "</b>", "rounded=0;whiteSpace=wrap;html=1;" + schrift, "1", a.knoten[v]);
+                    break;
+                case ErKnotenArt::Beziehung:
+                    aus += ecke(id, name, "rhombus;whiteSpace=wrap;html=1;" + schrift, "1", a.knoten[v]);
+                    break;
+                case ErKnotenArt::Kasten:
+                {
+                    std::string inhalt = "<p style=\"margin:0px;margin-top:4px;text-align:center;\">";
+                    if (!k.stereotyp.empty()) inhalt += "<i>&lt;&lt;" + html(k.stereotyp) + "&gt;&gt;</i><br/>";
+                    inhalt += "<b>" + name + "</b></p><hr size=\"1\"/><p style=\"margin:0px;margin-left:4px;\">";
+                    for (std::size_t i = 0; i < k.zeilen.size(); ++i)
+                    {
+                        if (i == k.felder) inhalt += "</p><hr size=\"1\"/><p style=\"margin:0px;margin-left:4px;\">";
+                        else if (i > 0) inhalt += "<br/>";
+                        inhalt += html(kuerze(k.zeilen[i], optionen.maxZeilenLaenge));
+                    }
+                    inhalt += "</p>";
+                    aus += ecke(id, inhalt, "verticalAlign=top;align=left;overflow=fill;whiteSpace=wrap;html=1;" + schrift, "1",
+                                a.knoten[v]);
+                    break;
+                }
+            }
+        }
+        for (std::size_t i = 0; i < a.ellipsen.size(); ++i)
+        {
+            const ErAnordnung::Ellipse& el = a.ellipsen[i];
+            const ErAttribut& at = d.knoten[el.knoten].attribute[el.attribut];
+            const std::string text = html(kuerze(at.name, optionen.maxZeilenLaenge));
+            const std::string id = "a" + std::to_string(i);
+            aus += ecke(id, at.schluessel ? "<u>" + text + "</u>" : text, "ellipse;whiteSpace=wrap;html=1;" + schrift, "1", el.ort);
+            aus += kante("al" + std::to_string(i), {}, "endArrow=none;html=1;", id, "k" + std::to_string(el.knoten));
+        }
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+        {
+            const ErKante& k = d.kanten[e];
+            const std::string id = "e" + std::to_string(e);
+            const std::string von = "k" + std::to_string(k.von);
+            const std::string nach = "k" + std::to_string(k.nach);
+            if (k.zwischenKaesten)
+            {
+                aus += kante(id, html(k.text), std::string(spitzen(k.art)) + "html=1;" + schrift, von, nach);
+                continue;
+            }
+            aus += kante(id, {}, "endArrow=none;html=1;" + schrift, von, nach);
+            if (!k.text.empty()) aus += amEnde(id, "t", k.text, k.textAmVon);
         }
         return aus + std::string(kFuss);
     }

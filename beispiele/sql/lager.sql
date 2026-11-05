@@ -1,7 +1,7 @@
 -- Ein kleines Lager: Schema fuer das ER-Diagramm (Datentypen) von Code2Diagram.
 -- Zeigt Primaerschluessel an der Spalte und an der Tabelle, Fremdschluessel an der Spalte, an der
 -- Tabelle und ueber ALTER TABLE, einen zusammengesetzten Schluessel, einen Selbstverweis und Namen
--- in Begrenzern. View und Trigger werden erkannt, aber noch nicht gezeigt.
+-- in Begrenzern. View und Trigger stehen in Data dependencies.
 
 CREATE TABLE lieferant (
     lieferant_id INTEGER PRIMARY KEY,
