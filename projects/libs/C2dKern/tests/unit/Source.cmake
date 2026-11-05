@@ -34,6 +34,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_CSharp.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Java.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Kotlin.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_Sql.cpp"
 )
 
 set(_local_headers

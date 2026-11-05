@@ -231,6 +231,7 @@ enum class TypArt
     Aufzaehlung,
     Klasse,
     Schnittstelle,  ///< interface (TypeScript; spaeter C#, Java): Glieder und Methoden ohne Rumpf
+    Tabelle,        ///< eine Tabelle einer Datenbank (SQL): die Felder sind ihre Spalten
 };
 
 /// Wer ein Glied sehen darf. `Keine`: die Sprache kennt das nicht (C).
@@ -268,15 +269,26 @@ struct Methode
     [[nodiscard]] std::string signatur() const { return modell::signatur(name, parameter); }
 };
 
+/// Ein Fremdschluessel (SQL `REFERENCES`, `FOREIGN KEY`): Felder eines Typs nennen Zeilen eines anderen.
+struct Verweis
+{
+    std::vector<std::string> felder;      ///< hier, in der Reihenfolge der Quelle
+    std::string ziel;                     ///< der Typ, auf den verwiesen wird (Typ::name, wo der Leser ihn kennt)
+    std::vector<std::string> zielFelder;  ///< dort; leer = sein Primaerschluessel
+    std::string name;                     ///< `CONSTRAINT name`; leer = keiner
+    int zeile = 0;
+};
+
 struct Typ
 {
     TypArt art = TypArt::Struktur;
-    std::string name;     ///< ohne Bereich
+    std::string name;     ///< ohne Bereich; bei einer Tabelle mit Schema, wie in der Quelle (`public.actor`)
     std::string bereich;  ///< Namensraum und umgebender Typ; leer in C
     std::vector<Feld> felder;
     std::vector<Methode> methoden;
     std::vector<std::string> basen;  ///< wovon der Typ erbt (C: leer); bei einer Schnittstelle: extends
     std::vector<std::string> realisiert;  ///< welche Schnittstellen er umsetzt (`implements`)
+    std::vector<Verweis> verweise;        ///< nur Tabelle: ihre Fremdschluessel
     int zeile = 0;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }

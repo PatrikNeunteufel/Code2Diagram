@@ -243,6 +243,7 @@ std::string kasten(const Kasten& k, const Rechteck& r, const AnordnungOptionen& 
         case KastenArt::Vereinigung: art = "\xC2\xAB" "union" "\xC2\xBB"; break;
         case KastenArt::Aufzaehlung: art = "\xC2\xAB" "enumeration" "\xC2\xBB"; break;
         case KastenArt::Schnittstelle: art = "\xC2\xAB" "interface" "\xC2\xBB"; break;
+        case KastenArt::Tabelle: art = "\xC2\xAB" "table" "\xC2\xBB"; break;
         case KastenArt::Klasse: break;
     }
     const std::string name = kuerze(k.name, o.maxZeilenLaenge);

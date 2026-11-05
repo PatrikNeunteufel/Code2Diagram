@@ -136,6 +136,7 @@ std::string_view stereotyp(KastenArt art)
         case KastenArt::Vereinigung: return "union";
         case KastenArt::Aufzaehlung: return "enumeration";
         case KastenArt::Schnittstelle: return "interface";
+        case KastenArt::Tabelle: return "table";
         case KastenArt::Klasse: break;
     }
     return {};

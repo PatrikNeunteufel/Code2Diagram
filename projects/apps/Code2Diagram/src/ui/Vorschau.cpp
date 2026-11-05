@@ -341,6 +341,7 @@ public:
             case KastenArt::Vereinigung: art = QString::fromUtf8("\xC2\xAB" "union" "\xC2\xBB"); break;
             case KastenArt::Aufzaehlung: art = QString::fromUtf8("\xC2\xAB" "enumeration" "\xC2\xBB"); break;
             case KastenArt::Schnittstelle: art = QString::fromUtf8("\xC2\xAB" "interface" "\xC2\xBB"); break;
+            case KastenArt::Tabelle: art = QString::fromUtf8("\xC2\xAB" "table" "\xC2\xBB"); break;
             case KastenArt::Klasse: break;
         }
         const QRectF oben(r.left(), r.top(), r.width(), kopf);

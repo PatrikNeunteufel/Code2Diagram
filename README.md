@@ -5,7 +5,7 @@ Fenster und als Text in einem wählbaren Format.
 
 | | heute | angelegt für |
 |---|---|---|
-| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
+| **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
@@ -42,9 +42,9 @@ Text ──Lexer──▶ Token ──Leser der Sprache──▶ Codemodell ─�
 | Schicht (`projects/libs/C2dKern/…/c2d/`) | Inhalt | kennt |
 |---|---|---|
 | `quelle/` | Ort im Quelltext, Meldungen | — |
-| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#, Vorlagen `"a ${x}"` in Kotlin, verschachtelte Blockkommentare, Namen in Gravis; ein BOM am Anfang wird übergangen) | quelle |
+| `lexer/` | der allgemeine Lexer, gesteuert von einer `Sprachtabelle` (Schlüsselwörter, Operatoren, Kommentare, Direktiven, rohe Zeichenketten, Vorsätze und dreifache Anführungszeichen, Zeilenende und Einrückung als Token, Vorlagen mit `${…}`, Regex-Literale, weitere Namenszeichen wie `$`, die Zeichenketten von C#, Vorlagen `"a ${x}"` in Kotlin, verschachtelte Blockkommentare, Namen in Gravis; für SQL Schlüsselwörter ohne Groß/klein, `''` in Zeichenketten, Namen in `"…"` `[…]` `` `…` ``, `$$…$$`; ein BOM am Anfang wird übergangen) | quelle |
 | `modell/` | das **Codemodell**: Funktionen mit Anweisungen, Typen mit Gliedern und Methoden, Aliase, Variablen, Einbindungen, Makros; dazu die bedingte Übersetzung (wonach `#if` fragt, die Ketten `#if`/`#elif`/`#else` mit ihren Bedingungen als Baum) | — |
-| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), C# und Java den Leser `csharp/` (Java als `Dialekt`), Python und Kotlin haben je einen eigenen (`python/`, `kotlin/`). Das Ende einer Anweisung am Zeilenende (JavaScript, Kotlin) liegt in der Basis `Leser`, je Sprache mit eigener Tabelle der Fortsetzer. Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
+| `sprache/` | je Sprache eine Tabelle; gelesen wird mit einem Leser in rekursivem Abstieg. C und C++ teilen den **Leser der C-Familie** (`cfamilie/`), JavaScript und TypeScript den Leser `ecma/` (TypeScript als `Dialekt`), C# und Java den Leser `csharp/` (Java als `Dialekt`), Python, Kotlin und SQL haben je einen eigenen (`python/`, `kotlin/`, `sql/`). Das Ende einer Anweisung am Zeilenende (JavaScript, Kotlin) liegt in der Basis `Leser`, je Sprache mit eigener Tabelle der Fortsetzer. Für alle gleich: die Basis `Leser`, die **Logik** der Bedingungen samt Wirkung der Anweisungen (`Logik.*`, gesteuert von den `Ausdrucksregeln` der Sprache) und die **Auswertung von `#if`** (`Bedingt.*`, für die C-Familie und C#) | lexer, modell |
 | `diagramm/` | die Diagramm-Modelle (`Flussdiagramm`, `Strukturdiagramm`, `Zustandsdiagramm`, `Aufrufgraph`), ihre Ableitung aus dem Codemodell, Einbetten, und die **Anordnung** (wo was steht) | modell |
 | `ausgabe/` | die Formate | diagramm |
 | `projekt/` | ein Ordner als **Projekt**: die Projektdatei `code2diagram.json`, das Durchsuchen der Ordner, das Lesen in zwei Durchgängen (die `#define` eingebundener Köpfe), das Auflösen eines Aufrufs über Dateien hinweg — und darum der **Aufrufgraph** (`projekt/Aufrufgraph.hpp`): nur das Projekt weiß, was ein Aufruf meint; ebenso **wo ein Name schaltet** (`projekt/Schaltstellen.hpp`): nur das Projekt weiß, wer ihn festlegt | sprache, modell, die Modelle des Aufrufgraphen und der Schaltstellen |
@@ -255,6 +255,23 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
 - Das Ende einer Anweisung wie Kotlin: am Zeilenende, wenn die nächste Zeile nicht mit `.`, `?.`,
   `?:`, `&&`, `||` … beginnt und die Zeile nicht mit einem Operator endet; `+1` am Zeilenanfang ist
   eine eigene Anweisung. Kein Präprozessor. Musterprojekte: `beispiele/kotlin/` (siehe dort).
+
+**SQL** (`.sql`, `.ddl`; heute das Schema):
+
+- **Datentypen als ER-Diagramm:** jede Tabelle aus `CREATE TABLE` ist ein Kasten «table», ihre Spalten
+  stehen als `name: TYP` darin, mit `PK` und `FK`; jeder Fremdschlüssel (`REFERENCES` an der Spalte,
+  `FOREIGN KEY … REFERENCES` an der Tabelle, `ALTER TABLE … ADD CONSTRAINT`) ist eine Kante, beschriftet
+  mit seinen Spalten. `ALTER TABLE … ADD [COLUMN]` fügt Spalten hinzu. Ein Name mit Schema bleibt so
+  (`public.actor`); Namen gelten ohne Rücksicht auf Groß/klein, außer in Begrenzern (`"Album"`,
+  `[dbo]`, `` `x` ``), und ein Fremdschlüssel ohne Schema findet seine Tabelle über den letzten Teil.
+- Getrennt wird an `;`, einer Zeile `GO` (T-SQL), dem Trenner von `DELIMITER` (MySQL) und `SET TERM`
+  (Firebird); ein `CREATE`, `ALTER`, `DROP` am Zeilenanfang beginnt auch ohne `;` eine neue Anweisung.
+  `BEGIN … END` und `CASE … END` (auch auf oberster Ebene, Spark und T-SQL) halten die `;` darin
+  zusammen; `$$…$$` ist ein Rumpf (Postgres, DuckDB). Befehle der Werkzeuge (`\connect`, `:r`,
+  `CONNECT`, `exit`) werden übergangen.
+- Views, Funktionen, Prozeduren, Trigger und Makros werden erkannt und gezählt, aber noch nicht
+  gezeigt (je Datei ein Hinweis); Abfragen und Daten gehören nicht zum Schema. Ein erstes Wort, das der
+  Leser nicht kennt, gibt eine Meldung.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -704,6 +721,13 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   Rückgabetypen, Vorgabewerte, Annotationen und Typ-Parameter stehen nicht im Diagramm; ein zweiter
   Konstruktor ohne Rumpf (`: this(…)`) steht nur als Methode im Kasten. `when`, `if`, `try` tiefer
   in einem Ausdruck bleiben Text. Geprüft nur an eigenen Musterprojekten — fremder Kotlin-Code fehlt.
+- **SQL:** nur das Schema; Views, Routinen, Abfragen (Entscheid S2) und SQL in Zeichenketten anderer
+  Sprachen (S1) kommen noch. Die **Dialekte** unterscheidet der Leser noch nicht (S3): `"…"` ist immer
+  ein Name, `\` nie ein Escape — in Spark/Databricks (dort ist `"…"` eine Zeichenkette) und MySQL
+  (`'it\'s'`) liest er solche Zeichenketten falsch. Ein Fremdschlüssel auf eine Tabelle einer anderen
+  Datei gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und
+  `LIKE` haben keine Spalten (Hinweis). Ein `IF … THEN` ohne `END IF` und ohne `BEGIN` öffnet keine
+  Stufe, ein `END IF` schließt keine — nötig, solange der Dialekt nicht bekannt ist.
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

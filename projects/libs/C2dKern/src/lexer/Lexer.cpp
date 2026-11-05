@@ -166,6 +166,26 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
                 vor(1);
             }
         }
+        else if (sprache.verdoppelteBegrenzer)
+        {
+            // SQL: kein Escape, `''` ist ein `'`, ueber Zeilen
+            vor(1);
+            while (i < text.size())
+            {
+                if (text[i] == c)
+                {
+                    if (text.substr(i + 1, 1) == std::string_view(&c, 1))
+                    {
+                        vor(2);
+                        continue;
+                    }
+                    vor(1);
+                    zu = true;
+                    break;
+                }
+                vor(1);
+            }
+        }
         else
         {
             vor(1);
@@ -383,6 +403,82 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
     };
     const auto namenTeil = [&](char z) { return namenStart(z) || istZiffer(z); };
 
+    /// Das letzte Token, das kein Kommentar ist; nullptr = keins.
+    const auto letztes = [&]() -> const Token* {
+        for (std::size_t k = aus.size(); k > 0; --k)
+            if (aus[k - 1].art != TokenArt::Kommentar) return &aus[k - 1];
+        return nullptr;
+    };
+    /// SQL: i auf einem namensBegrenzer — der Name bis zum schliessenden; false = keiner.
+    const auto liesBegrenztenNamen = [&](const quelle::Position& ort) {
+        const char auf = text[i];
+        const char zu = auf == '[' ? ']' : auf;
+        if (auf == '[')
+        {
+            // nur ein Name, wo kein Wert davor steht: sonst ein Index oder ein Feld (`a[1]`, `text[]`)
+            if (i + 1 >= text.size() || !namenStart(text[i + 1])) return false;
+            if (const Token* t = letztes(); t != nullptr &&
+                (t->art == TokenArt::Bezeichner || t->art == TokenArt::Zahl || t->art == TokenArt::Zeichenkette ||
+                 (t->art == TokenArt::Operator && (t->text == ")" || t->text == "]"))))
+                return false;
+            const std::size_t ende = text.find_first_of("]\n", i + 1);
+            if (ende == std::string_view::npos || text[ende] != ']') return false;
+        }
+        vor(1);
+        bool geschlossen = false;
+        while (i < text.size() && text[i] != '\n')
+        {
+            if (text[i] == zu)
+            {
+                if (text.substr(i + 1, 1) == std::string_view(&zu, 1))
+                {
+                    vor(2);
+                    continue;
+                }
+                vor(1);
+                geschlossen = true;
+                break;
+            }
+            vor(1);
+        }
+        if (!geschlossen) melde(quelle::Schwere::Fehler, ort, "quoted name is not closed");
+        gib(TokenArt::Bezeichner, ort);
+        return true;
+    };
+    std::string dollarTrenner;  // was `DELIMITER $$` (MySQL) zum Trenner gemacht hat: von da an kein Rumpf
+    /// Postgres: i auf `$` — `$1` als Name, `$$…$$` / `$marke$…$marke$` als Zeichenkette; false = keins.
+    const auto liesDollar = [&](const quelle::Position& ort) {
+        std::size_t k = i + 1;
+        if (k < text.size() && istZiffer(text[k]))
+        {
+            while (k < text.size() && istZiffer(text[k])) ++k;
+            vor(k - i);
+            gib(TokenArt::Bezeichner, ort);
+            return true;
+        }
+        while (k < text.size() && istBezeichnerTeil(text[k])) ++k;
+        if (k >= text.size() || text[k] != '$') return false;
+        if (k > i + 1 && istZiffer(text[i + 1])) return false;
+        const std::string marke(text.substr(i, k + 1 - i));
+        if (marke == dollarTrenner) return false;
+        // `DELIMITER $$` (MySQL) setzt einen Trenner, es oeffnet nichts — auch spaeter nicht (`END $$`)
+        if (const Token* t = letztes(); t != nullptr && t->ort.zeile == zeile && t->text.size() == 9)
+        {
+            std::string w(t->text);
+            for (char& v : w) v = static_cast<char>(v >= 'A' && v <= 'Z' ? v - 'A' + 'a' : v);
+            if (w == "delimiter")
+            {
+                dollarTrenner = marke;
+                return false;
+            }
+        }
+        const std::size_t schluss = text.find(marke, k + 1);
+        vor((schluss == std::string_view::npos ? text.size() : schluss + marke.size()) - i);
+        if (schluss == std::string_view::npos) melde(quelle::Schwere::Fehler, ort, "dollar-quoted string is not closed");
+        gib(TokenArt::Zeichenkette, ort);
+        return true;
+    };
+
     while (i < text.size())
     {
         const char c = text[i];
@@ -487,6 +583,9 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             continue;
         }
 
+        if (sprache.dollarZeichenketten && c == '$' && liesDollar(ort)) continue;
+        if (sprache.namensBegrenzer.find(c) != std::string_view::npos && liesBegrenztenNamen(ort)) continue;
+
         if (namenStart(c))
         {
             // ein Vorsatz vor einer Zeichenkette (`rb"…"`) gehoert zu ihr
@@ -505,8 +604,14 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             }
             while (i < text.size() && namenTeil(text[i])) vor(1);
             const std::string_view wort = text.substr(ort.versatz, i - ort.versatz);
-            gib(enthaelt(sprache.schluesselwoerter, wort) ? TokenArt::Schluesselwort : TokenArt::Bezeichner,
-                ort);
+            bool schluessel = enthaelt(sprache.schluesselwoerter, wort);
+            if (!schluessel && sprache.schluesselwoerterOhneFall)
+            {
+                std::string klein(wort);
+                for (char& v : klein) v = static_cast<char>(v >= 'A' && v <= 'Z' ? v - 'A' + 'a' : v);
+                schluessel = enthaelt(sprache.schluesselwoerter, klein);
+            }
+            gib(schluessel ? TokenArt::Schluesselwort : TokenArt::Bezeichner, ort);
             continue;
         }
 

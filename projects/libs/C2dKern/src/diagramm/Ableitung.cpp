@@ -661,6 +661,7 @@ KastenArt kastenArt(modell::TypArt art)
         case modell::TypArt::Aufzaehlung: return KastenArt::Aufzaehlung;
         case modell::TypArt::Klasse: return KastenArt::Klasse;
         case modell::TypArt::Schnittstelle: return KastenArt::Schnittstelle;
+        case modell::TypArt::Tabelle: return KastenArt::Tabelle;
         case modell::TypArt::Struktur: break;
     }
     return KastenArt::Struktur;
@@ -1028,6 +1029,16 @@ Strukturdiagramm strukturVon(const modell::Einheit& einheit)
         for (const std::string& schnittstelle : typ.realisiert)
             if (const std::size_t nach = ziel(schnittstelle); nach < diagramm.kaesten.size())
                 diagramm.beziehungen.push_back({von, nach, BeziehungArt::Realisiert, {}});
+        for (const modell::Verweis& verweis : typ.verweise)
+        {
+            const auto k = kastenVon.find(verweis.ziel);
+            if (k == kastenVon.end()) continue;  // eine Tabelle einer anderen Datei
+            std::string spalten;
+            for (const std::string& f : verweis.felder) spalten += (spalten.empty() ? "" : ", ") + f;
+            diagramm.beziehungen.push_back({von, k->second, BeziehungArt::Verweist, spalten});
+        }
+        // der Typ einer Spalte ist ein Typ der Datenbank, keine der Tabellen
+        if (typ.art == modell::TypArt::Tabelle) continue;
         for (const modell::Feld& feld : typ.felder)
         {
             const std::size_t nach = ziel(feld.typ);

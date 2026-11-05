@@ -196,4 +196,11 @@ public:
 /// Zeilenende wie Kotlin; kein Praeprozessor.
 [[nodiscard]] const Sprache& kotlin();
 
+/// SQL (`.sql`, `.ddl`): das Schema — `CREATE TABLE` mit Spalten, Primaer- und Fremdschluesseln,
+/// `ALTER TABLE … ADD`; Tabellen sind Typen der Art Tabelle, Fremdschluessel Verweise. Trennt an `;`,
+/// einer Zeile `GO` und dem Trenner von `DELIMITER`; Views, Funktionen, Prozeduren, Trigger werden
+/// erkannt und noch nicht gezeigt (Hinweis). Namen ohne Ruecksicht auf Gross/klein, ausser in
+/// Begrenzern. Kein Praeprozessor; LeseOptionen gelten nicht.
+[[nodiscard]] const Sprache& sql();
+
 }  // namespace c2d::sprache

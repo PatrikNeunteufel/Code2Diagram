@@ -846,3 +846,19 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: darstellung_waehlen name=flowchart` `aktion: diagramm_waehlen name=types:Wetterlage`
 - [ ] **Z6 Compose:** `beispiele/kotlin/notizen`, `ui/NotizenScreen.kt`: viele `<lambda:…>` unter `NotizenScreen`,
       einzeilige wie `topBar = { TopAppBar(title = { Text(…) }) }` bleiben Text in ihrer Anweisung.
+
+## AA. SQL (Schema)
+
+- [ ] **AA0 Vorbereiten:** File > Open source file… `beispiele/sql/lager.sql`, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/sql/lager.sql` `aktion: ansicht_waehlen name=preview`
+- [ ] **AA1 Gelesen:** Statuszeile `read as SQL: 0 function(s), 4 data type(s) - 2 message(s)` (je ein Hinweis auf
+      View und Trigger, Einzahl). Diagram bietet nur `Data types (4)` — kein `#if configuration`. File > Open
+      source file… bietet `SQL files (*.sql *.ddl)`.
+- [ ] **AA2 ER-Diagramm:** `All types (4)`: vier Kästen «table»; `bestand` mit `artikel_id: INTEGER PK, FK` und
+      `ort_id: INTEGER PK, FK`; Kanten `artikel_id` nach `artikel`, `ort_id` nach `Lagerort` (aus dem ALTER TABLE),
+      `lieferant_id` nach `lieferant`, die Schlaufe `ersetzt_durch` an `artikel`. Hell und dunkel lesbar.
+      `aktion: diagramm_waehlen name=types:*`
+- [ ] **AA3 Klick und Link:** Klick auf die Spalte `menge` zeigt Zeile 29; Doppelklick auf den Kopf von `Lagerort`
+      zeigt `Lagerort` mit seinem Nachbarn `bestand`.
+      `aktion: klicken …` `aktion: diagramm_waehlen name=types:Lagerort`
+- [ ] **AA4 Formate:** Format mermaid, dot, drawio: jeder Kasten trägt `table`, die Kanten ihre Spalten.

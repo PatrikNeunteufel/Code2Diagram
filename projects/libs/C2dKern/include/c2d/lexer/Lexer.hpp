@@ -112,6 +112,20 @@ struct Sprachtabelle
     bool verschachtelteKommentare = false;
     /// Ein Name in Gravis: `` `ein Test` `` ist ein Bezeichner, samt Gravis (Kotlin).
     bool gravisNamen = false;
+    /// Schluesselwoerter ohne Ruecksicht auf Gross/klein (SQL: `select` = `SELECT`); die Tabelle
+    /// nennt sie klein, das Token behaelt die Schreibweise der Quelle.
+    bool schluesselwoerterOhneFall = false;
+    /// Zeichenketten wie in SQL: ein verdoppelter Begrenzer ist ein Zeichen darin (`'it''s'`), `\`
+    /// ist kein Escape, sie laufen ueber Zeilen.
+    bool verdoppelteBegrenzer = false;
+    /// Zeichen, die einen Namen in Begrenzern oeffnen — SQL `"Album"`, MySQL `` `x` ``, T-SQL `[x]`
+    /// (schliesst mit `]`); ein verdoppelter schliessender ist ein Zeichen darin. Ein Token der Art
+    /// Bezeichner, samt Begrenzern, in einer Zeile. `[` nur, wo kein Wert davor steht und gleich ein
+    /// Name folgt — sonst bleibt es die Klammer (`a[1]`, `text[]`, `ARRAY[1, 2]`).
+    std::string_view namensBegrenzer{};
+    /// `$$…$$` und `$marke$…$marke$` (Postgres, DuckDB): eine Zeichenkette ohne Escape, ueber
+    /// Zeilen — der Rumpf einer Funktion; `$1` ist ein Name (ein Parameter).
+    bool dollarZeichenketten = false;
 };
 
 struct LexerOptionen

@@ -21,6 +21,7 @@ enum class KastenArt
     Aufzaehlung,
     Klasse,
     Schnittstelle,  ///< «interface»
+    Tabelle,        ///< «table»: eine Tabelle einer Datenbank (SQL)
 };
 
 struct Eintrag
@@ -61,7 +62,7 @@ struct Kasten
 enum class BeziehungArt
 {
     Enthaelt,  ///< als Wert enthalten (Komposition)
-    Verweist,  ///< ueber einen Zeiger, oder der Typ ist eine Aufzaehlung (Assoziation)
+    Verweist,  ///< ueber einen Zeiger, oder der Typ ist eine Aufzaehlung, oder ein Fremdschluessel (Assoziation)
     Erbt,      ///< von = der abgeleitete Typ, nach = die Basis
     Realisiert,  ///< von = der Typ, nach = die Schnittstelle, die er umsetzt (gestrichelt, Spitze wie Erbt)
 };
@@ -71,7 +72,7 @@ struct Beziehung
     std::size_t von = 0;   ///< Stelle in Strukturdiagramm::kaesten
     std::size_t nach = 0;
     BeziehungArt art = BeziehungArt::Verweist;
-    std::string beschriftung;  ///< der Name des Glieds
+    std::string beschriftung;  ///< der Name des Glieds; bei einem Fremdschluessel seine Spalten
 };
 
 struct Strukturdiagramm
