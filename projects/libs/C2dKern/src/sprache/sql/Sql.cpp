@@ -293,8 +293,8 @@ std::string ohneBegrenzer(std::string_view text)
 class SqlLeser final : public Leser
 {
 public:
-    SqlLeser(std::string_view text, const Dialekt& dialekt, Ergebnis& aus)
-        : Leser(text, *dialekt.tabelle, aus), m_dialekt(dialekt)
+    SqlLeser(std::string_view text, const Dialekt& dialekt, std::string platzhalter, Ergebnis& aus)
+        : Leser(text, *dialekt.tabelle, aus), m_dialekt(dialekt), m_platzhalter(std::move(platzhalter))
     {
     }
 
@@ -645,6 +645,7 @@ private:
         }
         if (!tok(k).istOp("("))
         {
+            if (platzhalterImNamen(typ, 0, 0, tok(i))) return;
             // AS SELECT, LIKE, CLONE, USING ohne Spalten …: woher die Spalten kommen, steht nicht da
             melde(Schwere::Hinweis, tok(i), "columns of table '" + typ.name + "' are not listed in its CREATE TABLE");
             m_aus.einheit.typen.push_back(std::move(typ));
@@ -661,8 +662,28 @@ private:
         }
         // was hinter der Klammer steht (USING, PARTITIONED BY, WITH …), traegt nichts bei
         (void)b;
+        if (platzhalterImNamen(typ, 0, 0, tok(i))) return;
         markiereSchluessel(typ, primaer);
         m_aus.einheit.typen.push_back(std::move(typ));
+    }
+
+    /// Steht ein Platzhalter einer Vorlage (LeseOptionen::platzhalter) im Namen der Tabelle, einer Spalte
+    /// ab `felder` oder eines Fremdschluessels ab `verweise`? Dann gibt es einen Hinweis bei `bei`, und die
+    /// Anweisung bleibt aussen vor (Entscheid F1) — ihr Name stuende erst zur Laufzeit da.
+    bool platzhalterImNamen(const Typ& typ, std::size_t felder, std::size_t verweise, const Token& bei)
+    {
+        if (m_platzhalter.empty()) return false;
+        const auto darin = [&](std::string_view s) { return s.find(m_platzhalter) != std::string_view::npos; };
+        bool gefunden = darin(typ.name);
+        for (std::size_t f = felder; f < typ.felder.size() && !gefunden; ++f) gefunden = darin(typ.felder[f].name);
+        for (std::size_t v = verweise; v < typ.verweise.size() && !gefunden; ++v)
+        {
+            const Verweis& x = typ.verweise[v];
+            gefunden = darin(x.ziel) || std::any_of(x.felder.begin(), x.felder.end(), darin) ||
+                       std::any_of(x.zielFelder.begin(), x.zielFelder.end(), darin);
+        }
+        if (gefunden) melde(Schwere::Hinweis, bei, "placeholder in a name (filled at runtime) - statement not read");
+        return gefunden;
     }
 
     /// Eine Spalte `[x, y)`: Name, Typ bis zur ersten Bedingung, dann die Bedingungen.
@@ -759,12 +780,19 @@ private:
         if (wort(i, "if") && wort(i + 1, "exists")) i += 2;
         std::size_t k = i;
         const std::string name = liesNamen(i, k);
+        if (!m_platzhalter.empty() && name.find(m_platzhalter) != std::string::npos)
+        {
+            melde(Schwere::Hinweis, tok(i), "placeholder in a name (filled at runtime) - statement not read");
+            return;
+        }
         Typ* typ = tabelle(name);
         if (typ == nullptr)
         {
             melde(Schwere::Hinweis, tok(i), "ALTER TABLE: table '" + name + "' is not defined in this file");
             return;
         }
+        // an einer Abschrift: steht ein Platzhalter in einem neuen Namen, bleibt die Anweisung aussen vor
+        Typ neu = *typ;
         std::vector<std::string> primaer;
         for (const auto& [x0, y] : teile(k, b))
         {
@@ -773,15 +801,23 @@ private:
             if (!wort(x, "add")) continue;
             ++x;
             if (beginntBedingung(x))
-                liesTabellenBedingung(x, y, *typ, primaer);
+                liesTabellenBedingung(x, y, neu, primaer);
             else
             {
                 if (wort(x, "column")) ++x;
                 if (wort(x, "if") && wort(x + 1, "not") && wort(x + 2, "exists")) x += 3;
-                liesSpalte(x, y, *typ, primaer);
+                liesSpalte(x, y, neu, primaer);
             }
         }
-        markiereSchluessel(*typ, primaer);
+        if (platzhalterImNamen(neu, typ->felder.size(), typ->verweise.size(), tok(i))) return;
+        if (std::any_of(primaer.begin(), primaer.end(),
+                        [&](const std::string& p) { return !m_platzhalter.empty() && p.find(m_platzhalter) != std::string::npos; }))
+        {
+            melde(Schwere::Hinweis, tok(i), "placeholder in a name (filled at runtime) - statement not read");
+            return;
+        }
+        markiereSchluessel(neu, primaer);
+        *typ = std::move(neu);
     }
 
     // --- Schluessel ----------------------------------------------------------
@@ -842,6 +878,7 @@ private:
     }
 
     const Dialekt& m_dialekt;
+    std::string m_platzhalter;  ///< LeseOptionen::platzhalter
     std::string m_trenner = ";";
     /// Je Art, die erkannt, aber noch nicht gezeigt wird: wie oft, und wo zuerst.
     std::map<std::string_view, std::pair<int, quelle::Position>> m_gezaehlt;
@@ -877,7 +914,7 @@ public:
         else
             ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {},
                                           "SQL dialect not known - read as common SQL (\"sql\" in code2diagram.json sets it)"});
-        SqlLeser(text, *dialekt, ergebnis).liesAlles();
+        SqlLeser(text, *dialekt, optionen.platzhalter, ergebnis).liesAlles();
         ergebnis.zeichenketten.clear();  // SQL in den Zeichenketten von SQL sucht niemand
         return ergebnis;
     }

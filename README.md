@@ -282,8 +282,11 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   wird gelesen — alle einer Datei als ein Text, so findet ein Fremdschlüssel seine Tabelle auch in einer
   anderen Zeichenkette. Die Tabellen stehen in *Data types* neben den Klassen der Datei, ein Klick zeigt
   die Zeile im Quelltext. Mehrere Literale hintereinander (C, C++, Python) sind eine Zeichenkette;
-  Escapes, `r"…"`, `R"(…)"`, `@"…"` werden aufgelöst. Eine zusammengesetzte (`"…" + x`, `f"{x}"`,
-  `${x}`, `$x` in Kotlin, `.arg(…)`, `.format(…)`, `%`) bleibt außen vor, mit Hinweis. Der Dialekt:
+  Escapes, `r"…"`, `R"(…)"`, `@"…"` werden aufgelöst. Eine **Vorlage** (`f"{x}"`, `${x}`, `$x` in
+  Kotlin, `$"{x}"`, `"… %1".arg(…)`, `.format(…)`, `%`) wird gelesen: ihre Platzhalter stehen, wie in der
+  Quelle, an Typen und Zusätzen (`projekt_id: %1`); steht einer im Namen einer Tabelle, Spalte oder eines
+  Fremdschlüssels (`ADD COLUMN %1modul`), bleibt die Anweisung außen vor, mit Hinweis. Eine mit `+`
+  zusammengesetzte bleibt immer außen vor, mit Hinweis. Der Dialekt:
   aus der Projektdatei, sonst aus der Bibliothek, die die Datei einbindet (`import duckdb`, `sqlite3`,
   `psycopg`, `pyspark`, `pymysql`, `using Npgsql`, `Microsoft.Data.SqlClient` …) oder aus dem Namen
   eines Qt-Treibers (`"QSQLITE"`); zeigen zwei Bibliotheken verschiedene, gilt der Kern (Hinweis).
@@ -742,8 +745,8 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (falsch für Spark und MySQL), und ein `IF … THEN` öffnet keine Stufe, ein `END IF` schließt keine
   (Firebird und T-SQL schreiben kein `END IF`). Ein Fremdschlüssel auf eine Tabelle einer anderen Datei
   gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und `LIKE` haben
-  keine Spalten (Hinweis). Eine Vorlage, die erst zur Laufzeit ausgefüllt wird (UART baut sein Schema
-  mit `QStringLiteral("… %1").arg(…)` je Datenbank), bleibt außen vor. Stehen mehrere Literale auf
+  keine Spalten (Hinweis). In einer Vorlage zeigt ein Kasten, was dasteht: setzt ein Platzhalter erst den
+  Primärschlüssel ein (UART: `projekt_id %1` mit `d.pk()`), fehlt das `PK`. Stehen mehrere Literale auf
   verschiedenen Zeilen, gilt ein Zeilenwechsel dazwischen (für SQL Leerraum).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von

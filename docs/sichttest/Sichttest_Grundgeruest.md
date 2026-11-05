@@ -864,7 +864,7 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **AA4 Formate:** Format mermaid, dot, drawio: jeder Kasten trägt `table`, die Kanten ihre Spalten.
 - [ ] **AA5 SQL in Zeichenketten:** `beispiele/sql/lager_db.py`: Diagram `Data types (4)`, `All types (4)` zeigt die
       Klasse `Lager` und die Kästen «table» `lieferant`, `artikel`, `bestand` (aus zwei Zeichenketten) mit den Kanten
-      `lieferant_id` und `artikel_id`; Statuszeile `1 message(s) … line 38: SQL in a composed string`. Klick auf die
+      `lieferant_id` und `artikel_id`; Statuszeile `1 message(s) … line 38: SQL in a string composed with +`. Klick auf die
       Spalte `menge` zeigt Zeile 23 (im zweiten Literal), auf `bezeichnung` Zeile 16. Kein Hinweis auf den Dialekt
       (`import sqlite3`).
       `aktion: datei_oeffnen pfad=beispiele/sql/lager_db.py` `aktion: diagramm_waehlen name=types:*`

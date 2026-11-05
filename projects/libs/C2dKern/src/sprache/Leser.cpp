@@ -15,8 +15,9 @@ namespace
 
 /// Der Inhalt eines Literals (TokenArt::Zeichenkette) ohne Vorsatz, Begrenzer und Escapes, je Byte mit
 /// der Stelle in der Quelle; false = keine Zeichenkette, deren Inhalt sich so lesen laesst (ein
-/// Regex-Literal). `zusammen`: sie bettet Ausdruecke ein (`f"{x}"`, `$"{x}"`, `${x}`, Kotlin `$x`).
-bool inhaltVon(const lexer::Token& t, const lexer::Sprachtabelle& tabelle, Zeichenkette& aus, bool& zusammen)
+/// Regex-Literal). Eingebettete Ausdruecke (`f"{x}"`, `$"{x}"`, `${x}`, Kotlin `$x`) bleiben, wie sie
+/// dastehen, und kommen als Platzhalter dazu.
+bool inhaltVon(const lexer::Token& t, const lexer::Sprachtabelle& tabelle, Zeichenkette& aus)
 {
     const std::string_view s = t.text;
     const auto begrenzer = [&](char c) {
@@ -83,7 +84,36 @@ bool inhaltVon(const lexer::Token& t, const lexer::Sprachtabelle& tabelle, Zeich
                 nimm('{', i++);  // `{{` ist eine `{`
                 continue;
             }
-            zusammen = true;
+            // der Ausdruck bis zu seiner schliessenden Klammer (bzw. das Ende des Namens), wie er dasteht
+            const std::size_t anfang = aus.inhalt.size();
+            if (c == '$' && s[i + 1] != '{')
+            {
+                nimm('$', i);
+                ++i;
+                for (; i < ende && (s[i] == '_' || std::isalnum(static_cast<unsigned char>(s[i]))); ++i) nimm(s[i], i);
+            }
+            else
+            {
+                if (c == '$')
+                {
+                    nimm('$', i);
+                    ++i;
+                }
+                int tiefe = 0;
+                for (; i < ende; ++i)
+                {
+                    nimm(s[i], i);
+                    if (s[i] == '{') ++tiefe;
+                    if (s[i] == '}' && --tiefe == 0)
+                    {
+                        ++i;
+                        break;
+                    }
+                }
+            }
+            aus.platzhalter.push_back({anfang, aus.inhalt.size() - anfang});
+            --i;  // die Schleife zaehlt weiter
+            continue;
         }
         if (klammern && c == '}' && i + 1 < ende && s[i + 1] == '}')
         {
@@ -95,22 +125,87 @@ bool inhaltVon(const lexer::Token& t, const lexer::Sprachtabelle& tabelle, Zeich
     return true;
 }
 
+/// Wie eine Vorlage ausgefuellt wird — und so sehen ihre Platzhalter aus.
+enum class Ausfuellen
+{
+    Keins,
+    Qt,      ///< `.arg(`: `%1` … `%99`, auch `%L1`
+    Printf,  ///< `%` (Python), `.formatted(` (Java): `%s`, `%d`, `%(name)s` …; `%%` ist ein `%`
+    Klammer, ///< `.format(` (Python): `{}`, `{0}`, `{name}`; `{{` ist eine `{`
+};
+
 /// Methoden, die eine Zeichenkette als Vorlage ausfuellen: `QStringLiteral("… %1").arg(x)` (Qt),
 /// `"… {}".format(x)` (Python), `"… %s".formatted(x)` (Java).
-constexpr std::string_view kAusfuellen[] = {"arg", "format", "formatted"};
+struct AusfuellMethode
+{
+    std::string_view name;
+    Ausfuellen art;
+};
+
+constexpr AusfuellMethode kAusfuellen[] = {
+    {"arg", Ausfuellen::Qt}, {"format", Ausfuellen::Klammer}, {"formatted", Ausfuellen::Printf}};
 
 /// Wird die Zeichenkette, die vor Token j endet, ausgefuellt — `%` dahinter (Python) oder eine Methode aus
 /// kAusfuellen, auch hinter den Klammern eines Makros darum (`QStringLiteral(…)`)?
-bool wirdAusgefuellt(const std::vector<lexer::Token>& t, std::size_t j)
+Ausfuellen wirdAusgefuellt(const std::vector<lexer::Token>& t, std::size_t j)
 {
     for (int klammern = 0; j < t.size() && klammern < 3 && t[j].istOp(")"); ++klammern) ++j;
-    if (j < t.size() && t[j].istOp("%")) return true;
-    return j + 2 < t.size() && t[j].istOp(".") && t[j + 2].istOp("(") &&
-           std::find(std::begin(kAusfuellen), std::end(kAusfuellen), t[j + 1].text) != std::end(kAusfuellen);
+    if (j < t.size() && t[j].istOp("%")) return Ausfuellen::Printf;
+    if (j + 2 >= t.size() || !t[j].istOp(".") || !t[j + 2].istOp("(")) return Ausfuellen::Keins;
+    for (const AusfuellMethode& m : kAusfuellen)
+        if (t[j + 1].text == m.name) return m.art;
+    return Ausfuellen::Keins;
 }
 
-/// Die Zeichenketten der Token: unmittelbar hintereinander stehende zu einer verbunden; eine mit `+`
-/// davor oder dahinter, oder eine, die ausgefuellt wird (wirdAusgefuellt), ist zusammengesetzt.
+/// Die Platzhalter einer Vorlage im Inhalt, nach der Art, wie sie ausgefuellt wird.
+void findePlatzhalter(Zeichenkette& z, Ausfuellen art)
+{
+    const std::string& s = z.inhalt;
+    const auto ziffer = [&](std::size_t i) { return i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); };
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        std::size_t e = i;
+        if (art == Ausfuellen::Qt && s[i] == '%')
+        {
+            e = i + 1 + (i + 1 < s.size() && s[i + 1] == 'L');
+            if (!ziffer(e)) continue;
+            while (ziffer(e)) ++e;
+        }
+        else if (art == Ausfuellen::Printf && s[i] == '%')
+        {
+            if (i + 1 < s.size() && s[i + 1] == '%')
+            {
+                ++i;
+                continue;
+            }
+            e = i + 1;
+            if (e < s.size() && s[e] == '(')
+                while (e < s.size() && s[e] != ')') ++e;
+            while (e < s.size() && std::string_view("()-+ #0.123456789").find(s[e]) != std::string_view::npos) ++e;
+            if (e >= s.size() || std::string_view("sdifuxXeEgGcr").find(s[e]) == std::string_view::npos) continue;
+            ++e;
+        }
+        else if (art == Ausfuellen::Klammer && s[i] == '{')
+        {
+            if (i + 1 < s.size() && s[i + 1] == '{')
+            {
+                ++i;
+                continue;
+            }
+            e = s.find('}', i);
+            if (e == std::string::npos) continue;
+            ++e;
+        }
+        else
+            continue;
+        z.platzhalter.push_back({i, e - i});
+        i = e - 1;
+    }
+}
+
+/// Die Zeichenketten der Token: unmittelbar hintereinander stehende zu einer verbunden. Eine mit `+`
+/// davor oder dahinter ist zusammengesetzt; eine, die ausgefuellt wird (wirdAusgefuellt), traegt ihre
+/// Platzhalter.
 std::vector<Zeichenkette> zeichenkettenIn(const std::vector<lexer::Token>& t, const lexer::Sprachtabelle& tabelle)
 {
     std::vector<Zeichenkette> aus;
@@ -122,8 +217,11 @@ std::vector<Zeichenkette> zeichenkettenIn(const std::vector<lexer::Token>& t, co
         std::size_t j = i;
         bool gelesen = false;
         for (; j < t.size() && t[j].art == lexer::TokenArt::Zeichenkette; ++j)
-            gelesen = inhaltVon(t[j], tabelle, z, zusammen) || gelesen;
-        if ((j < t.size() && t[j].istOp("+")) || wirdAusgefuellt(t, j)) zusammen = true;
+            gelesen = inhaltVon(t[j], tabelle, z) || gelesen;
+        if (j < t.size() && t[j].istOp("+")) zusammen = true;
+        // (ein f-String, der noch einmal ausgefuellt wird, behaelt die Platzhalter seiner Ausdruecke)
+        if (const Ausfuellen art = wirdAusgefuellt(t, j); art != Ausfuellen::Keins && z.platzhalter.empty())
+            findePlatzhalter(z, art);
         i = j - 1;
         if (!gelesen) continue;
         z.zusammengesetzt = zusammen;

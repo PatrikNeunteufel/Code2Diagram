@@ -67,37 +67,89 @@ TEST_SUITE("SQL eingebettet")
         const auto cpp = sprache::cpp().lies("auto a = R\"x(SELECT \\n FROM t)x\"; auto b = \"x\" + n;", "t.cpp");
         CHECK(inhalte(cpp) == std::vector<std::string>{"SELECT \\n FROM t", "x"});
         CHECK(cpp.zeichenketten[1].zusammengesetzt);
-        // eine Vorlage, die ausgefuellt wird: Qt .arg (auch hinter QStringLiteral(…)), Python % und .format
-        const auto qt = sprache::cpp().lies("auto a = QStringLiteral(\"CREATE TABLE t (id %1)\").arg(pk);", "q.cpp");
-        REQUIRE(qt.zeichenketten.size() == 1);
-        CHECK(qt.zeichenketten[0].zusammengesetzt);
-        const auto pf = sprache::python().lies("a = \"x %s\" % y\nb = \"{}\".format(y)\nc = \"z\".upper()\n", "f.py");
-        REQUIRE(pf.zeichenketten.size() == 3);
-        CHECK(pf.zeichenketten[0].zusammengesetzt);
-        CHECK(pf.zeichenketten[1].zusammengesetzt);
-        CHECK_FALSE(pf.zeichenketten[2].zusammengesetzt);
+        CHECK(cpp.zeichenketten[1].platzhalter.empty());
 
-        // Python: dreifache, r"", f"" mit {x} zusammengesetzt, {{ ist {
-        const auto py = sprache::python().lies("a = \"\"\"\nCREATE TABLE t (x)\n\"\"\"\nb = f\"{x}\"\nc = f\"{{x}}\"\nd = r\"\\n\"\n", "t.py");
-        CHECK(inhalte(py) == std::vector<std::string>{"\nCREATE TABLE t (x)\n", "{x}", "{x}", "\\n"});
-        CHECK_FALSE(py.zeichenketten[0].zusammengesetzt);
-        CHECK(py.zeichenketten[1].zusammengesetzt);
-        CHECK_FALSE(py.zeichenketten[2].zusammengesetzt);
+        // Vorlagen, die ausgefuellt werden (Entscheid F1): die Platzhalter, wie sie im Inhalt stehen
+        const auto platz = [](const sprache::Zeichenkette& z) {
+            std::vector<std::string> aus;
+            for (const auto& p : z.platzhalter) aus.push_back(z.inhalt.substr(p.anfang, p.laenge));
+            return aus;
+        };
+        const auto qt = sprache::cpp().lies("auto a = QStringLiteral(\"CREATE TABLE t (id %1, n %L2, p 100%)\").arg(pk);", "q.cpp");
+        REQUIRE(qt.zeichenketten.size() == 1);
+        CHECK_FALSE(qt.zeichenketten[0].zusammengesetzt);
+        CHECK(platz(qt.zeichenketten[0]) == std::vector<std::string>{"%1", "%L2"});
+        const auto pf = sprache::python().lies("a = \"x %s %(n)d %%\" % y\nb = \"{} {{}} {k}\".format(y)\nc = \"%s\".upper()\n", "f.py");
+        REQUIRE(pf.zeichenketten.size() == 3);
+        CHECK(platz(pf.zeichenketten[0]) == std::vector<std::string>{"%s", "%(n)d"});
+        CHECK(platz(pf.zeichenketten[1]) == std::vector<std::string>{"{}", "{k}"});
+        CHECK(pf.zeichenketten[2].platzhalter.empty());
+
+        // Python: dreifache, r"", f"" mit {x} ein Platzhalter, {{ ist {
+        const auto py = sprache::python().lies("a = \"\"\"\nCREATE TABLE t (x)\n\"\"\"\nb = f\"a{x}b\"\nc = f\"{{x}}\"\nd = r\"\\n\"\n", "t.py");
+        CHECK(inhalte(py) == std::vector<std::string>{"\nCREATE TABLE t (x)\n", "a{x}b", "{x}", "\\n"});
+        CHECK(py.zeichenketten[0].platzhalter.empty());
+        CHECK(platz(py.zeichenketten[1]) == std::vector<std::string>{"{x}"});
+        CHECK(py.zeichenketten[2].platzhalter.empty());
 
         // C#: @"" mit "" darin, $"{x}"
         const auto cs = sprache::csharp().lies("class A { string a = @\"x \"\"y\"\"\"; string b = $\"{n}\"; }", "t.cs");
         CHECK(inhalte(cs) == std::vector<std::string>{"x \"y\"", "{n}"});
-        CHECK(cs.zeichenketten[1].zusammengesetzt);
+        CHECK(platz(cs.zeichenketten[1]) == std::vector<std::string>{"{n}"});
 
-        // JavaScript: ${x} zusammengesetzt, $name Text; Kotlin: $name zusammengesetzt
+        // JavaScript: ${x} ein Platzhalter, $name Text; Kotlin: $name einer
         const auto js = sprache::javascript().lies("const a = `SELECT $1 FROM ${t}`; const b = `a $b`;", "t.js");
         REQUIRE(js.zeichenketten.size() == 2);
-        CHECK(js.zeichenketten[0].zusammengesetzt);
-        CHECK_FALSE(js.zeichenketten[1].zusammengesetzt);
-        const auto kt = sprache::kotlin().lies("val a = \"DROP TABLE $name\"\nval b = \"x\"\n", "t.kt");
+        CHECK(platz(js.zeichenketten[0]) == std::vector<std::string>{"${t}"});
+        CHECK(js.zeichenketten[1].platzhalter.empty());
+        const auto kt = sprache::kotlin().lies("val a = \"DROP TABLE $name x\"\nval b = \"x\"\n", "t.kt");
         REQUIRE(kt.zeichenketten.size() == 2);
-        CHECK(kt.zeichenketten[0].zusammengesetzt);
-        CHECK_FALSE(kt.zeichenketten[1].zusammengesetzt);
+        CHECK(kt.zeichenketten[0].inhalt == "DROP TABLE $name x");
+        CHECK(platz(kt.zeichenketten[0]) == std::vector<std::string>{"$name"});
+        CHECK(kt.zeichenketten[1].platzhalter.empty());
+    }
+
+    TEST_CASE("Vorlagen (F1 a): Platzhalter an Typen bleiben stehen, einer in einem Namen laesst die Anweisung aus")
+    {
+        const auto p = projekt::liesText(
+            "void f(Db d) {\n"
+            "  q.exec(QStringLiteral(\"CREATE TABLE projekt (\"\n"
+            "                        \" projekt_id %1,\"\n"
+            "                        \" name %2 NOT NULL\"\n"
+            "                        \")%3\").arg(d.pk(), d.vchar(120), S));\n"
+            "  q.exec(QStringLiteral(\"ALTER TABLE projekt ADD COLUMN %1modul %2\").arg(ifC, t));\n"
+            "  q.exec(QStringLiteral(\"ALTER TABLE projekt ADD COLUMN kunde %1\").arg(t));\n"
+            "  q.exec(QStringLiteral(\"CREATE TABLE %1alt (a INT)\").arg(p));\n"
+            "  auto db = QSqlDatabase::addDatabase(\"QSQLITE\");\n"
+            "}\n",
+            "db.cpp");
+        const modell::Einheit& e = p.dateien[0].ergebnis.einheit;
+        const auto& meldungen = p.dateien[0].ergebnis.meldungen;
+        const modell::Typ* projekt = tabelle(e, "projekt");
+        REQUIRE(projekt != nullptr);
+        REQUIRE(projekt->felder.size() == 3);
+        CHECK(projekt->felder[0].typ == "%1");
+        CHECK(projekt->felder[0].zeile == 3);
+        CHECK(projekt->felder[1].typ == "%2");
+        CHECK(projekt->felder[1].zeile == 4);
+        CHECK(projekt->felder[2].name == "kunde");
+        CHECK(projekt->felder[2].typ == "%1");
+        CHECK(e.typen.size() == 1);  // `%1alt` steht erst zur Laufzeit da
+        CHECK(std::count_if(meldungen.begin(), meldungen.end(), [](const quelle::Meldung& m) {
+                  return m.text == "placeholder in a name (filled at runtime) - statement not read";
+              }) == 2);
+        CHECK(meldungen.size() == 2);
+
+        // Python f-String: der Name der Tabelle steht erst zur Laufzeit da; eine Spalte mit Platzhalter am Typ bleibt
+        const auto py = projekt::liesText("import sqlite3\n"
+                                          "a = f\"CREATE TABLE {name} (x int)\"\n"
+                                          "b = f\"CREATE TABLE fest (x {typ}, y TEXT)\"\n",
+                                          "f.py");
+        const modell::Einheit& pe = py.dateien[0].ergebnis.einheit;
+        REQUIRE(tabelle(pe, "fest") != nullptr);
+        CHECK(tabelle(pe, "fest")->felder[0].typ == "{typ}");
+        CHECK(pe.typen.size() == 1);
+        CHECK(meldet(py.dateien[0].ergebnis.meldungen, "placeholder in a name"));
     }
 
     TEST_CASE("beginntMitSql: Anweisungen ja, Saetze nein")
@@ -176,7 +228,7 @@ TEST_SUITE("SQL eingebettet")
         REQUIRE(messung->verweise.size() == 1);
         CHECK(messung->verweise[0].ziel == "projekt");
         CHECK_FALSE(meldet(meldungen, "dialect not known"));  // import sqlite3
-        CHECK(meldet(meldungen, "SQL in a composed string"));
+        CHECK(meldet(meldungen, "SQL in a string composed with +"));
         CHECK_FALSE(meldet(meldungen, "users"));
     }
 

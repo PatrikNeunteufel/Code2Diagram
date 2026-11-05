@@ -62,6 +62,10 @@ struct LeseOptionen
     /// Nur SQL: der Dialekt (sqlDialekte); leer = nicht bekannt — dann gilt ein eindeutiger Kopf der
     /// Datei (`-- Databricks notebook source`), sonst der allgemeine Kern mit einem Hinweis.
     std::string dialekt;
+    /// Nur SQL: so beginnen die Namen, die fuer die Platzhalter einer Vorlage stehen (das Projekt setzt
+    /// sie ein, Entscheid F1). Eine Anweisung, die einen davon in einem Namen traegt (Tabelle, Spalte,
+    /// Fremdschluessel), bleibt mit Hinweis aussen vor; an Typen und Zusaetzen bleibt er stehen. Leer = keine.
+    std::string platzhalter;
 };
 
 /// Eine Zeichenkette der Quelle — ein Literal oder mehrere unmittelbar hintereinander, die die Sprache
@@ -69,10 +73,20 @@ struct LeseOptionen
 /// Inhalts die Stelle (Versatz in Bytes) des Zeichens der Quelle, aus dem es kommt.
 struct Zeichenkette
 {
+    /// Eine Stelle im Inhalt, die erst zur Laufzeit dasteht: ein eingebetteter Ausdruck (`{x}` in
+    /// `f"…"`, `${x}`, Kotlin `$x`) oder ein Platzhalter, den eine Methode ausfuellt (`%1` vor `.arg(`,
+    /// `%s` vor `%`, `{}` vor `.format(`). Der Inhalt traegt ihn, wie er in der Quelle steht.
+    struct Platzhalter
+    {
+        std::size_t anfang = 0;
+        std::size_t laenge = 0;
+    };
+
     std::string inhalt;
     std::vector<std::size_t> versatz;  ///< so lang wie inhalt
-    /// Mit `+` an etwas anderes gehaengt oder mit eingebetteten Ausdruecken (`f"…{x}"`, `${x}`): der
-    /// Inhalt ist nur ein Teil dessen, was zur Laufzeit dasteht.
+    std::vector<Platzhalter> platzhalter;  ///< in der Reihenfolge des Inhalts; leer = keine Vorlage
+    /// Mit `+` an etwas anderes gehaengt: der Inhalt ist nur ein Teil dessen, was zur Laufzeit dasteht,
+    /// und was fehlt, laesst sich nicht als Platzhalter zeigen.
     bool zusammengesetzt = false;
 };
 
