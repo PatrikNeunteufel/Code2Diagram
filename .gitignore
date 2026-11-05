@@ -9,6 +9,11 @@
 # Laeufe des Werkzeugs Sichttest (Testlog, Report, Screenshots)
 sichttest-logs/
 
+# Fremder SQL-Probecode aus dem Netz (Quellen und Lizenzen: beispiele/sql/QUELLEN.md)
+/beispiele/sql/fremd/
+# Eigene Event-Logs und ausgefuehrte Notebooks (beispiele/spark/eventlogs_aufnehmen.py)
+/beispiele/spark/fremd/
+
 # Claude: lokal (Projektkontext, Handover, Sessions)
 /CLAUDE.md
 /.claude/
