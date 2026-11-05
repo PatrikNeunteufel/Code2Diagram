@@ -85,6 +85,9 @@ struct Zeichenkette
     std::string inhalt;
     std::vector<std::size_t> versatz;  ///< so lang wie inhalt
     std::vector<Platzhalter> platzhalter;  ///< in der Reihenfolge des Inhalts; leer = keine Vorlage
+    /// Der Aufruf, dessen Argument sie ist, wie er heisst (`execute`, `exec`, `SqlCommand`) — auch durch ein
+    /// Makro darum hindurch (`q.exec(QStringLiteral("…"))`); leer = keiner.
+    std::string aufruf;
     /// Mit `+` an etwas anderes gehaengt: der Inhalt ist nur ein Teil dessen, was zur Laufzeit dasteht,
     /// und was fehlt, laesst sich nicht als Platzhalter zeigen.
     bool zusammengesetzt = false;

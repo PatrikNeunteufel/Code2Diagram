@@ -205,7 +205,9 @@ TEST_SUITE("SQL")
         CHECK(spalte(film, "film_id").zusatz == "PK");
         CHECK(spalte(film, "key").typ == "VARCHAR(5)");
         CHECK(m.einheit.typen.size() == 2);  // b nach dem Trigger
-        CHECK(meldet(m, "1 trigger read but not shown yet"));
+        REQUIRE(m.einheit.objekte.size() == 1);
+        CHECK(m.einheit.objekte[0].tabelle == "film");
+        CHECK(m.einheit.objekte[0].ereignis == "AFTER INSERT");
     }
 
     TEST_CASE("SQLite: ein Trigger mit BEGIN … END und ; darin; was nicht zum Schema gehoert; Unbekanntes")
@@ -221,8 +223,7 @@ TEST_SUITE("SQL")
         CHECK(e.einheit.typen.size() == 1);
         CHECK(tabelle(e, "a2").felder.empty());
         CHECK(meldet(e, "columns of table 'a2' are not listed"));
-        CHECK(meldet(e, "1 trigger read but not shown yet"));
-        CHECK(meldet(e, "1 view read but not shown yet"));
+        CHECK(e.einheit.objekte.size() == 2);  // Trigger und View
         CHECK(zahl(e, quelle::Schwere::Warnung) == 1);
         CHECK(meldet(e, "statement 'FROBNICATE' is not understood"));
         CHECK(e.meldungen.back().ort.zeile > 0);
@@ -263,7 +264,8 @@ TEST_SUITE("SQL")
                           "CREATE PROCEDURE p() BEGIN SELECT 1; END $$\n"
                           "DELIMITER ;\n"
                           "CREATE TABLE IDENTIFIER('tab')(c1 INT) USING CSV;");
-        CHECK(m.meldungen.size() == 1);  // nur der Hinweis auf die Prozedur
+        CHECK(m.meldungen.empty());
+        CHECK(m.einheit.objekte.size() == 1);
         CHECK(spalte(tabelle(m, "tab"), "c1").typ == "INT");
     }
 
@@ -309,6 +311,96 @@ TEST_SUITE("SQL")
             CHECK_MESSAGE(text.find("table") != std::string::npos, f);
             CHECK_MESSAGE(text.find("auftrag") != std::string::npos, f);
         }
+    }
+
+    TEST_CASE("Zugriffe (A2, A3): View, Trigger, Routinen mit Rumpf; WITH, temporaere Tabellen, dynamisches SQL")
+    {
+        using modell::ZugriffArt;
+        const auto art = [](const modell::Datenbankobjekt& o, ZugriffArt a, std::string_view ziel) {
+            return std::count_if(o.zugriffe.begin(), o.zugriffe.end(), [&](const modell::Zugriff& z) {
+                       return z.art == a && z.ziel == ziel && !z.imAusdruck;
+                   }) == 1;
+        };
+        const auto pg = sq("CREATE VIEW public.umsatz AS\n"
+                           "  WITH monat AS (SELECT * FROM public.payment)\n"
+                           "  SELECT c.name, EXTRACT(YEAR FROM m.datum) FROM monat m JOIN public.customer c ON c.id = m.c,\n"
+                           "         store s;\n"
+                           "CREATE FUNCTION public.last_updated() RETURNS trigger LANGUAGE plpgsql AS $$\n"
+                           "BEGIN\n"
+                           "    NEW.last_update = CURRENT_TIMESTAMP;\n"
+                           "    INSERT INTO audit (t) VALUES (TG_TABLE_NAME);\n"
+                           "    UPDATE stats SET n = n + 1 WHERE id = 1;\n"
+                           "    EXECUTE format('DELETE FROM %I', x);\n"
+                           "    RETURN NEW;\n"
+                           "END $$;\n"
+                           "CREATE TRIGGER last_updated BEFORE UPDATE ON public.actor FOR EACH ROW EXECUTE FUNCTION public.last_updated();\n"
+                           "CREATE FUNCTION py() RETURNS int AS $$ return 1 $$ LANGUAGE plpython3u;\n"
+                           "SELECT * FROM public.actor;\n",
+                           "postgres");
+        REQUIRE(pg.einheit.objekte.size() == 4);
+        const modell::Datenbankobjekt& view = pg.einheit.objekte[0];
+        CHECK(view.art == modell::ObjektArt::View);
+        CHECK(view.name == "public.umsatz");
+        CHECK(art(view, ZugriffArt::Liest, "public.payment"));
+        CHECK(art(view, ZugriffArt::Liest, "public.customer"));
+        CHECK(art(view, ZugriffArt::Liest, "store"));
+        CHECK_FALSE(art(view, ZugriffArt::Liest, "monat"));  // ein Name des WITH
+        CHECK_FALSE(art(view, ZugriffArt::Liest, "m.datum"));
+        CHECK(std::none_of(view.zugriffe.begin(), view.zugriffe.end(),
+                           [](const modell::Zugriff& z) { return z.art == ZugriffArt::Liest && z.ziel == "m"; }));
+
+        const modell::Datenbankobjekt& f = pg.einheit.objekte[1];
+        CHECK(f.art == modell::ObjektArt::Funktion);
+        CHECK(art(f, ZugriffArt::Schreibt, "audit"));
+        CHECK(art(f, ZugriffArt::Schreibt, "stats"));
+        const auto audit = std::find_if(f.zugriffe.begin(), f.zugriffe.end(), [](const modell::Zugriff& z) { return z.ziel == "audit"; });
+        REQUIRE(audit != f.zugriffe.end());
+        CHECK(audit->zeile == 8);  // im Rumpf, auf die Zeile der Datei umgerechnet
+        CHECK(meldet(pg, "dynamic SQL is not read"));
+        const auto dyn = std::find_if(pg.meldungen.begin(), pg.meldungen.end(),
+                                      [](const quelle::Meldung& m) { return m.text == "dynamic SQL is not read"; });
+        CHECK(dyn->ort.zeile == 10);
+
+        const modell::Datenbankobjekt& tr = pg.einheit.objekte[2];
+        CHECK(tr.art == modell::ObjektArt::Trigger);
+        CHECK(tr.tabelle == "public.actor");
+        CHECK(tr.ereignis == "BEFORE UPDATE");
+        CHECK(art(tr, ZugriffArt::Ruft, "public.last_updated"));
+        CHECK(pg.einheit.objekte[3].zugriffe.empty());
+        CHECK(meldet(pg, "routine 'py' in LANGUAGE plpython3u is not read"));
+        REQUIRE(pg.einheit.zugriffe.size() == 1);  // die Abfrage auf oberster Ebene
+        CHECK(pg.einheit.zugriffe[0].ziel == "public.actor");
+
+        // T-SQL: Trigger ON t AFTER INSERT AS, Prozedur mit #temp, EXEC einer anderen, EXEC(@sql)
+        const auto ts = sq("CREATE TRIGGER [Sales].[t_neu] ON [Sales].[Orders] AFTER INSERT, UPDATE AS\n"
+                           "BEGIN INSERT INTO [Sales].[Log] (x) SELECT x FROM inserted; END\n"
+                           "GO\n"
+                           "CREATE PROCEDURE dbo.Lade @n INT AS\n"
+                           "BEGIN\n"
+                           "  CREATE TABLE #zwischen (x INT);\n"
+                           "  SELECT * INTO #k FROM dbo.Kunde WHERE n = @n;\n"
+                           "  INSERT INTO #zwischen SELECT x FROM #k;\n"
+                           "  DELETE FROM dbo.Alt;\n"
+                           "  EXEC dbo.Protokoll @n;\n"
+                           "  EXEC (@sql);\n"
+                           "END\n"
+                           "GO\n",
+                           "tsql");
+        REQUIRE(ts.einheit.objekte.size() == 2);
+        CHECK(ts.einheit.objekte[0].tabelle == "Sales.Orders");
+        CHECK(ts.einheit.objekte[0].ereignis == "AFTER INSERT, UPDATE");
+        CHECK(art(ts.einheit.objekte[0], ZugriffArt::Schreibt, "Sales.Log"));
+        CHECK(art(ts.einheit.objekte[0], ZugriffArt::Liest, "inserted"));
+        const modell::Datenbankobjekt& p = ts.einheit.objekte[1];
+        CHECK(p.art == modell::ObjektArt::Prozedur);
+        CHECK(art(p, ZugriffArt::Liest, "dbo.Kunde"));
+        CHECK(art(p, ZugriffArt::Schreibt, "dbo.Alt"));
+        CHECK(art(p, ZugriffArt::Ruft, "dbo.Protokoll"));
+        CHECK(std::none_of(p.zugriffe.begin(), p.zugriffe.end(), [](const modell::Zugriff& z) {
+            return z.ziel.find('#') != std::string::npos || z.ziel == "zwischen";
+        }));
+        CHECK(meldet(ts, "dynamic SQL is not read"));
+        CHECK(ts.einheit.typen.empty());  // #zwischen gehoert der Prozedur
     }
 
     TEST_CASE("Die Sprache: Endungen, kein Praeprozessor")

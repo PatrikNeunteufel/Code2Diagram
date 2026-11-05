@@ -166,6 +166,27 @@ struct Parameter
 /// `name(typ name, ...)`
 [[nodiscard]] std::string signatur(const std::string& name, const std::vector<Parameter>& parameter);
 
+/// Wie etwas auf eine Tabelle oder eine Routine der Datenbank zugreift (Entscheid A2).
+enum class ZugriffArt
+{
+    Liest,     ///< FROM, JOIN, Unterabfragen
+    Schreibt,  ///< INSERT INTO, UPDATE, DELETE FROM, MERGE INTO, TRUNCATE
+    Ruft,      ///< CALL, EXEC, eine Funktion im Ausdruck
+};
+
+struct Zugriff
+{
+    ZugriffArt art = ZugriffArt::Liest;
+    std::string ziel;  ///< wie es in der Quelle heisst, ohne Begrenzer, mit Schema (`public.actor`)
+    int zeile = 0;
+    /// Nur Ruft: aus einem Ausdruck (`f(x)`), nicht aus CALL/EXEC — es zaehlt nur, wenn das Ziel eine
+    /// Routine des Projekts ist (sonst ist es eine eingebaute Funktion wie `count`).
+    bool imAusdruck = false;
+    /// Aus SQL in einer Zeichenkette, die nicht in klarer Form steht (nicht als Argument eines Aufrufs
+    /// wie `execute(`): es zaehlt nur, wenn das Ziel eine Tabelle des Projekts ist (Entscheid A4).
+    bool unsicher = false;
+};
+
 struct Funktion
 {
     std::string name;     ///< ohne Bereich; auch `~Motor`, `operator==`
@@ -182,6 +203,8 @@ struct Funktion
     /// leer = auf oberster Ebene oder in einem Typ. Im Rumpf der aeusseren steht dafuer eine
     /// Anweisung `def name(…)`.
     std::string aussen;
+    /// Was SQL in ihrem Rumpf liest, schreibt, ruft (Entscheid A4) — vom Projekt aus den Zeichenketten.
+    std::vector<Zugriff> zugriffe;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }
     /// Meint ein Aufruf diese Funktion, dem Namen nach? `f` passt auf jede
@@ -267,6 +290,27 @@ struct Methode
     int zeile = 0;
 
     [[nodiscard]] std::string signatur() const { return modell::signatur(name, parameter); }
+};
+
+/// Was die Datenbank ausser Tabellen kennt (SQL).
+enum class ObjektArt
+{
+    View,
+    Trigger,
+    Funktion,
+    Prozedur,
+};
+
+/// Eine View, ein Trigger, eine Funktion, eine Prozedur der Datenbank: was sie liest, schreibt, ruft.
+struct Datenbankobjekt
+{
+    ObjektArt art = ObjektArt::View;
+    std::string name;  ///< wie Typ::name einer Tabelle
+    int zeile = 0;
+    int bisZeile = 0;
+    std::vector<Zugriff> zugriffe;
+    std::string tabelle;   ///< nur Trigger: die Tabelle, an der er haengt (`ON t`)
+    std::string ereignis;  ///< nur Trigger: wann er laeuft, wie in der Quelle (`AFTER INSERT OR UPDATE`)
 };
 
 /// Ein Fremdschluessel (SQL `REFERENCES`, `FOREIGN KEY`): Felder eines Typs nennen Zeilen eines anderen.
@@ -356,6 +400,11 @@ struct Einheit
     std::vector<Alias> aliase;
     std::vector<Variable> variablen;
     std::vector<Funktion> funktionen;
+    /// SQL: Views, Trigger, Funktionen, Prozeduren der Datenbank.
+    std::vector<Datenbankobjekt> objekte;
+    /// SQL: was die Anweisungen ausserhalb der Objekte lesen, schreiben, rufen (ein Skript; bei SQL in
+    /// Zeichenketten die Abfrage selbst).
+    std::vector<Zugriff> zugriffe;
 };
 
 // ---------------------------------------------------------------------------

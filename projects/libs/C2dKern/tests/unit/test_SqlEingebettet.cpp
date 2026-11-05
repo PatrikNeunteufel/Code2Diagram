@@ -184,8 +184,9 @@ TEST_SUITE("SQL eingebettet")
                                "CREATE TABLE t (a VARCHAR(5) DEFAULT \"x\");",
                                "mysql");
         CHECK(my.einheit.typen.size() == 1);
-        CHECK(meldet(my.meldungen, "1 procedure read but not shown yet"));
-        CHECK(my.meldungen.size() == 1);
+        REQUIRE(my.einheit.objekte.size() == 1);
+        CHECK(my.einheit.objekte[0].art == modell::ObjektArt::Prozedur);
+        CHECK(my.meldungen.empty());
 
         CHECK(meldet(sqlMit("SELECT 1;", "oracle").meldungen, "unknown SQL dialect 'oracle'"));
         const auto kern = sprache::sql().lies("CREATE TABLE t (a int);", "t.sql");
@@ -262,6 +263,41 @@ TEST_SUITE("SQL eingebettet")
         REQUIRE(o.dateien.size() == 2);
         for (const projekt::Datei& d : o.dateien)
             CHECK_MESSAGE(d.ergebnis.meldungen.empty(), d.pfad);
+    }
+
+    TEST_CASE("Zugriffe der Funktionen des Host-Codes (A4): sicher als Argument von execute, sonst unsicher")
+    {
+        const auto p = projekt::liesText("import sqlite3\n"
+                                         "def lade(c, n):\n"
+                                         "    c.execute(\"SELECT m.wert FROM messung m JOIN projekt p ON p.id = m.p WHERE p.n = ?\", (n,))\n"
+                                         "    c.executemany(\n"
+                                         "        \"INSERT INTO protokoll (t) VALUES (?)\", zeilen)\n"
+                                         "    c.execute(\"DELETE FROM alt WHERE id = \" + n)\n"
+                                         "    print(\"Select an item from the list\")\n"
+                                         "def leer():\n"
+                                         "    return 1\n",
+                                         "db.py");
+        const modell::Einheit& e = p.dateien[0].ergebnis.einheit;
+        const modell::Funktion* lade = nullptr;
+        for (const modell::Funktion& f : e.funktionen)
+            if (f.name == "lade") lade = &f;
+        REQUIRE(lade != nullptr);
+        const auto finde = [&](modell::ZugriffArt art, std::string_view ziel) -> const modell::Zugriff* {
+            for (const modell::Zugriff& z : lade->zugriffe)
+                if (z.art == art && z.ziel == ziel) return &z;
+            return nullptr;
+        };
+        REQUIRE(finde(modell::ZugriffArt::Liest, "messung") != nullptr);
+        CHECK(finde(modell::ZugriffArt::Liest, "messung")->zeile == 3);
+        CHECK_FALSE(finde(modell::ZugriffArt::Liest, "messung")->unsicher);
+        CHECK(finde(modell::ZugriffArt::Liest, "projekt") != nullptr);
+        REQUIRE(finde(modell::ZugriffArt::Schreibt, "protokoll") != nullptr);
+        CHECK(finde(modell::ZugriffArt::Schreibt, "protokoll")->zeile == 5);
+        CHECK(finde(modell::ZugriffArt::Schreibt, "alt") == nullptr);  // mit + zusammengesetzt
+        CHECK(meldet(p.dateien[0].ergebnis.meldungen, "SQL in a string composed with +"));
+        // ein Satz in einer Zeichenkette, die nicht an execute geht: unsicher (zaehlt nur fuer bekannte Tabellen)
+        REQUIRE(finde(modell::ZugriffArt::Liest, "the") != nullptr);
+        CHECK(finde(modell::ZugriffArt::Liest, "the")->unsicher);
     }
 
     TEST_CASE("Projektdatei: \"sql\" gelesen, geschrieben, ein unbekannter Dialekt gemeldet")

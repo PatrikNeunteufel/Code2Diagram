@@ -194,83 +194,149 @@ private:
     std::vector<std::size_t> m_anfang;
 };
 
+/// Wie der Name eines Platzhalters im SQL beginnt (LeseOptionen::platzhalter).
+constexpr std::string_view kPlatzhalter = "c2d_platzhalter_";
+
+/// Aufrufe, die SQL ausfuehren: eine Zeichenkette als ihr Argument steht in klarer Form (Entscheid A4).
+constexpr std::string_view kSqlAufrufe[] = {
+    "execute",        "executemany",  "executescript", "exec",          "execSQL",      "rawQuery",
+    "query",          "prepare",      "sql",           "read_sql",      "read_sql_query", "SqlCommand",
+    "QSqlQuery",      "compileStatement", "prepareStatement", "executeQuery", "executeUpdate",
+    "ExecuteSqlRaw",  "FromSqlRaw",   "ExecuteNonQuery", "ExecuteScalar"};
+
+/// Eine Zeichenkette, wie der SQL-Leser sie sieht.
+struct SqlStueck
+{
+    std::string text;
+    std::vector<std::size_t> woher;      ///< je Byte von `text` der Versatz in der Quelle
+    std::vector<std::string> originale;  ///< je Platzhalter (ab der Nummer `erster`) der Text der Quelle
+};
+
+/// Je Platzhalter ein Name `kPlatzhalter<n>_` (n ab `erster`), zwischen Literalen auf verschiedenen Zeilen
+/// (`"CREATE TABLE a ("` / `"  x INT)"`) ein Zeilenwechsel — fuer SQL Leerraum, und jede Zeile des SQL
+/// liegt auf einer der Quelle.
+SqlStueck alsSql(const sprache::Zeichenkette& z, const std::string& quelle, std::size_t erster)
+{
+    SqlStueck s;
+    std::size_t naechster = 0;  // der naechste Platzhalter von z
+    for (std::size_t j = 0; j < z.inhalt.size(); ++j)
+    {
+        if (naechster < z.platzhalter.size() && z.platzhalter[naechster].anfang == j)
+        {
+            const auto [anfang, laenge] = z.platzhalter[naechster++];
+            const std::string ersatz = std::string(kPlatzhalter) + std::to_string(erster + s.originale.size()) + "_";
+            s.originale.push_back(z.inhalt.substr(anfang, laenge));
+            s.text += ersatz;
+            s.woher.insert(s.woher.end(), ersatz.size(), z.versatz[anfang]);
+            j += laenge - 1;
+            continue;
+        }
+        if (j > 0 && z.versatz[j] > z.versatz[j - 1] + 1 && z.inhalt[j - 1] != '\n' &&
+            quelle.find('\n', z.versatz[j - 1] + 1) < z.versatz[j])
+        {
+            s.text += '\n';
+            s.woher.push_back(z.versatz[j - 1]);
+        }
+        s.text += z.inhalt[j];
+        s.woher.push_back(z.versatz[j]);
+    }
+    return s;
+}
+
+/// Die Funktion, in deren Rumpf die Zeile liegt — die innerste; nullptr = keine.
+modell::Funktion* funktionAn(modell::Einheit& einheit, int zeile)
+{
+    modell::Funktion* beste = nullptr;
+    for (modell::Funktion& f : einheit.funktionen)
+        if (f.bisZeile > 0 && f.zeile <= zeile && zeile <= f.bisZeile &&
+            (beste == nullptr || f.bisZeile - f.zeile < beste->bisZeile - beste->zeile))
+            beste = &f;
+    return beste;
+}
+
 /// SQL in den Zeichenketten einer Datei (Entscheide S1, E1 a): jede, die mit einer Anweisung des Schemas beginnt
 /// (sprache::beginntMitSchema), wird gelesen — alle einer Datei als ein Text, damit ein Fremdschluessel seine
-/// Tabelle in einer anderen Zeichenkette findet; ihre Tabellen kommen in die Einheit der Datei, ihre
-/// Stellen und Meldungen auf die Stellen der Quelle umgerechnet. Der Dialekt: der der Projektdatei, sonst
+/// Tabelle in einer anderen Zeichenkette findet; ihre Tabellen und Objekte kommen in die Einheit der Datei,
+/// ihre Stellen und Meldungen auf die Stellen der Quelle umgerechnet. Der Dialekt: der der Projektdatei, sonst
 /// der, den der Host-Code zeigt. Eine mit `+` zusammengesetzte Zeichenkette bleibt aussen vor (Hinweis).
 /// Eine Vorlage (Entscheid F1 a) wird gelesen: jeder Platzhalter steht im SQL als Name `kPlatzhalter<n>_`,
 /// danach wieder als Text der Quelle (`projekt_id: %1`); steht er in einem Namen, laesst der SQL-Leser die
-/// Anweisung aus (Hinweis).
+/// Anweisung aus (Hinweis). Dazu (Entscheid A4) jede Zeichenkette mit SQL im Rumpf einer Funktion: was sie
+/// liest, schreibt, ruft, kommt an die Funktion — `unsicher`, wenn sie nicht Argument eines Aufrufs aus
+/// kSqlAufrufe ist.
 void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const std::string& name,
                           const std::string& dialekt)
 {
-    static constexpr std::string_view kPlatzhalter = "c2d_platzhalter_";
     std::string sql;
     std::vector<std::size_t> herkunft;  // je Byte von `sql` der Versatz in `text`
     std::vector<std::string> platzhalter;  // je Nummer der Text der Quelle
     const Zeilen quelle(text);
-    for (const sprache::Zeichenkette& z : e.zeichenketten)
-    {
-        if (z.inhalt.empty()) continue;
-        // erst der Text, wie der SQL-Leser ihn sieht: je Platzhalter ein Name, zwischen Literalen auf
-        // verschiedenen Zeilen (`"CREATE TABLE a ("` / `"  x INT)"`) ein Zeilenwechsel — fuer SQL Leerraum,
-        // und jede Zeile des SQL liegt auf einer der Quelle
-        std::string stueck;
-        std::vector<std::size_t> woher;
-        std::vector<std::string> originale;
-        std::size_t naechster = 0;  // der naechste Platzhalter von z
-        for (std::size_t j = 0; j < z.inhalt.size(); ++j)
-        {
-            if (naechster < z.platzhalter.size() && z.platzhalter[naechster].anfang == j)
-            {
-                const auto [anfang, laenge] = z.platzhalter[naechster++];
-                const std::string ersatz =
-                    std::string(kPlatzhalter) + std::to_string(platzhalter.size() + originale.size()) + "_";
-                originale.push_back(z.inhalt.substr(anfang, laenge));
-                stueck += ersatz;
-                woher.insert(woher.end(), ersatz.size(), z.versatz[anfang]);
-                j += laenge - 1;
-                continue;
-            }
-            if (j > 0 && z.versatz[j] > z.versatz[j - 1] + 1 && z.inhalt[j - 1] != '\n' &&
-                text.find('\n', z.versatz[j - 1] + 1) < z.versatz[j])
-            {
-                stueck += '\n';
-                woher.push_back(z.versatz[j - 1]);
-            }
-            stueck += z.inhalt[j];
-            woher.push_back(z.versatz[j]);
-        }
-        // heute nur das Schema (CREATE, ALTER, DROP): aus Abfragen leitet noch nichts ab (Entscheid S2);
-        // eine zusammengesetzte traegt nur ihren Anfang (`"CREATE TABLE " + name`)
-        if (!sprache::beginntMitSchema(stueck, z.zusammengesetzt)) continue;
-        if (z.zusammengesetzt)
-        {
-            e.meldungen.push_back({Schwere::Hinweis, quelle.ort(z.versatz.front()),
-                                   "SQL in a string composed with + is not read"});
-            continue;
-        }
-        sql += stueck + ";\n";  // `;` trennt, auch wenn die Zeichenkette keins traegt
-        herkunft.insert(herkunft.end(), woher.begin(), woher.end());
-        herkunft.insert(herkunft.end(), 2, z.versatz.back());
-        platzhalter.insert(platzhalter.end(), originale.begin(), originale.end());
-    }
-    if (sql.empty()) return;
 
+    // der Dialekt: der der Projektdatei, sonst der, den der Host-Code zeigt
     sprache::LeseOptionen lesen;
     lesen.dialekt = dialekt;
-    if (!platzhalter.empty()) lesen.platzhalter = std::string(kPlatzhalter);
     std::string bibliotheken;
+    std::size_t mehrereBibliotheken = 0;
     if (lesen.dialekt.empty())
     {
         const auto host = dialekteVonHost(e);
         if (host.size() == 1) lesen.dialekt = std::string(host.front().first);
         for (const auto& [d, woran] : host) bibliotheken += (bibliotheken.empty() ? "" : ", ") + woran;
-        if (host.size() > 1)
-            e.meldungen.push_back({Schwere::Hinweis, quelle.ort(herkunft.front()),
-                                   "several SQL libraries (" + bibliotheken + ") - SQL read as common SQL"});
+        mehrereBibliotheken = host.size() > 1 ? host.size() : 0;
     }
+
+    for (const sprache::Zeichenkette& z : e.zeichenketten)
+    {
+        if (z.inhalt.empty()) continue;
+        SqlStueck stueck = alsSql(z, text, platzhalter.size());
+        // was eine Funktion des Hosts liest, schreibt, ruft (A4): jede Anweisung, nicht nur das Schema
+        if (sprache::beginntMitSql(stueck.text, z.zusammengesetzt))
+            if (modell::Funktion* f = funktionAn(e.einheit, quelle.ort(z.versatz.front()).zeile); f != nullptr)
+            {
+                if (z.zusammengesetzt)
+                    e.meldungen.push_back({Schwere::Hinweis, quelle.ort(z.versatz.front()),
+                                           "SQL in a string composed with + is not read"});
+                else
+                {
+                    sprache::LeseOptionen o = lesen;
+                    o.platzhalter = std::string(kPlatzhalter);
+                    const sprache::Ergebnis s = sprache::sql().lies(stueck.text, name, o);
+                    const Zeilen inSql(stueck.text);
+                    const bool sicher = std::find(std::begin(kSqlAufrufe), std::end(kSqlAufrufe),
+                                                  std::string_view(z.aufruf)) != std::end(kSqlAufrufe);
+                    for (modell::Zugriff zugriff : s.einheit.zugriffe)
+                    {
+                        zugriff.zeile = quelle.ort(stueck.woher[std::min(inSql.anfang(zugriff.zeile),
+                                                                         stueck.woher.size() - 1)]).zeile;
+                        zugriff.unsicher = !sicher;
+                        const bool schon = std::any_of(f->zugriffe.begin(), f->zugriffe.end(), [&](const modell::Zugriff& x) {
+                            return x.art == zugriff.art && x.ziel == zugriff.ziel && x.imAusdruck == zugriff.imAusdruck;
+                        });
+                        if (!schon) f->zugriffe.push_back(std::move(zugriff));
+                    }
+                }
+            }
+        // das Schema (CREATE, ALTER, DROP) aller Zeichenketten als ein Text; eine zusammengesetzte traegt nur
+        // ihren Anfang (`"CREATE TABLE " + name`)
+        if (!sprache::beginntMitSchema(stueck.text, z.zusammengesetzt)) continue;
+        if (z.zusammengesetzt)
+        {
+            if (funktionAn(e.einheit, quelle.ort(z.versatz.front()).zeile) == nullptr)  // sonst schon gemeldet
+                e.meldungen.push_back({Schwere::Hinweis, quelle.ort(z.versatz.front()),
+                                       "SQL in a string composed with + is not read"});
+            continue;
+        }
+        sql += stueck.text + ";\n";  // `;` trennt, auch wenn die Zeichenkette keins traegt
+        herkunft.insert(herkunft.end(), stueck.woher.begin(), stueck.woher.end());
+        herkunft.insert(herkunft.end(), 2, z.versatz.back());
+        platzhalter.insert(platzhalter.end(), stueck.originale.begin(), stueck.originale.end());
+    }
+    if (sql.empty()) return;
+
+    if (mehrereBibliotheken > 0)
+        e.meldungen.push_back({Schwere::Hinweis, quelle.ort(herkunft.front()),
+                               "several SQL libraries (" + bibliotheken + ") - SQL read as common SQL"});
+    if (!platzhalter.empty()) lesen.platzhalter = std::string(kPlatzhalter);
     sprache::Ergebnis s = sprache::sql().lies(sql, name, lesen);
 
     const Zeilen inSql(sql);
@@ -303,6 +369,13 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
         }
         for (modell::Verweis& v : t.verweise) v.zeile = zeile(v.zeile);
         e.einheit.typen.push_back(std::move(t));
+    }
+    for (modell::Datenbankobjekt& o : s.einheit.objekte)
+    {
+        o.zeile = zeile(o.zeile);
+        o.bisZeile = zeile(o.bisZeile);
+        for (modell::Zugriff& z : o.zugriffe) z.zeile = zeile(z.zeile);
+        e.einheit.objekte.push_back(std::move(o));
     }
     for (quelle::Meldung& m : s.meldungen)
     {

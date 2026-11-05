@@ -149,6 +149,24 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
         std::cout << (f.rumpf ? "function  " : "prototype ") << f.signatur() << (f.intern ? "  [static]" : "") << '\n';
     for (const c2d::modell::Typ& t : einheit.typen)
         std::cout << "type      " << t.vollerName() << " (" << t.felder.size() << " + " << t.methoden.size() << ")\n";
+    // was liest, schreibt, ruft (SQL): die Objekte der Datenbank und Funktionen mit SQL im Rumpf
+    const auto zugriffe = [](const std::vector<c2d::modell::Zugriff>& z) {
+        int liest = 0, schreibt = 0, ruft = 0, unsicher = 0;
+        for (const c2d::modell::Zugriff& x : z)
+        {
+            if (x.art == c2d::modell::ZugriffArt::Liest) ++liest;
+            if (x.art == c2d::modell::ZugriffArt::Schreibt) ++schreibt;
+            if (x.art == c2d::modell::ZugriffArt::Ruft && !x.imAusdruck) ++ruft;
+            if (x.unsicher) ++unsicher;
+        }
+        return " (" + std::to_string(liest) + " reads, " + std::to_string(schreibt) + " writes, " + std::to_string(ruft) +
+               " calls" + (unsicher > 0 ? ", " + std::to_string(unsicher) + " uncertain" : std::string()) + ")";
+    };
+    static constexpr const char* kObjektArt[] = {"view", "trigger", "function", "procedure"};
+    for (const c2d::modell::Datenbankobjekt& o : einheit.objekte)
+        std::cout << "object    " << kObjektArt[static_cast<int>(o.art)] << ' ' << o.name << zugriffe(o.zugriffe) << '\n';
+    for (const c2d::modell::Funktion& f : einheit.funktionen)
+        if (!f.zugriffe.empty()) std::cout << "access    " << f.vollerName() << zugriffe(f.zugriffe) << '\n';
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)
         std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';

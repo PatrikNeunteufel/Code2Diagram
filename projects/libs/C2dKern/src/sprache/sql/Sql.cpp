@@ -79,6 +79,24 @@ constexpr lexer::Sprachtabelle kTabelle{
     .dollarZeichenketten = true,
 };
 
+/// T-SQL: wie der Kern, dazu `#t` und `##t` (temporaere Tabellen) als Namen.
+constexpr lexer::Sprachtabelle kTabelleTsql{
+    .schluesselwoerter = kSchluesselwoerter,
+    .operatoren = kOperatoren,
+    .zeilenKommentar = "--",
+    .blockKommentarAuf = "/*",
+    .blockKommentarZu = "*/",
+    .zeichenkettenBegrenzer = "'",
+    .zeichenBegrenzer = "",
+    .zeichenkettenVorsaetze = kVorsaetze,
+    .namensZeichen = "@$#",
+    .verschachtelteKommentare = true,
+    .schluesselwoerterOhneFall = true,
+    .verdoppelteBegrenzer = true,
+    .namensBegrenzer = "\"`[",
+    .dollarZeichenketten = true,
+};
+
 /// MySQL und Spark (Databricks): `'…'` und `"…"` sind Zeichenketten, `\` maskiert; Namen nur in Gravis.
 constexpr lexer::Sprachtabelle kTabelleMitRueckstrich{
     .schluesselwoerter = kSchluesselwoerter,
@@ -115,7 +133,7 @@ constexpr Dialekt kDialekte[] = {
     {"duckdb", &kTabelle, false},
     {"spark", &kTabelleMitRueckstrich, true},
     {"mysql", &kTabelleMitRueckstrich, true},
-    {"tsql", &kTabelle, false},
+    {"tsql", &kTabelleTsql, false},
 };
 
 constexpr std::string_view kDialektNamen[] = {"sqlite", "postgres", "duckdb", "spark", "mysql", "tsql"};
@@ -178,7 +196,7 @@ constexpr std::string_view kOhneSchema[] = {
 enum class Gebilde
 {
     Tabelle,
-    Gezaehlt,
+    Objekt,  ///< ein Datenbankobjekt (View, Trigger, Funktion, Prozedur): seine Zugriffe werden gelesen
     Sonst,
 };
 
@@ -186,17 +204,17 @@ struct GebildeWort
 {
     std::string_view wort;
     Gebilde gebilde;
-    std::string_view mehrzahl;  ///< nur Gezaehlt: wie der Hinweis sie nennt
+    ObjektArt objekt;  ///< nur Objekt
 };
 
 constexpr GebildeWort kGebilde[] = {
     {"table", Gebilde::Tabelle, {}},
-    {"view", Gebilde::Gezaehlt, "views"},
-    {"function", Gebilde::Gezaehlt, "functions"},
-    {"procedure", Gebilde::Gezaehlt, "procedures"},
-    {"proc", Gebilde::Gezaehlt, "procedures"},
-    {"trigger", Gebilde::Gezaehlt, "triggers"},
-    {"macro", Gebilde::Gezaehlt, "macros"},
+    {"view", Gebilde::Objekt, ObjektArt::View},
+    {"function", Gebilde::Objekt, ObjektArt::Funktion},
+    {"procedure", Gebilde::Objekt, ObjektArt::Prozedur},
+    {"proc", Gebilde::Objekt, ObjektArt::Prozedur},
+    {"trigger", Gebilde::Objekt, ObjektArt::Trigger},
+    {"macro", Gebilde::Objekt, ObjektArt::Funktion},  // DuckDB
     {"aggregate", Gebilde::Sonst, {}},
     {"assembly", Gebilde::Sonst, {}},
     {"cast", Gebilde::Sonst, {}},
@@ -320,12 +338,20 @@ public:
             if (m_p == a) ++m_p;  // nicht stehen bleiben
         }
         loeseVerweiseAuf();
-        for (const auto& [mehrzahl, zahl] : m_gezaehlt)
+    }
+
+    /// Nur die Zugriffe aller Anweisungen, nach `zugriffe` (fuer den Rumpf einer Routine in `$$…$$`):
+    /// temporaere Tabellen, die er anlegt, nach `eigene`.
+    void liesRumpf(std::vector<Zugriff>& zugriffe, std::vector<std::string>& eigene)
+    {
+        while (!amEnde(m_p))
         {
-            // die Mehrzahl endet auf `s`: bei einem die Einzahl
-            const std::string_view art = zahl.first == 1 ? mehrzahl.substr(0, mehrzahl.size() - 1) : mehrzahl;
-            m_aus.meldungen.push_back({Schwere::Hinweis, zahl.second,
-                                       std::to_string(zahl.first) + " " + std::string(art) + " read but not shown yet"});
+            const std::size_t a = m_p;
+            const std::size_t b = anweisungsEnde(a);
+            const std::size_t trenner = trennerLaenge(b);
+            if (b > a) sammleZugriffe(a, b, zugriffe, eigene);
+            m_p = b + trenner;
+            if (m_p == a) ++m_p;
         }
     }
 
@@ -589,6 +615,16 @@ private:
         if (wort(a, "alter"))
         {
             if (wort(a + 1, "table")) liesAlterTable(a + 2, b);
+            // T-SQL: ALTER VIEW/PROCEDURE/FUNCTION/TRIGGER … AS legt das Objekt neu fest — wie CREATE; ohne AS
+            // (`ALTER FUNCTION f() OWNER TO x`, `ALTER VIEW v RENAME TO w`) aendert es nichts Gezeigtes
+            if (wort(a + 1, "view") || wort(a + 1, "procedure") || wort(a + 1, "proc") || wort(a + 1, "function") ||
+                wort(a + 1, "trigger"))
+            {
+                bool mitRumpf = false;
+                for (std::size_t k = a + 2; k < b && !mitRumpf; k = oeffnet(tok(k)) ? nachKlammer(k) : k + 1)
+                    mitRumpf = wort(k, "as");
+                if (mitRumpf) liesCreate(a, b);
+            }
             return;  // alles andere aendert kein Schema, das gezeigt wird
         }
         if (wort(a, "set") && wort(a + 1, "term") && b > a + 2)
@@ -604,7 +640,13 @@ private:
         if (t.art == TokenArt::Bezeichner && tok(a + 1).istOp(":")) return;  // ein Block mit Marke (Spark)
         if ((t.art == TokenArt::Schluesselwort || t.art == TokenArt::Bezeichner) &&
             enthaelt(kOhneSchema, klein(t.text)))
+        {
+            // eine Anweisung ausserhalb der Objekte (ein Skript, eine Abfrage in einer Zeichenkette); die
+            // Namen ihres WITH gelten nur in ihr
+            std::vector<std::string> eigene;
+            sammleZugriffe(a, b, m_aus.einheit.zugriffe, eigene);
             return;
+        }
         melde(Schwere::Warnung, t, "statement '" + std::string(t.text) + "' is not understood");
     }
 
@@ -619,11 +661,8 @@ private:
             if (g == std::end(kGebilde)) continue;
             if (g->gebilde == Gebilde::Tabelle)
                 liesCreateTable(k + 1, b);
-            else if (g->gebilde == Gebilde::Gezaehlt)
-            {
-                auto& [zahl, ort] = m_gezaehlt[g->mehrzahl];
-                if (zahl++ == 0) ort = tok(a).ort;
-            }
+            else if (g->gebilde == Gebilde::Objekt)
+                liesObjekt(g->objekt, a, k + 1, b);
             return;
         }
         melde(Schwere::Warnung, tok(a), "CREATE statement is not understood");
@@ -820,6 +859,364 @@ private:
         *typ = std::move(neu);
     }
 
+    // --- Objekte und Zugriffe (Entscheide A1–A3) --------------------------------
+
+    /// Ab i (hinter VIEW, TRIGGER, FUNCTION, PROCEDURE): das Objekt mit seinen Zugriffen.
+    void liesObjekt(ObjektArt art, std::size_t a, std::size_t i, std::size_t b)
+    {
+        Datenbankobjekt o;
+        o.art = art;
+        if (wort(i, "if") && wort(i + 1, "not") && wort(i + 2, "exists")) i += 3;
+        std::size_t k = i;
+        o.name = liesNamen(i, k);
+        o.zeile = tok(a).ort.zeile;
+        o.bisZeile = tok(b > a ? b - 1 : a).ort.zeile;
+        if (o.name.empty())
+        {
+            melde(Schwere::Warnung, tok(i), "name of the object is missing");
+            return;
+        }
+        if (!m_platzhalter.empty() && o.name.find(m_platzhalter) != std::string::npos)
+        {
+            melde(Schwere::Hinweis, tok(i), "placeholder in a name (filled at runtime) - statement not read");
+            return;
+        }
+        std::vector<std::string> eigene;  // was das Objekt selbst anlegt: Namen eines WITH, temporaere Tabellen
+        if (art == ObjektArt::View)
+            sammleZugriffe(k, b, o.zugriffe, eigene);
+        else if (art == ObjektArt::Trigger)
+            liesTrigger(o, k, b, eigene);
+        else
+            liesRoutine(o, k, b, eigene);
+        m_aus.einheit.objekte.push_back(std::move(o));
+    }
+
+    /// Der Rest eines Triggers ab k: Ereignis, Tabelle, Rumpf. `… AFTER INSERT ON t …` (SQLite, Postgres,
+    /// MySQL), `… ON t AFTER INSERT AS …` (T-SQL), `… FOR t ACTIVE AFTER INSERT AS …` (Firebird).
+    void liesTrigger(Datenbankobjekt& o, std::size_t k, std::size_t b, std::vector<std::string>& eigene)
+    {
+        std::size_t on = k;
+        while (on < b && !wort(on, "on") && !(on == k && wort(on, "for"))) on = oeffnet(tok(on)) ? nachKlammer(on) : on + 1;
+        if (on >= b)
+        {
+            melde(Schwere::Hinweis, tok(k), "trigger '" + o.name + "': its table is not found");
+            return;
+        }
+        std::size_t nach = on + 1;
+        o.tabelle = liesNamen(on + 1, nach);
+        std::size_t rumpf = nach;
+        if (on == k)
+        {
+            // T-SQL, Firebird: das Ereignis steht hinter der Tabelle, bis AS
+            std::size_t as = nach;
+            while (as < b && !wort(as, "as")) ++as;
+            std::size_t von = nach;
+            while (von < as && (wort(von, "active") || wort(von, "inactive"))) ++von;
+            std::size_t bis = von;
+            while (bis < as && !wort(bis, "position")) ++bis;
+            o.ereignis = textVon(von, bis);
+            rumpf = as;
+        }
+        else
+            o.ereignis = textVon(k, on);
+        sammleZugriffe(rumpf, b, o.zugriffe, eigene);
+    }
+
+    /// Der Rest einer Funktion oder Prozedur ab k: Parameter, dann der Rumpf — in `$$…$$` oder `'…'`
+    /// (Postgres) noch einmal gelesen, sonst die Token bis zum Ende (T-SQL, MySQL, Spark `RETURN …`). Eine
+    /// Routine in einer anderen Sprache (`LANGUAGE plpython3u`) bleibt mit Hinweis aussen vor.
+    void liesRoutine(Datenbankobjekt& o, std::size_t k, std::size_t b, std::vector<std::string>& eigene)
+    {
+        if (tok(k).istOp("(")) k = nachKlammer(k);
+        std::string sprache;
+        std::size_t koerper = kKeiner;
+        for (std::size_t j = k; j < b; ++j)
+        {
+            // `LANGUAGE plpgsql`; nicht `LANGUAGE = N'English'` (die natuerliche Sprache eines ATOMIC-Blocks, T-SQL)
+            if (wort(j, "language") && j + 1 < b && !tok(j + 1).istOp("="))
+            {
+                sprache = klein(tok(j + 1).text);
+                if (sprache.size() >= 2 && (sprache.front() == '\'' || sprache.front() == '"'))
+                    sprache = sprache.substr(1, sprache.size() - 2);
+            }
+            const Token& t = tok(j);
+            if (koerper == kKeiner && t.art == TokenArt::Zeichenkette && (t.text.starts_with('$') || wort(j - 1, "as")))
+                koerper = j;
+        }
+        if (!sprache.empty() && sprache != "plpgsql" && sprache != "sql" && sprache != "plsql")
+        {
+            melde(Schwere::Hinweis, tok(k), "routine '" + o.name + "' in LANGUAGE " + sprache + " is not read");
+            return;
+        }
+        if (koerper != kKeiner && m_dialekt.name != "tsql" && m_dialekt.name != "mysql")
+        {
+            liesRumpfText(tok(koerper), o.zugriffe, eigene);
+            return;
+        }
+        sammleZugriffe(k, b, o.zugriffe, eigene);
+    }
+
+    /// Der Rumpf einer Routine in einer Zeichenkette (`$$…$$`, `$f$…$f$`, `'…'`) durch einen zweiten
+    /// Leser; Zeilen und Meldungen auf die Stellen in diesem Text.
+    void liesRumpfText(const Token& koerper, std::vector<Zugriff>& zugriffe, std::vector<std::string>& eigene)
+    {
+        std::string_view s = koerper.text;
+        std::size_t vorn = 1;
+        std::string innen;
+        if (s.starts_with('$'))
+        {
+            vorn = s.find('$', 1) + 1;
+            innen = std::string(s.substr(vorn, s.size() >= 2 * vorn ? s.size() - 2 * vorn : 0));
+        }
+        else
+        {
+            for (std::size_t i = 1; i + 1 < s.size(); ++i)
+            {
+                innen += s[i];
+                if (s[i] == '\'' && s[i + 1] == '\'') ++i;
+            }
+        }
+        Ergebnis neben;
+        std::vector<Zugriff> innere;
+        SqlLeser(innen, m_dialekt, m_platzhalter, neben).liesRumpf(innere, eigene);
+        const int versatzZeile = koerper.ort.zeile - 1;
+        for (Zugriff& z : innere)
+        {
+            z.zeile += versatzZeile;
+            fuegeZugriffHinzu(zugriffe, std::move(z));
+        }
+        for (quelle::Meldung& m : neben.meldungen)
+        {
+            if (m.ort.zeile == 1) m.ort.spalte += koerper.ort.spalte - 1 + static_cast<int>(vorn);
+            m.ort.zeile += versatzZeile;
+            m.ort.versatz += koerper.ort.versatz + vorn;
+            m_aus.meldungen.push_back(std::move(m));
+        }
+    }
+
+    /// Ein Zugriff, wenn es ihn (Art und Ziel, ohne Ruecksicht auf Gross/klein) noch nicht gibt.
+    static void fuegeZugriffHinzu(std::vector<Zugriff>& zugriffe, Zugriff z)
+    {
+        const std::string ziel = klein(z.ziel);
+        for (const Zugriff& x : zugriffe)
+            if (x.art == z.art && x.imAusdruck == z.imAusdruck && klein(x.ziel) == ziel) return;
+        zugriffe.push_back(std::move(z));
+    }
+
+    /// Ein Name, der keine Tabelle meint: eine Variable (`@t`), eine temporaere Tabelle von T-SQL (`#t`), ein
+    /// Name eines WITH oder eine temporaere Tabelle, die das Objekt selbst anlegt (`eigene`).
+    [[nodiscard]] static bool keineTabelle(std::string_view name, const std::vector<std::string>& eigene)
+    {
+        if (name.empty() || name.front() == '@' || name.front() == '#' || name.find('.') == 0) return true;
+        const std::string n = klein(name);
+        return n == "dual" || std::find(eigene.begin(), eigene.end(), n) != eigene.end();
+    }
+
+    /// Die Zugriffe der Token [a, b) (Entscheid A2): liest (FROM, JOIN), schreibt (INSERT INTO, UPDATE … SET,
+    /// DELETE FROM, MERGE INTO, TRUNCATE), ruft (CALL, EXEC, EXECUTE FUNCTION, PERFORM; ein Name vor `(` im
+    /// Ausdruck mit imAusdruck). Namen eines WITH und temporaere Tabellen kommen nach `eigene`.
+    /// Dynamisches SQL (`EXECUTE 'text'`, `EXECUTE format(…)`, `EXEC(@sql)`, `sp_executesql`) gibt einen Hinweis.
+    void sammleZugriffe(std::size_t a, std::size_t b, std::vector<Zugriff>& aus, std::vector<std::string>& eigene)
+    {
+        const auto neu = [&](ZugriffArt art, const std::string& ziel, std::size_t bei, bool imAusdruck = false) {
+            if (art != ZugriffArt::Ruft && keineTabelle(ziel, eigene)) return;
+            if (ziel.empty() || ziel.front() == '@' || ziel.front() == '#') return;  // Variablen, temporaere Tabellen
+            if (!m_platzhalter.empty() && ziel.find(m_platzhalter) != std::string::npos) return;
+            fuegeZugriffHinzu(aus, {art, ziel, tok(bei).ort.zeile, imAusdruck, false});
+        };
+        const auto tabellenName = [&](std::size_t k) {
+            const Token& t = tok(k);
+            return t.art == TokenArt::Bezeichner && !(t.text.size() == 1 && t.text == "_");
+        };
+        std::vector<std::string> klammern;  // je offene Klammer der Name davor (klein), innen zuletzt
+        // `FROM` in diesen Klammern nennt keine Tabelle: EXTRACT(YEAR FROM d), SUBSTRING(s FROM 2) …
+        static constexpr std::string_view kOhneTabelle[] = {"extract", "substring", "substr", "trim", "overlay",
+                                                            "position", "cast", "convert"};
+        std::size_t ohneFrom = kKeiner;  // das FROM hinter DELETE ist schon gelesen
+        // je offenes FROM die Tiefe der Klammern, auf der es steht: ein Komma dort nennt eine weitere Quelle
+        // (`FROM a JOIN b ON … , c`), bis WHERE, GROUP … das FROM beenden
+        std::vector<std::size_t> offeneFrom;
+        static constexpr std::string_view kEndeFrom[] = {"where",  "group",   "order",  "having", "limit",
+                                                         "union",  "intersect", "except", "window", "qualify",
+                                                         "returning", "set",  "values", "select", "fetch", "offset"};
+        // die Quellen ab k, durch Kommas getrennt: `a, b x, c AS y`; die Stelle dahinter
+        const auto quellen = [&](std::size_t k) {
+            while (true)
+            {
+                while (wort(k, "lateral") || wort(k, "only")) ++k;
+                if (!tabellenName(k)) return k;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                if (tok(e).istOp("("))
+                {
+                    neu(ZugriffArt::Ruft, n, k, true);  // eine Funktion, die eine Tabelle liefert
+                    return e;
+                }
+                neu(ZugriffArt::Liest, n, k);
+                k = e;
+                if (wort(k, "as")) ++k;
+                if (tok(k).art == TokenArt::Bezeichner) ++k;  // ein Alias
+                if (!tok(k).istOp(",")) return k;
+                ++k;
+            }
+        };
+        for (std::size_t j = a; j < b && !amEnde(j); ++j)
+        {
+            const Token& t = tok(j);
+            if (oeffnet(t))
+            {
+                klammern.push_back(j > a && istName(j - 1) ? klein(tok(j - 1).text) : std::string());
+                continue;
+            }
+            if (schliesst(t))
+            {
+                if (!klammern.empty()) klammern.pop_back();
+                while (!offeneFrom.empty() && offeneFrom.back() > klammern.size()) offeneFrom.pop_back();
+                continue;
+            }
+            if (t.istOp(",") && !offeneFrom.empty() && offeneFrom.back() == klammern.size())
+            {
+                j = quellen(j + 1) - 1;
+                continue;
+            }
+            if (t.art != TokenArt::Schluesselwort && t.art != TokenArt::Bezeichner) continue;
+            const std::string w = klein(t.text);
+            if (!offeneFrom.empty() && offeneFrom.back() == klammern.size() && enthaelt(kEndeFrom, w))
+                offeneFrom.pop_back();
+
+            if (w == "with" && istName(j + 1) && !tok(j + 1).istOp("("))
+            {
+                // die Namen eines WITH: `WITH [RECURSIVE] a [(x)] AS [NOT] [MATERIALIZED] (…), b AS (…)`
+                std::size_t k = j + 1;
+                if (wort(k, "recursive")) ++k;
+                while (istName(k))
+                {
+                    std::size_t e = k + 1;
+                    if (tok(e).istOp("(")) e = nachKlammer(e);
+                    if (!wort(e, "as")) break;
+                    eigene.push_back(klein(ohneBegrenzer(tok(k).text)));
+                    ++e;
+                    while (wort(e, "not") || wort(e, "materialized")) ++e;
+                    if (!tok(e).istOp("(")) break;
+                    e = nachKlammer(e);
+                    if (!tok(e).istOp(",")) break;
+                    k = e + 1;
+                }
+                continue;
+            }
+            if ((w == "from" || w == "join" || w == "using") && j != ohneFrom)
+            {
+                // USING nennt eine Quelle nur in MERGE INTO t [AS x] USING s
+                if (w == "using" && !(j >= 2 && wort(j - 2, "into")) && !(j >= 3 && wort(j - 3, "into")) &&
+                    !(j >= 4 && wort(j - 4, "into")))
+                    continue;
+                if (w == "from" && (wort(j - 1, "distinct") ||
+                                    (!klammern.empty() && enthaelt(kOhneTabelle, klammern.back()))))
+                    continue;
+                if (w == "from" && (offeneFrom.empty() || offeneFrom.back() != klammern.size()))
+                    offeneFrom.push_back(klammern.size());
+                j = quellen(j + 1) - 1;
+                continue;
+            }
+            if (w == "insert" || w == "replace" || w == "merge" || w == "upsert")
+            {
+                std::size_t k = j + 1;
+                if (wort(k, "or")) k += 2;
+                if (wort(k, "ignore") || wort(k, "low_priority") || wort(k, "delayed")) ++k;
+                // T-SQL erlaubt `INSERT t …` ohne INTO (nur bei INSERT, nicht bei REPLACE/MERGE)
+                if (wort(k, "into") || wort(k, "overwrite"))
+                    ++k;
+                else if (w != "insert" || !tabellenName(k))
+                    continue;
+                if (wort(k, "table")) ++k;
+                if (!tabellenName(k)) continue;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                neu(ZugriffArt::Schreibt, n, k);
+                j = e - 1;
+                continue;
+            }
+            if (w == "update" && tabellenName(j + 1))
+            {
+                std::size_t e = j + 1;
+                const std::string n = liesNamen(j + 1, e);
+                if (wort(e, "as")) ++e;
+                if (tok(e).art == TokenArt::Bezeichner && !wort(e, "set")) ++e;  // ein Alias
+                if (wort(e, "set")) neu(ZugriffArt::Schreibt, n, j + 1);
+                j = e - 1;
+                continue;
+            }
+            if (w == "delete")
+            {
+                std::size_t k = j + 1;
+                if (wort(k, "from")) ++k;
+                if (!tabellenName(k)) continue;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                neu(ZugriffArt::Schreibt, n, k);
+                ohneFrom = j + 1;
+                j = e - 1;
+                continue;
+            }
+            if (w == "truncate")
+            {
+                std::size_t k = j + 1;
+                if (wort(k, "table")) ++k;
+                if (!tabellenName(k)) continue;
+                std::size_t e = k;
+                neu(ZugriffArt::Schreibt, liesNamen(k, e), k);
+                j = e - 1;
+                continue;
+            }
+            if (w == "create" && (wort(j + 1, "temp") || wort(j + 1, "temporary") || wort(j + 2, "temp") ||
+                                  wort(j + 2, "temporary")))
+            {
+                // eine temporaere Tabelle gehoert dem, der sie anlegt (Entscheid A3)
+                std::size_t k = j + 1;
+                while (k < b && !wort(k, "table")) ++k;
+                ++k;
+                if (wort(k, "if") && wort(k + 1, "not") && wort(k + 2, "exists")) k += 3;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                if (!n.empty()) eigene.push_back(klein(n));
+                j = e - 1;
+                continue;
+            }
+            if (w == "call" || w == "perform" || w == "exec" || w == "execute")
+            {
+                std::size_t k = j + 1;
+                if (wort(k, "as")) continue;  // T-SQL `EXECUTE AS OWNER`: unter wessen Rechten, kein Aufruf
+                if (w != "call" && w != "perform" &&
+                    (wort(k, "immediate") || tok(k).art == TokenArt::Zeichenkette || tok(k).istOp("(") ||
+                     wort(k, "format") || wort(k, "sp_executesql") || (tok(k).text.starts_with('@') && !tok(k + 1).istOp("="))))
+                {
+                    melde(Schwere::Hinweis, t, "dynamic SQL is not read");
+                    continue;
+                }
+                if (tok(k).text.starts_with('@') && tok(k + 1).istOp("=")) k += 2;  // EXEC @rc = p
+                if (wort(k, "function") || wort(k, "procedure")) ++k;                // EXECUTE FUNCTION f() (Trigger)
+                if (!istName(k)) continue;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                neu(ZugriffArt::Ruft, n, k, w == "perform");
+                j = e - 1;
+                continue;
+            }
+            // ein Name vor `(` im Ausdruck: vielleicht eine Routine des Projekts
+            // (nicht der Name hinter TABLE, INDEX, REFERENCES … — `CREATE TABLE t (`, `REFERENCES t(id)`)
+            static constexpr std::string_view kVorName[] = {"table", "index", "view", "references", "exists",
+                                                            "function", "procedure", "trigger", "type", "key"};
+            if (t.art == TokenArt::Bezeichner && (j == a || !tok(j - 1).istOp(".")))
+            {
+                std::size_t e = j;
+                const std::string n = liesNamen(j, e);
+                const bool hinterName = j > a && istName(j - 1) && enthaelt(kVorName, klein(tok(j - 1).text));
+                if (tok(e).istOp("(") && !n.empty() && !hinterName) neu(ZugriffArt::Ruft, n, j, true);
+                j = e - 1;
+            }
+        }
+    }
+
     // --- Schluessel ----------------------------------------------------------
 
     /// Die Tabelle dieses Namens unter den gelesenen (ohne Ruecksicht auf Gross/klein; wo das Schema
@@ -880,8 +1277,6 @@ private:
     const Dialekt& m_dialekt;
     std::string m_platzhalter;  ///< LeseOptionen::platzhalter
     std::string m_trenner = ";";
-    /// Je Art, die erkannt, aber noch nicht gezeigt wird: wie oft, und wo zuerst.
-    std::map<std::string_view, std::pair<int, quelle::Position>> m_gezaehlt;
 };
 
 class Sql final : public Sprache

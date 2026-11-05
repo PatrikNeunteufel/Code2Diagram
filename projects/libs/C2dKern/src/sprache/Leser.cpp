@@ -203,6 +203,27 @@ void findePlatzhalter(Zeichenkette& z, Ausfuellen art)
     }
 }
 
+/// Makros und Funktionen, die eine Zeichenkette nur einpacken: der Aufruf, dem sie gehoert, steht davor.
+constexpr std::string_view kHuellen[] = {"QStringLiteral", "QLatin1String", "QString",  "QStringView", "QByteArray",
+                                         "QLatin1StringView", "u",          "_T",       "TEXT",        "L",
+                                         "text",           "sql",           "dedent"};
+
+/// Der Aufruf, dessen Argument die Zeichenkette bei Token i ist: `execute(` vor ihr, auch hinter Huellen
+/// (`q.exec(QStringLiteral(…))`, `con.execute(text(…))`); leer = keiner.
+std::string aufrufVor(const std::vector<lexer::Token>& t, std::size_t i)
+{
+    std::size_t k = i;
+    for (int stufe = 0; stufe < 3 && k >= 2 && t[k - 1].istOp("("); ++stufe)
+    {
+        const lexer::Token& name = t[k - 2];
+        if (name.art != lexer::TokenArt::Bezeichner && name.art != lexer::TokenArt::Schluesselwort) break;
+        if (std::find(std::begin(kHuellen), std::end(kHuellen), name.text) == std::end(kHuellen))
+            return std::string(name.text);
+        k -= 2;
+    }
+    return {};
+}
+
 /// Die Zeichenketten der Token: unmittelbar hintereinander stehende zu einer verbunden. Eine mit `+`
 /// davor oder dahinter ist zusammengesetzt; eine, die ausgefuellt wird (wirdAusgefuellt), traegt ihre
 /// Platzhalter.
@@ -213,6 +234,7 @@ std::vector<Zeichenkette> zeichenkettenIn(const std::vector<lexer::Token>& t, co
     {
         if (t[i].art != lexer::TokenArt::Zeichenkette) continue;
         Zeichenkette z;
+        const std::size_t anfang = i;  // das erste Literal der Gruppe
         bool zusammen = i > 0 && t[i - 1].istOp("+");
         std::size_t j = i;
         bool gelesen = false;
@@ -225,6 +247,7 @@ std::vector<Zeichenkette> zeichenkettenIn(const std::vector<lexer::Token>& t, co
         i = j - 1;
         if (!gelesen) continue;
         z.zusammengesetzt = zusammen;
+        z.aufruf = aufrufVor(t, anfang);
         aus.push_back(std::move(z));
     }
     return aus;

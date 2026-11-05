@@ -851,8 +851,8 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 
 - [ ] **AA0 Vorbereiten:** File > Open source file… `beispiele/sql/lager.sql`, Vorschau.
       `aktion: datei_oeffnen pfad=beispiele/sql/lager.sql` `aktion: ansicht_waehlen name=preview`
-- [ ] **AA1 Gelesen:** Statuszeile `read as SQL: 0 function(s), 4 data type(s) - 2 message(s)` (je ein Hinweis auf
-      View und Trigger, Einzahl). Diagram bietet nur `Data types (4)` — kein `#if configuration`. File > Open
+- [ ] **AA1 Gelesen:** Statuszeile `read as SQL: 0 function(s), 4 data type(s) - 1 message(s)` (der Hinweis, dass der
+      Dialekt nicht bekannt ist). Diagram bietet nur `Data types (4)` — kein `#if configuration`. File > Open
       source file… bietet `SQL files (*.sql *.ddl)`.
 - [ ] **AA2 ER-Diagramm:** `All types (4)`: vier Kästen «table»; `bestand` mit `artikel_id: INTEGER PK, FK` und
       `ort_id: INTEGER PK, FK`; Kanten `artikel_id` nach `artikel`, `ort_id` nach `Lagerort` (aus dem ALTER TABLE),
