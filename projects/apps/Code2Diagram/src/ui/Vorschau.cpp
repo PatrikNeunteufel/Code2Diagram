@@ -189,37 +189,65 @@ public:
 
     /// Ein Knoten des Aufrufgraphen: eine Funktion wie ein Aufruf im Ablauf (der Ausgangspunkt
     /// getoent und kraeftig umrandet), Fremd grau und kursiv, ein Makro dazu gestrichelt.
+    /// In den Abhaengigkeiten der Daten: eine Tabelle ein Kasten, eine View gestrichelt, ein Trigger mit runden
+    /// Ecken, eine Routine wie eine Funktion, eine fremde Tabelle grau; der Stereotyp in einer eigenen Zeile.
     void aufrufKnoten(KnotenId id, const AufrufKnoten& k, const QRectF& r)
     {
         QPainterPath form;
-        form.addRect(r);
+        if (k.art == AufrufKnotenArt::Trigger)
+            form.addRoundedRect(r, 10, 10);
+        else
+            form.addRect(r);
         QPen stift = m_strich;
         QColor pinsel = m_flaeche;
-        const bool funktion = k.art == AufrufKnotenArt::Funktion;
+        const bool funktion = k.art == AufrufKnotenArt::Funktion || k.art == AufrufKnotenArt::Routine;
+        const bool fremd = !imProjekt(k.art);
         if (funktion)
         {
             form.moveTo(r.left() + 8, r.top());
             form.lineTo(r.left() + 8, r.bottom());
             form.moveTo(r.right() - 8, r.top());
             form.lineTo(r.right() - 8, r.bottom());
+        }
+        if (fremd)
+        {
+            stift = QPen(m_fremdStrich, 1.2, k.art == AufrufKnotenArt::Makro ? Qt::DashLine : Qt::SolidLine);
+            pinsel = m_fremd;
+        }
+        else
+        {
+            if (k.art == AufrufKnotenArt::View) stift.setStyle(Qt::DashLine);
             if (k.wurzel)
             {
                 stift.setWidthF(2.4);
                 pinsel = m_getoent;
             }
         }
-        else
-        {
-            stift = QPen(m_fremdStrich, 1.2, k.art == AufrufKnotenArt::Makro ? Qt::DashLine : Qt::SolidLine);
-            pinsel = m_fremd;
-        }
         QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
         stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
         stueck->setZValue(2);
-        stueck->setToolTip(funktion ? QStringLiteral("Click: show in the source. Double-click: show its flow. Right-click: more.")
-                                    : k.art == AufrufKnotenArt::Makro ? QStringLiteral("A macro of the project. Click: show in the source.")
-                                                                       : QStringLiteral("No body in the project"));
-        text(gekuerzt(knotenText(k)), r, false, !funktion)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        QString tipp;
+        switch (k.art)
+        {
+            case AufrufKnotenArt::Funktion:
+                tipp = QStringLiteral("Click: show in the source. Double-click: show its flow. Right-click: more.");
+                break;
+            case AufrufKnotenArt::Makro: tipp = QStringLiteral("A macro of the project. Click: show in the source."); break;
+            case AufrufKnotenArt::Fremd: tipp = QStringLiteral("No body in the project"); break;
+            case AufrufKnotenArt::FremdeTabelle: tipp = QStringLiteral("A table the project does not define"); break;
+            case AufrufKnotenArt::Tabelle:
+                tipp = QStringLiteral("Click: show in the source. Double-click: show it in Data types. Right-click: more.");
+                break;
+            case AufrufKnotenArt::View:
+            case AufrufKnotenArt::Trigger:
+            case AufrufKnotenArt::Routine:
+                tipp = QStringLiteral("Click: show in the source. Right-click: more.");
+                break;
+        }
+        stueck->setToolTip(tipp);
+        QStringList zeilen;
+        for (const std::string& z : knotenZeilen(k)) zeilen << gekuerzt(z);
+        text(zeilen.join(QLatin1Char('\n')), r, false, fremd)->setData(kKnoten, static_cast<qulonglong>(id) + 1);
     }
 
     /// Ein Zustand: ein Kasten mit runden Ecken; der Punkt von aussen: ein gefuellter Kreis.

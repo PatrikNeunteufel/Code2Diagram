@@ -978,7 +978,9 @@ private:
         }
         Ergebnis neben;
         std::vector<Zugriff> innere;
-        SqlLeser(innen, m_dialekt, m_platzhalter, neben).liesRumpf(innere, eigene);
+        SqlLeser rumpf(innen, m_dialekt, m_platzhalter, neben);
+        rumpf.m_imRumpf = true;
+        rumpf.liesRumpf(innere, eigene);
         const int versatzZeile = koerper.ort.zeile - 1;
         for (Zugriff& z : innere)
         {
@@ -1186,9 +1188,13 @@ private:
             {
                 std::size_t k = j + 1;
                 if (wort(k, "as")) continue;  // T-SQL `EXECUTE AS OWNER`: unter wessen Rechten, kein Aufruf
-                if (w != "call" && w != "perform" &&
-                    (wort(k, "immediate") || tok(k).art == TokenArt::Zeichenkette || tok(k).istOp("(") ||
-                     wort(k, "format") || wort(k, "sp_executesql") || (tok(k).text.starts_with('@') && !tok(k + 1).istOp("="))))
+                // im Rumpf einer Postgres-Routine fuehrt EXECUTE immer Text aus (`EXECUTE sql_text`), ausser
+                // EXECUTE FUNCTION/PROCEDURE
+                const bool plpgsql = m_imRumpf && w == "execute" && !wort(k, "function") && !wort(k, "procedure");
+                if (plpgsql ||
+                    (w != "call" && w != "perform" &&
+                     (wort(k, "immediate") || tok(k).art == TokenArt::Zeichenkette || tok(k).istOp("(") ||
+                      wort(k, "format") || wort(k, "sp_executesql") || (tok(k).text.starts_with('@') && !tok(k + 1).istOp("=")))))
                 {
                     melde(Schwere::Hinweis, t, "dynamic SQL is not read");
                     continue;
@@ -1276,6 +1282,7 @@ private:
 
     const Dialekt& m_dialekt;
     std::string m_platzhalter;  ///< LeseOptionen::platzhalter
+    bool m_imRumpf = false;     ///< liest den Rumpf einer Routine in `$$…$$` (PL/pgSQL)
     std::string m_trenner = ";";
 };
 

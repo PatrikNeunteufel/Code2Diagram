@@ -112,7 +112,7 @@ public:
         if (da == m_kanten.end())
         {
             da = m_kanten.emplace(schluessel, m_e.graph.kanten.size()).first;
-            m_e.graph.kanten.push_back({von, nach, AufrufKantenArt::Mehrdeutig, {}, true});
+            m_e.graph.kanten.push_back({von, nach, AufrufKantenArt::Mehrdeutig, diagramm::ZugriffKante::Ruft, {}, {}, true});
             m_wann.emplace_back();
         }
         Wann& w = m_wann[da->second];

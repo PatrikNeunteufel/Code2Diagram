@@ -53,6 +53,7 @@ enum class Diagrammart
     Konfiguration,
     Schaltstellen,
     Schalteruebersicht,
+    Abhaengigkeiten,  ///< die Abhaengigkeiten der Daten, im Modell des Aufrufgraphen
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...

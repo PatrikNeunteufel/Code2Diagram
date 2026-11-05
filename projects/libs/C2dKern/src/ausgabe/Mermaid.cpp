@@ -311,11 +311,26 @@ public:
         aus += optionen.richtung;
         aus += '\n';
         // eine Funktion als Unterprogramm, Fremd und Makro als Rechteck; mit Rahmen je Datei ein subgraph
+        // die Abhaengigkeiten: eine Tabelle als Zylinder, ein Trigger als Sechseck, eine View mit runden Enden,
+        // eine Routine wie eine Funktion; der Stereotyp in einer eigenen Zeile
         const auto schreibeKnoten = [&](std::size_t id, std::string_view einzug) {
             const AufrufKnoten& k = graph.knoten[id];
-            const bool funktion = k.art == AufrufKnotenArt::Funktion;
-            aus += std::string(einzug) + "n" + std::to_string(id) + (funktion ? "[[\"" : "[\"") +
-                   maskiere(kuerze(knotenText(k), optionen.maxZeilenLaenge)) + (funktion ? "\"]]\n" : "\"]\n");
+            std::string_view auf = "[\"", zu = "\"]";
+            switch (k.art)
+            {
+                case AufrufKnotenArt::Funktion:
+                case AufrufKnotenArt::Routine: auf = "[[\""; zu = "\"]]"; break;
+                case AufrufKnotenArt::Tabelle:
+                case AufrufKnotenArt::FremdeTabelle: auf = "[(\""; zu = "\")]"; break;
+                case AufrufKnotenArt::View: auf = "([\""; zu = "\"])"; break;
+                case AufrufKnotenArt::Trigger: auf = "{{\""; zu = "\"}}"; break;
+                case AufrufKnotenArt::Fremd:
+                case AufrufKnotenArt::Makro: break;
+            }
+            std::string text;
+            for (const std::string& zeile : knotenZeilen(k))
+                text += (text.empty() ? "" : "<br/>") + maskiere(kuerze(zeile, optionen.maxZeilenLaenge));
+            aus += std::string(einzug) + "n" + std::to_string(id) + std::string(auf) + text + std::string(zu) + "\n";
         };
         if (graph.mitRahmen())
             for (std::size_t d = 0; d < graph.dateien.size(); ++d)
@@ -323,12 +338,12 @@ public:
                 aus += "    subgraph d" + std::to_string(d) + "[\"" + maskiere(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)) +
                        "\"]\n";
                 for (std::size_t id = 0; id < graph.knoten.size(); ++id)
-                    if (graph.knoten[id].art == AufrufKnotenArt::Funktion && graph.knoten[id].datei == d)
+                    if (imProjekt(graph.knoten[id].art) && graph.knoten[id].datei == d)
                         schreibeKnoten(id, "        ");
                 aus += "    end\n";
             }
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
-            if (!graph.mitRahmen() || graph.knoten[id].art != AufrufKnotenArt::Funktion) schreibeKnoten(id, "    ");
+            if (!graph.mitRahmen() || !imProjekt(graph.knoten[id].art)) schreibeKnoten(id, "    ");
         // mehrdeutig und aus einem Zweig, der nicht gilt: gestrichelt — die Beschriftung sagt, welches
         for (const AufrufKante& k : graph.kanten)
         {
@@ -352,7 +367,8 @@ public:
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
         {
             const AufrufKnoten& k = graph.knoten[id];
-            if (k.art == AufrufKnotenArt::Fremd) aus += "    class n" + std::to_string(id) + " fremd\n";
+            if (k.art == AufrufKnotenArt::Fremd || k.art == AufrufKnotenArt::FremdeTabelle)
+                aus += "    class n" + std::to_string(id) + " fremd\n";
             else if (k.art == AufrufKnotenArt::Makro) aus += "    class n" + std::to_string(id) + " makro\n";
             else if (k.wurzel) aus += "    class n" + std::to_string(id) + " wurzel\n";
         }

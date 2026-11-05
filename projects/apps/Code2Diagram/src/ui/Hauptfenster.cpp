@@ -349,6 +349,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             if (knoten < m_uebersicht.zeilen.size()) zeigeSchaltstellen(ausStd(m_uebersicht.zeilen[knoten].name));
             return;
         }
+        if (istAbhaengigkeiten())
+        {
+            folgeAbhaengigkeit(knoten);
+            return;
+        }
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -382,7 +387,9 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         wahl.exec(QCursor::pos());
     };
     m_vorschau->beiKontext = [this](c2d::diagramm::KnotenId knoten, std::size_t gruppe, const QPoint& ort) {
-        if (istAufrufgraph())
+        if (istAbhaengigkeiten())
+            abhaengigkeitenMenue(knoten);
+        else if (istAufrufgraph())
             aufrufgraphMenue(knoten, ort);
         else
             kontextMenue(knoten, gruppe, ort);
@@ -499,8 +506,9 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     navigation->addWidget(m_hoechstens);
     navigation->addWidget(m_ohneFremde);
     const auto neuAbleiten = [this] {
-        if (!istAufrufgraph()) return;
+        if (!istAufrufgraph() && !istAbhaengigkeiten()) return;
         leiteAufrufgraphAb();
+        leiteAbhaengigkeitenAb();
         zeichne();
         zeigeLage();
     };
@@ -849,6 +857,9 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (std::any_of(einheit.funktionen.begin(), einheit.funktionen.end(),
                         [](const c2d::modell::Funktion& f) { return f.rumpf != nullptr; }))
             m_auswahl->addItem(QStringLiteral("Call graph of this file"), QString::fromLatin1(kAufrufgraphDatei));
+        // die Abhaengigkeiten der Daten: wenn die Datei Tabellen, Objekte oder Funktionen mit SQL hat
+        if (const std::size_t n = c2d::projekt::datenobjekteIn(m_projekt, m_datei).size(); n > 0)
+            m_auswahl->addItem(QStringLiteral("Data dependencies (%1)").arg(n), QString::fromLatin1(kAbhaengigkeitenDatei));
         if (const std::size_t n = c2d::diagramm::nachschlagetabellenVon(einheit).size(); n > 0)  // nur die Zahl
             m_auswahl->addItem(QStringLiteral("Lookup tables (%1)").arg(n), QString::fromLatin1(kNachschlagetabellen));
         if (!d.ergebnis.weichen.empty())
@@ -949,7 +960,8 @@ void Hauptfenster::zeigeLage()
     int funktionen = 0;
     for (const QString& eintrag : diagramme())
         if (!eintrag.startsWith(QLatin1String(kAutomat)) && eintrag != QLatin1String(kDatentypen) &&
-            eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)))
+            eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)) &&
+            eintrag != QLatin1String(kAbhaengigkeitenDatei) && !eintrag.startsWith(QLatin1String(kAbhaengigkeiten)))
             ++funktionen;
     QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
                        .arg(name, ausStd(d.sprache->name()),
@@ -987,6 +999,16 @@ void Hauptfenster::zeigeLage()
             graph += QStringLiteral(" - call graph stopped at %1 functions - lower the depth or expand by hand")
                          .arg(m_hoechstens->value());
         lage += graph;
+    }
+    if (istAbhaengigkeiten())
+    {
+        const c2d::diagramm::Aufrufgraph& g = m_abhaengigkeiten.graph;
+        lage += QStringLiteral(" | data dependencies: %1 node(s), %2 edge(s), %3 file(s)")
+                    .arg(g.knoten.size())
+                    .arg(g.kanten.size())
+                    .arg(g.dateien.size());
+        if (m_abhaengigkeiten.begrenzt)
+            lage += QStringLiteral(" - stopped at %1 nodes - lower the depth or raise Max").arg(m_hoechstens->value());
     }
     if (istProjekt())
     {
@@ -1485,6 +1507,15 @@ bool Hauptfenster::waehleEintrag(const QString& name)
         m_auswahl->addItem(QStringLiteral("Where is %1 switched?").arg(ausStd(n)), name);
         return waehle(m_auswahl, name);
     }
+    // die Abhaengigkeiten ab einem Objekt der Datei stehen erst da, wenn sie gezeigt werden
+    if (name.startsWith(QLatin1String(kAbhaengigkeiten)))
+    {
+        const QString objekt = name.mid(QString::fromLatin1(kAbhaengigkeiten).size());
+        const std::vector<std::string> namen = c2d::projekt::datenobjekteIn(m_projekt, m_datei);
+        if (std::find(namen.begin(), namen.end(), objekt.toStdString()) == namen.end()) return false;
+        m_auswahl->addItem(QStringLiteral("Data dependencies from %1").arg(objekt), name);
+        return waehle(m_auswahl, name);
+    }
     // ein Aufrufgraph ab einer Funktion der Datei steht erst da, wenn er gezeigt wird
     const QString praefix = QString::fromLatin1(kAufrufgraph);
     if (!name.startsWith(praefix) || m_datei >= m_projekt.dateien.size()) return false;
@@ -1500,6 +1531,108 @@ bool Hauptfenster::waehleEintrag(const QString& name)
 bool Hauptfenster::istAufrufgraph() const
 {
     return m_gezeigt == QLatin1String(kAufrufgraphDatei) || m_gezeigt.startsWith(QLatin1String(kAufrufgraph));
+}
+
+bool Hauptfenster::istAbhaengigkeiten() const
+{
+    return m_gezeigt == QLatin1String(kAbhaengigkeitenDatei) || m_gezeigt.startsWith(QLatin1String(kAbhaengigkeiten));
+}
+
+bool Hauptfenster::zeigeAbhaengigkeiten(const QString& objekt)
+{
+    if (objekt.isEmpty()) return waehleEintrag(QString::fromLatin1(kAbhaengigkeitenDatei));
+    return waehleEintrag(QString::fromLatin1(kAbhaengigkeiten) + objekt);
+}
+
+void Hauptfenster::leiteAbhaengigkeitenAb()
+{
+    m_abhaengigkeiten = {};
+    if (!istAbhaengigkeiten() || m_datei >= m_projekt.dateien.size()) return;
+    if (m_gezeigt == QLatin1String(kAbhaengigkeitenDatei))
+    {
+        m_abhaengigkeiten = c2d::projekt::abhaengigkeitenDerDatei(m_projekt, m_datei);
+        return;
+    }
+    // Richtung, Tiefe und Max aus der Leiste, wie beim Aufrufgraph
+    c2d::projekt::AbhaengigkeitsOptionen o;
+    const QString richtung = m_aufrufRichtung->currentData().toString();
+    o.richtung = richtung == QLatin1String("callers") ? c2d::projekt::AufrufRichtung::Aufrufer
+                 : richtung == QLatin1String("both")  ? c2d::projekt::AufrufRichtung::Beide
+                                                      : c2d::projekt::AufrufRichtung::Gerufene;
+    o.tiefe = m_tiefe->value();
+    o.hoechstens = static_cast<std::size_t>(m_hoechstens->value());
+    const std::string objekt = m_gezeigt.mid(QString::fromLatin1(kAbhaengigkeiten).size()).toStdString();
+    m_abhaengigkeiten = c2d::projekt::abhaengigkeitenAb(m_projekt, m_datei, objekt, o);
+}
+
+void Hauptfenster::folgeAbhaengigkeit(c2d::diagramm::KnotenId knoten)
+{
+    if (knoten >= m_abhaengigkeiten.stellen.size()) return;
+    const c2d::projekt::Datenstelle& s = m_abhaengigkeiten.stellen[knoten];
+    const c2d::diagramm::AufrufKnoten& k = m_abhaengigkeiten.graph.knoten[knoten];
+    using Art = c2d::projekt::Datenstelle::Art;
+    if (s.art == Art::Fremd)
+    {
+        statusBar()->showMessage(QStringLiteral("%1: not defined in the project").arg(ausStd(k.name)), 4000);
+        return;
+    }
+    if (s.art == Art::Funktion)
+    {
+        gehe({s.datei, s.index}, knoten);  // ihr Ablauf; Back fuehrt zurueck
+        return;
+    }
+    if (s.art == Art::Tabelle)
+    {
+        geheZuTyp({s.datei, s.index}, knoten);  // in Data types
+        return;
+    }
+    zeigeZeile(s.datei, k.zeile);  // eine View, ein Trigger, eine Routine: ihre Stelle (einen Ablauf haben sie noch nicht)
+}
+
+void Hauptfenster::geheZuAbhaengigkeiten(std::size_t datei, const QString& objekt, c2d::diagramm::KnotenId von)
+{
+    const QString name = QString::fromLatin1(kAbhaengigkeiten) + objekt;
+    if (datei == m_datei && name == m_gezeigt) return;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (datei != m_datei) zeigeDatei(datei);
+    waehleEintrag(name);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+}
+
+void Hauptfenster::abhaengigkeitenMenue(c2d::diagramm::KnotenId knoten)
+{
+    QMenu menue(this);
+    if (knoten < m_abhaengigkeiten.stellen.size())
+    {
+        const c2d::projekt::Datenstelle s = m_abhaengigkeiten.stellen[knoten];
+        const c2d::diagramm::AufrufKnoten& k = m_abhaengigkeiten.graph.knoten[knoten];
+        const QString name = ausStd(k.name);
+        using Art = c2d::projekt::Datenstelle::Art;
+        if (s.art == Art::Fremd)
+            menue.addAction(QStringLiteral("%1: not defined in the project").arg(name))->setEnabled(false);
+        else
+        {
+            // der Name, unter dem datenobjekteIn das Objekt fuehrt (ein Trigger je Tabelle)
+            QString objekt = name;
+            if (s.art == Art::Objekt)
+            {
+                const c2d::modell::Datenbankobjekt& o = m_projekt.dateien[s.datei].ergebnis.einheit.objekte[s.index];
+                if (o.art == c2d::modell::ObjektArt::Trigger) objekt = ausStd(o.name + "@" + o.tabelle);
+            }
+            const QString wo =
+                s.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[s.datei].pfad));
+            if (s.art == Art::Funktion)
+                menue.addAction(QStringLiteral("Show the flow of %1()%2").arg(name, wo), this, [this, knoten] { folgeAbhaengigkeit(knoten); });
+            if (s.art == Art::Tabelle)
+                menue.addAction(QStringLiteral("Show %1 in Data types%2").arg(name, wo), this, [this, knoten] { folgeAbhaengigkeit(knoten); });
+            menue.addAction(QStringLiteral("Data dependencies from %1%2").arg(name, wo), this,
+                            [this, s, objekt, knoten] { geheZuAbhaengigkeiten(s.datei, objekt, knoten); });
+            menue.addAction(QStringLiteral("Show in the source"), this, [this, knoten] { zeigeStelle(knoten); });
+        }
+    }
+    if (!menue.isEmpty()) menue.exec(QCursor::pos());
 }
 
 bool Hauptfenster::zeigeAufrufgraph(const QString& funktion)
@@ -1564,6 +1697,8 @@ QStringList Hauptfenster::aufrufgraphKnoten() const
     QStringList aus;
     if (istAufrufgraph())
         for (const c2d::diagramm::AufrufKnoten& k : m_aufrufgraph.graph.knoten) aus << QString::fromStdString(knotenText(k));
+    if (istAbhaengigkeiten())
+        for (const c2d::diagramm::AufrufKnoten& k : m_abhaengigkeiten.graph.knoten) aus << QString::fromStdString(knotenText(k));
     return aus;
 }
 
@@ -1676,6 +1811,8 @@ QString Hauptfenster::markiert() const
     const c2d::diagramm::KnotenId k = m_vorschau->markiert();
     if (istAufrufgraph())
         return k < m_aufrufgraph.graph.knoten.size() ? ausStd(m_aufrufgraph.graph.knoten[k].name) : QString();
+    if (istAbhaengigkeiten())
+        return k < m_abhaengigkeiten.graph.knoten.size() ? ausStd(m_abhaengigkeiten.graph.knoten[k].name) : QString();
     if (m_gezeigt == QLatin1String(kDatentypen))
         return k < m_struktur.kaesten.size() ? ausStd(m_struktur.kaesten[k].name) : QString();
     if (k >= m_fluss.knoten().size()) return {};
@@ -2333,6 +2470,7 @@ void Hauptfenster::baueNeu()
     if (m_gezeigt != bisher) m_aufgeklappt.clear();
     m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
     leiteAufrufgraphAb();
+    leiteAbhaengigkeitenAb();
     if (!m_gezeigt.isEmpty() && m_gezeigt != QLatin1String(kDatentypen) && m_datei < m_projekt.dateien.size())
     {
         const std::string name = m_gezeigt.toStdString();
@@ -2388,7 +2526,7 @@ void Hauptfenster::baueNeu()
     zeichne();
     aktualisiereLeiste();
     aktualisiereKonfiguration();
-    if (istAufrufgraph()) zeigeLage();
+    if (istAufrufgraph() || istAbhaengigkeiten()) zeigeLage();
 }
 
 void Hauptfenster::zeichne()
@@ -2465,6 +2603,12 @@ void Hauptfenster::zeichne()
     {
         m_vorschau->zeige(m_aufrufgraph.graph, nachRechts);
         m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Aufrufgraph, m_aufrufgraph.graph));
+        return;
+    }
+    if (istAbhaengigkeiten())
+    {
+        m_vorschau->zeige(m_abhaengigkeiten.graph, nachRechts);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Abhaengigkeiten, m_abhaengigkeiten.graph));
         return;
     }
     if (const qsizetype automat = m_automatNamen.indexOf(m_gezeigt); automat >= 0)
@@ -2730,6 +2874,19 @@ void Hauptfenster::farbenNeu()
 bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
 {
     if (istWahrheitstabelle()) return !m_tabellen.empty() && zeigeZeile(m_datei, m_tabellen.front().quellZeile);
+    if (istAbhaengigkeiten())
+    {
+        // die Stelle des Objekts; eine fremde Tabelle oder Routine hat keine
+        if (knoten >= m_abhaengigkeiten.stellen.size()) return false;
+        const c2d::projekt::Datenstelle& s = m_abhaengigkeiten.stellen[knoten];
+        const c2d::diagramm::AufrufKnoten& k = m_abhaengigkeiten.graph.knoten[knoten];
+        if (s.datei == kKeine)
+        {
+            statusBar()->showMessage(QStringLiteral("%1: not defined in the project").arg(ausStd(k.name)), 4000);
+            return false;
+        }
+        return zeigeZeile(s.datei, k.zeile);
+    }
     if (!istAufrufgraph())
         return knoten < m_fluss.knoten().size() && zeigeZeile(dateiVon(knoten), m_fluss.knoten()[knoten].quellZeile);
     if (knoten >= m_aufrufgraph.graph.knoten.size()) return false;
@@ -2782,10 +2939,11 @@ bool Hauptfenster::klicke(const QString& name)
         }
         return false;
     }
-    if (istAufrufgraph())
+    if (istAufrufgraph() || istAbhaengigkeiten())
     {
-        for (std::size_t k = 0; k < m_aufrufgraph.graph.knoten.size(); ++k)
-            if (m_aufrufgraph.graph.knoten[k].name == n) return zeigeStelle(k);
+        const c2d::diagramm::Aufrufgraph& g = istAufrufgraph() ? m_aufrufgraph.graph : m_abhaengigkeiten.graph;
+        for (std::size_t k = 0; k < g.knoten.size(); ++k)
+            if (g.knoten[k].name == n) return zeigeStelle(k);
         return false;
     }
     for (c2d::diagramm::KnotenId k = 0; k < m_fluss.knoten().size(); ++k)

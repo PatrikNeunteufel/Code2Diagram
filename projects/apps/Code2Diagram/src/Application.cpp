@@ -216,6 +216,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
                      });
 
+    anbindung.aktion(QStringLiteral("abhaengigkeiten_zeigen"),
+                     QStringLiteral("Shows the data dependencies from an object of the chosen file "
+                                    "(table, view, routine, trigger name@table, function with SQL), or of the file"),
+                     QStringLiteral("name=<object | empty = the file>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.zeigeAbhaengigkeiten(name))
+                             return st::fehler(QStringLiteral("No data dependencies '%1' in %2").arg(name, fenster.datei()));
+                         return st::ok(fenster.aufrufgraphKnoten().join(QStringLiteral(", ")));
+                     });
+
     anbindung.aktion(QStringLiteral("aufrufgraph_einstellen"),
                      QStringLiteral("Call graph: direction, depth and whether external calls are shown"),
                      QStringLiteral("richtung=<calls | callers | both> tiefe=<0 = all, 1, 2, ...> "

@@ -48,6 +48,7 @@
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
+#include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Typen.hpp"
@@ -93,6 +94,11 @@ public:
     static constexpr const char* kAufrufgraphDatei = "calls";
     /// So beginnt der Name des Aufrufgraphen ab einer Funktion: `calls:<Funktion>` (mit Bereich).
     static constexpr const char* kAufrufgraph = "calls:";
+    /// Die Abhaengigkeiten der Daten der gewaehlten Datei (Entscheid A1).
+    static constexpr const char* kAbhaengigkeitenDatei = "deps";
+    /// So beginnen die Abhaengigkeiten ab einem Objekt: `deps:<Objekt>` (eine Tabelle, View, Routine,
+    /// ein Trigger `name@tabelle`, eine Funktion mit SQL — wie projekt::datenobjekteIn sie nennt).
+    static constexpr const char* kAbhaengigkeiten = "deps:";
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
@@ -204,7 +210,12 @@ public:
     /// false = kein Aufrufgraph, oder keine Funktion dieses Namens darin.
     bool klappeAuf(const QString& funktion);
     /// Die Knoten des gezeigten Aufrufgraphen, je ihr Text (an der Grenze mit ` …`); leer = keiner gezeigt.
+    /// Auch die der Abhaengigkeiten.
     [[nodiscard]] QStringList aufrufgraphKnoten() const;
+    /// Die Abhaengigkeiten der Daten zeigen: ab dem Objekt `objekt` der gewaehlten Datei (wie
+    /// projekt::datenobjekteIn es nennt), leer = die der Datei. Richtung, Tiefe und Max wie beim Aufrufgraph.
+    /// false = kein solches Objekt, oder die Datei liest, schreibt, ruft nichts.
+    bool zeigeAbhaengigkeiten(const QString& objekt = {});
     [[nodiscard]] QString diagramm() const;
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
@@ -448,6 +459,15 @@ private:
     /// Zum Aufrufgraph ab dieser Funktion, auch in einer anderen Datei; `von` wie bei gehe().
     void geheZuAufrufgraph(const c2d::projekt::Fundstelle& stelle, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
     void aufrufgraphMenue(c2d::diagramm::KnotenId knoten, const QPoint& ort);
+    /// Werden die Abhaengigkeiten der Daten gezeigt (`deps`, `deps:…`)?
+    [[nodiscard]] bool istAbhaengigkeiten() const;
+    /// Die gezeigten Abhaengigkeiten neu ableiten (Richtung, Tiefe, Max).
+    void leiteAbhaengigkeitenAb();
+    /// Doppelklick auf einen Knoten der Abhaengigkeiten: eine Tabelle in Data types, eine Funktion ihr Ablauf.
+    void folgeAbhaengigkeit(c2d::diagramm::KnotenId knoten);
+    void abhaengigkeitenMenue(c2d::diagramm::KnotenId knoten);
+    /// Zu den Abhaengigkeiten ab diesem Objekt (in seiner Datei).
+    void geheZuAbhaengigkeiten(std::size_t datei, const QString& objekt, c2d::diagramm::KnotenId von);
     void fuelleAufruferMenue(QMenu* menue);
     bool betteEin(c2d::diagramm::KnotenId knoten, const c2d::projekt::Fundstelle& gerufen);
     [[nodiscard]] QString projektdateiPfad() const;
@@ -510,6 +530,7 @@ private:
     std::vector<c2d::diagramm::Zustandsdiagramm> m_automaten;  ///< die der gewaehlten Datei
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
     c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph
+    c2d::projekt::AbhaengigkeitsErgebnis m_abhaengigkeiten;  ///< die gezeigten Abhaengigkeiten der Daten
     std::vector<c2d::projekt::Fundstelle> m_aufgeklappt;  ///< darin aufgeklappt
     QString m_gezeigt;                      ///< wofuer m_fluss (m_aufrufgraph) gebaut ist
     QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()

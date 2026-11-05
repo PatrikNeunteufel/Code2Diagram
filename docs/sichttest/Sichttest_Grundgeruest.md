@@ -870,3 +870,22 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: datei_oeffnen pfad=beispiele/sql/lager_db.py` `aktion: diagramm_waehlen name=types:*`
 - [ ] **AA6 Dialekt:** `beispiele/sql/fremd/dbdemos` als Ordner (Projektdatei `"sql": "spark"`) — keine Meldung
       „quoted name is not closed“; Project > Edit project file… zeigt `"sql": "spark"`.
+
+## AB. Abhängigkeiten der Daten
+
+- [ ] **AB0 Vorbereiten:** File > Open source file… `beispiele/sql/lager.sql`, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/sql/lager.sql` `aktion: ansicht_waehlen name=preview`
+- [ ] **AB1 Die Datei:** Diagram bietet `Data dependencies (6)`. Gewählt: vier Kästen «table», `knapp` als «view»
+      (gestrichelter Rand) mit Kanten `reads` zu `artikel` und `bestand`, `nie_negativ` als «trigger» (runde Ecken)
+      unter `bestand`, Kante `BEFORE UPDATE`. Statuszeile `data dependencies: 6 node(s), 3 edge(s), 1 file(s)`.
+      `aktion: abhaengigkeiten_zeigen name=`
+- [ ] **AB2 Klick, Doppelklick, Menü:** Klick auf `knapp` zeigt Zeile 36. Doppelklick auf `artikel` zeigt Data types mit
+      `artikel`; Back zurück. Rechtsklick auf `bestand`: *Show bestand in Data types*, *Data dependencies from bestand*,
+      *Show in the source*.
+      `aktion: klicken name=knapp`
+- [ ] **AB3 Ab einem Objekt:** *Data dependencies from bestand*: `bestand` getönt, darunter `nie_negativ`; Richtung
+      *callers*: `knapp` darüber. Tiefe und Max der Leiste gelten.
+      `aktion: abhaengigkeiten_zeigen name=bestand` `aktion: aufrufgraph_einstellen richtung=callers`
+- [ ] **AB4 Host-Code:** `beispiele/sql/lager_db.py`: `Data dependencies (4)`; `Lager::menge` (wie eine Funktion, Rand mit
+      zwei Strichen) liest `bestand`; Doppelklick auf `Lager::menge` zeigt ihren Ablauf.
+- [ ] **AB5 Formate und Thema:** Format mermaid (`[(` Zylinder, `{{` Sechseck), dot, drawio; dunkles Thema lesbar.

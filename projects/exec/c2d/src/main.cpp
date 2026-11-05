@@ -4,6 +4,7 @@
 //                             [--struktur] [-D NAME[=wert] | -D !NAME | -U NAME]...
 //                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
 //                                            [--ohne-fremde]]
+//                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
@@ -77,6 +78,7 @@
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
+#include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Schaltstellen.hpp"
@@ -219,7 +221,8 @@ int main(int argc, char* argv[])
     std::string richtung = "TD";
     bool zeigeListe = false, struktur = false, roh = false, aufrufgraph = false, struktogramm = false;
     bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
-    bool konfiguration = false, breite = false, schalter = false;
+    bool konfiguration = false, breite = false, schalter = false, abhaengigkeiten = false;
+    std::string objekt;  // --abhaengigkeiten <objekt>
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
 
@@ -266,6 +269,12 @@ int main(int argc, char* argv[])
             aufrufgraph = true;
             // der Name der Funktion darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') funktion = argv[++i];
+        }
+        else if (a == "--abhaengigkeiten")
+        {
+            abhaengigkeiten = true;
+            // der Name des Objekts darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') objekt = argv[++i];
         }
         else if (a == "--tiefe")
         {
@@ -482,6 +491,46 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Schaltstellen, s);
+    }
+
+    // --abhaengigkeiten: was liest, schreibt, ruft (Entscheid A1) — ab einem Objekt, oder alles einer Datei
+    if (abhaengigkeiten)
+    {
+        c2d::projekt::AbhaengigkeitsOptionen o;
+        o.richtung = graph.richtung;
+        o.tiefe = graph.tiefe;
+        o.hoechstens = graph.hoechstens;
+        c2d::projekt::AbhaengigkeitsErgebnis e;
+        if (!objekt.empty())
+        {
+            // die Datei des Objekts: die gewaehlte, sonst die erste, die es kennt
+            std::size_t d = gewaehlteDatei;
+            for (std::size_t k = 0; k < p.dateien.size() && d == c2d::projekt::kKeine; ++k)
+            {
+                const std::vector<std::string> namen = c2d::projekt::datenobjekteIn(p, k);
+                if (std::find(namen.begin(), namen.end(), objekt) != namen.end()) d = k;
+            }
+            if (d == c2d::projekt::kKeine)
+            {
+                std::cerr << "c2d: no table, view, trigger (name@table), routine or function with SQL '" << objekt
+                          << "' - see --liste\n";
+                return 1;
+            }
+            e = c2d::projekt::abhaengigkeitenAb(p, d, objekt, o);
+        }
+        else
+        {
+            const std::size_t d = gewaehlteDatei != c2d::projekt::kKeine ? gewaehlteDatei : 0;
+            e = c2d::projekt::abhaengigkeitenDerDatei(p, d);
+        }
+        if (e.begrenzt)
+            std::cerr << "c2d: data dependencies stopped at " << o.hoechstens << " nodes - lower the depth or raise --hoechstens\n";
+        if (e.graph.knoten.empty())
+        {
+            std::cerr << "c2d: nothing reads, writes or calls here - see --liste (object, access)\n";
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Abhaengigkeiten, e.graph);
     }
 
     // --automat: ein Zustandsautomat, erkannt im Code

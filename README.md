@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg | |
@@ -269,8 +269,19 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   `BEGIN … END` und `CASE … END` (auch auf oberster Ebene, Spark und T-SQL) halten die `;` darin
   zusammen; `$$…$$` ist ein Rumpf (Postgres, DuckDB). Befehle der Werkzeuge (`\connect`, `:r`,
   `CONNECT`, `exit`) werden übergangen.
-- Views, Funktionen, Prozeduren, Trigger und Makros werden erkannt und gezählt, aber noch nicht
-  gezeigt (je Datei ein Hinweis); Abfragen und Daten gehören nicht zum Schema. Ein erstes Wort, das der
+- **Abhängigkeiten der Daten** (Diagram *Data dependencies*): Views, Trigger, Funktionen und Prozeduren
+  werden mit ihren Zugriffen gelesen — *reads* (`FROM`, `JOIN`, auch nach `JOIN … ON …, c`), *writes*
+  (`INSERT [INTO]`, `UPDATE … SET`, `DELETE`, `MERGE`, `TRUNCATE`), *ruft* (`CALL`, `EXEC`, `PERFORM`, eine
+  Routine des Projekts im Ausdruck); Namen eines `WITH`, Variablen (`@t`) und temporäre Tabellen (`#t`,
+  `CREATE TEMP TABLE`) zählen nicht. Der Rumpf in `$$…$$` wird noch einmal gelesen, eine Routine in
+  einer anderen Sprache (`LANGUAGE plpython3u`) nicht (Hinweis); dynamisches SQL (`EXECUTE 'x'`,
+  `EXECUTE format(…)`, `EXEC(@sql)`, in PL/pgSQL jedes `EXECUTE`) gibt einen Hinweis. Ein Trigger hängt
+  an seiner Tabelle (Kante mit dem Ereignis, `AFTER INSERT`). Dazu jede Funktion des Host-Codes mit SQL
+  in ihrem Rumpf; eine Tabelle, die das Projekt nicht definiert, steht grau da — aber nur, wenn das SQL
+  direkt an `execute(`, `exec(`, `QSqlQuery(` … geht. Ansichten: die Datei, oder ab einem Objekt mit
+  Richtung, Tiefe und Max wie beim Aufrufgraph; ab einem Objekt löst eine Tabelle ihre Trigger nur aus,
+  wo sie beginnt oder geschrieben wird. Doppelklick: eine Tabelle in Data types, eine Funktion ihr Ablauf.
+  Abfragen und Daten auf oberster Ebene (ein Skript) zeigt das Diagramm nicht. Ein erstes Wort, das der
   Leser nicht kennt, gibt eine Meldung.
 - **Dialekte:** `sqlite`, `postgres`, `duckdb`, `tsql` zerlegen wie der Kern; in `spark` und `mysql`
   sind `'…'` und `"…"` Zeichenketten mit `\` als Escape (Namen nur in Gravis), und `IF … END IF`,
@@ -533,7 +544,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -552,6 +563,11 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   ist die Grenze erreicht, sagt es die Fehlerausgabe), `--aufrufer` (wer ruft), `--beide`,
   `--ohne-fremde`.
   Mehrdeutige Aufrufe nennt die Fehlerausgabe mit Datei und Zeile
+- `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
+  ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
+  rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
+  `name@tabelle`, eine Funktion mit SQL — wie `--liste` sie als `object`/`access` nennt), mit `--tiefe`,
+  `--hoechstens`, `--aufrufer`, `--beide` wie beim Aufrufgraph
 - ohne `--format` schreibt `c2d` Mermaid
 - `--liste` nennt, was die Datei (im Projekt: jede, mit `== pfad` davor) enthält, `static`
   Funktionen mit `[static]` — und als `undefined`, wonach ein `#if` gefragt hat; Zuordnungen als

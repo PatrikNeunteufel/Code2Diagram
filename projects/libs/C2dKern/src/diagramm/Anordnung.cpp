@@ -1096,9 +1096,10 @@ FlussAnordnung ordneAn(const Aufrufgraph& graph, const AnordnungOptionen& option
     std::vector<std::size_t> baender;
     for (const AufrufKnoten& k : graph.knoten)
     {
-        const bool funktion = k.art == AufrufKnotenArt::Funktion;
-        const bool inDatei = rahmen && funktion && k.datei < graph.dateien.size();
-        alsFluss.neuerKnoten(Knoten{funktion ? KnotenArt::Aufruf : KnotenArt::Anweisung, {knotenText(k)}, k.zeile, {},
+        // eine Funktion und eine Routine der Datenbank wie ein Aufruf (Rand mit zwei Strichen), sonst eine Anweisung
+        const bool aufruf = k.art == AufrufKnotenArt::Funktion || k.art == AufrufKnotenArt::Routine;
+        const bool inDatei = rahmen && imProjekt(k.art) && k.datei < graph.dateien.size();
+        alsFluss.neuerKnoten(Knoten{aufruf ? KnotenArt::Aufruf : KnotenArt::Anweisung, knotenZeilen(k), k.zeile, {},
                                     inDatei ? k.datei : kKeine});
         if (rahmen) baender.push_back(inDatei ? k.datei : graph.dateien.size());
     }

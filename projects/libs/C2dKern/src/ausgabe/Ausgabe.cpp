@@ -30,6 +30,7 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Datentypen: return "Data types";
         case Diagrammart::Zustandsautomat: return "State machine";
         case Diagrammart::Aufrufgraph: return "Call graph";
+        case Diagrammart::Abhaengigkeiten: return "Data dependencies";
         case Diagrammart::Struktogramm: return "Nassi-Shneiderman";
         case Diagrammart::Wahrheitstabelle: return "Truth table";
         case Diagrammart::Entscheidungstabelle: return "Decision table";

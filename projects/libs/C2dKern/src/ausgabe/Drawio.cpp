@@ -426,7 +426,7 @@ public:
 
         // je Datei ein Behaelter; eine Funktion darin mit ihrem Ort relativ zu ihm
         const auto inDatei = [&](const AufrufKnoten& k) {
-            return graph.mitRahmen() && k.art == AufrufKnotenArt::Funktion && k.datei < a.gruppen.size();
+            return graph.mitRahmen() && imProjekt(k.art) && k.datei < a.gruppen.size();
         };
         for (std::size_t d = 0; d < a.gruppen.size() && d < graph.dateien.size(); ++d)
             aus += ecke("d" + std::to_string(d), html(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)),
@@ -449,7 +449,17 @@ public:
                     break;
                 case AufrufKnotenArt::Fremd: stil = fremd; break;
                 case AufrufKnotenArt::Makro: stil = fremd + "dashed=1;"; break;
+                // die Abhaengigkeiten: Tabelle ein Kasten, View gestrichelt, Trigger ein Sechseck, Routine wie eine Funktion
+                case AufrufKnotenArt::Tabelle: stil = "rounded=0;"; break;
+                case AufrufKnotenArt::FremdeTabelle: stil = fremd; break;
+                case AufrufKnotenArt::View: stil = "rounded=0;dashed=1;"; break;
+                case AufrufKnotenArt::Trigger: stil = "shape=hexagon;perimeter=hexagonPerimeter2;"; break;
+                case AufrufKnotenArt::Routine: stil = "shape=process;"; break;
             }
+            if (k.wurzel && k.art != AufrufKnotenArt::Funktion) stil += "fillColor=" + hell(Farbe::Getoent) + ";strokeWidth=2;";
+            std::string text;
+            for (const std::string& zeile : knotenZeilen(k))
+                text += (text.empty() ? "" : "<br>") + html(kuerze(zeile, optionen.maxZeilenLaenge));
             Rechteck ort = a.knoten[id];
             std::string eltern = "1";
             if (inDatei(k))
@@ -458,8 +468,7 @@ public:
                 ort.y -= a.gruppen[k.datei].y;
                 eltern = "d" + std::to_string(k.datei);
             }
-            aus += ecke("n" + std::to_string(id), html(kuerze(knotenText(k), optionen.maxZeilenLaenge)),
-                        stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern, ort);
+            aus += ecke("n" + std::to_string(id), text, stil + "whiteSpace=wrap;html=1;" + std::string(kSchrift), eltern, ort);
         }
         // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
         const std::vector<std::size_t> farben = farbenDerBedingungen(graph);

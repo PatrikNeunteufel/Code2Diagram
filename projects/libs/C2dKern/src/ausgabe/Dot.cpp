@@ -234,8 +234,19 @@ public:
                 case AufrufKnotenArt::Makro:
                     aus += "shape=box, style=\"filled,dashed\", " + fremd + ", fontname=\"Helvetica-Oblique\"";
                     break;
+                // die Abhaengigkeiten: Tabelle ein Kasten, View gestrichelt, Trigger rund, Routine wie eine Funktion
+                case AufrufKnotenArt::Tabelle: aus += k.wurzel ? "shape=box, style=\"filled,bold\", fillcolor=\"" + hell(Farbe::Getoent) + "\"" : std::string("shape=box"); break;
+                case AufrufKnotenArt::FremdeTabelle:
+                    aus += "shape=box, style=filled, " + fremd + ", fontname=\"Helvetica-Oblique\"";
+                    break;
+                case AufrufKnotenArt::View: aus += std::string("shape=box, style=") + (k.wurzel ? "\"dashed,bold\"" : "dashed"); break;
+                case AufrufKnotenArt::Trigger: aus += std::string("shape=box, style=") + (k.wurzel ? "\"rounded,bold\"" : "rounded"); break;
+                case AufrufKnotenArt::Routine: aus += std::string("shape=box, peripheries=2") + (k.wurzel ? ", style=bold" : ""); break;
             }
-            aus += ", label=\"" + maskiere(kuerze(knotenText(k), optionen.maxZeilenLaenge)) + "\"];\n";
+            std::string label;
+            for (const std::string& zeile : knotenZeilen(k))
+                label += (label.empty() ? "" : "\\n") + maskiere(kuerze(zeile, optionen.maxZeilenLaenge));
+            aus += ", label=\"" + label + "\"];\n";
         };
         if (graph.mitRahmen())
             for (std::size_t d = 0; d < graph.dateien.size(); ++d)
@@ -243,12 +254,12 @@ public:
                 aus += "    subgraph cluster_" + std::to_string(d) + " {\n        style=dashed; label=\"" +
                        maskiere(kuerze(graph.dateien[d], optionen.maxZeilenLaenge)) + "\";\n";
                 for (std::size_t id = 0; id < graph.knoten.size(); ++id)
-                    if (graph.knoten[id].art == AufrufKnotenArt::Funktion && graph.knoten[id].datei == d)
+                    if (imProjekt(graph.knoten[id].art) && graph.knoten[id].datei == d)
                         schreibeKnoten(id, "        ");
                 aus += "    }\n";
             }
         for (std::size_t id = 0; id < graph.knoten.size(); ++id)
-            if (!graph.mitRahmen() || graph.knoten[id].art != AufrufKnotenArt::Funktion) schreibeKnoten(id, "    ");
+            if (!graph.mitRahmen() || !imProjekt(graph.knoten[id].art)) schreibeKnoten(id, "    ");
         // mehrdeutig gestrichelt, aus einem Zweig, der nicht gilt, gepunktet; eine Bedingung, die gilt, in ihrer Farbe
         const std::vector<std::size_t> farben = farbenDerBedingungen(graph);
         for (std::size_t e = 0; e < graph.kanten.size(); ++e)

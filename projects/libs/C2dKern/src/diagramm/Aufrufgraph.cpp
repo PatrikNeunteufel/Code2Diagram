@@ -12,6 +12,14 @@ namespace c2d::diagramm
 
 std::string beschriftung(const AufrufKante& kante)
 {
+    switch (kante.zugriff)
+    {
+        case ZugriffKante::Liest: return "reads";
+        case ZugriffKante::Schreibt: return "writes";
+        case ZugriffKante::LiestSchreibt: return "reads, writes";
+        case ZugriffKante::LoestAus: return kante.ereignis;
+        case ZugriffKante::Ruft: break;
+    }
     const bool mehrdeutig = kante.art == AufrufKantenArt::Mehrdeutig;
     if (kante.gilt) return mehrdeutig ? "?" : std::string();
     return mehrdeutig ? "? " + kante.bedingung : kante.bedingung;
@@ -39,6 +47,12 @@ std::string knotenText(const AufrufKnoten& knoten)
 {
     // die Auslassungspunkte U+2026 als Bytes: die Quelle bleibt reines ASCII
     return knoten.weiter ? knoten.name + " \xE2\x80\xA6" : knoten.name;
+}
+
+std::vector<std::string> knotenZeilen(const AufrufKnoten& knoten)
+{
+    if (knoten.stereotyp.empty()) return {knotenText(knoten)};
+    return {knoten.stereotyp, knotenText(knoten)};
 }
 
 }  // namespace c2d::diagramm

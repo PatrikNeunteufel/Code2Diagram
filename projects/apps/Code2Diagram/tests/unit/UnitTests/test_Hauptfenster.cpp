@@ -996,5 +996,31 @@ TEST_SUITE("Hauptfenster")
         // Stichproben, damit der Test nicht nur sich selbst nachrechnet
         CHECK(filter.front() == "C files (*.c *.h)");
         CHECK(filter.contains("C# files (*.cs)"));
+        CHECK(filter.contains("SQL files (*.sql *.ddl)"));
+    }
+
+    TEST_CASE("Data dependencies: der Datei und ab einem Objekt, Klick zeigt die Stelle, Back zurueck")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("CREATE TABLE artikel (id INTEGER PRIMARY KEY);\n"
+                      "CREATE TABLE bestand (artikel INTEGER, menge INTEGER);\n"
+                      "CREATE VIEW knapp AS SELECT a.id FROM artikel a JOIN bestand b ON b.artikel = a.id;\n"
+                      "CREATE TRIGGER merke AFTER UPDATE ON bestand BEGIN SELECT 1; END;\n",
+                      "s.sql");
+        CHECK(fenster.diagramme().contains("deps"));
+        CHECK_FALSE(fenster.zeigeAbhaengigkeiten("gibt_es_nicht"));
+        REQUIRE(fenster.zeigeAbhaengigkeiten());
+        CHECK(fenster.diagramm() == "deps");
+        CHECK(fenster.aufrufgraphKnoten() == QStringList{"artikel", "bestand", "knapp", "merke"});
+        CHECK(fenster.vorschauFormen() == 4);
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().contains("|\"AFTER UPDATE\"|"));
+        CHECK(fenster.klicke("knapp"));  // die Zeile der View
+
+        REQUIRE(fenster.zeigeAbhaengigkeiten("knapp"));
+        CHECK(fenster.diagramm() == "deps:knapp");
+        CHECK(fenster.aufrufgraphKnoten() == QStringList{"knapp", "artikel", "bestand"});
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "deps");
     }
 }

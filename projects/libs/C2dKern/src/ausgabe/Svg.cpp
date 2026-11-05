@@ -502,13 +502,24 @@ public:
         {
             const AufrufKnoten& k = graph.knoten[i];
             const Rechteck& r = a.knoten[i];
-            const std::string text = kuerze(knotenText(k), optionen.maxZeilenLaenge);
-            if (k.art != AufrufKnotenArt::Funktion)
+            std::vector<std::string> zeilen;
+            for (const std::string& z : knotenZeilen(k)) zeilen.push_back(kuerze(z, optionen.maxZeilenLaenge));
+            if (k.art == AufrufKnotenArt::Fremd || k.art == AufrufKnotenArt::Makro || k.art == AufrufKnotenArt::FremdeTabelle)
             {
                 // fremd grau, ein Makro dazu gestrichelt
                 aus += k.art == AufrufKnotenArt::Makro ? rechteckMit(r, "fremd", "style=\"stroke-dasharray:4 3\"")
                                                        : rechteck(r, "fremd");
-                aus += textMittig({text}, r.mitte(), o.zeilenHoehe, "font-style=\"italic\"");
+                aus += textMittig(zeilen, r.mitte(), o.zeilenHoehe, "font-style=\"italic\"");
+                continue;
+            }
+            if (k.art != AufrufKnotenArt::Funktion && k.art != AufrufKnotenArt::Routine)
+            {
+                // die Abhaengigkeiten: Tabelle ein Kasten, View gestrichelt, Trigger mit runden Ecken; der Ausgangspunkt getoent
+                std::string stil = k.wurzel ? "stroke-width:2.4;" : "";
+                if (k.art == AufrufKnotenArt::View) stil += "stroke-dasharray:6 4;";
+                const std::string ecken = k.art == AufrufKnotenArt::Trigger ? " rx=\"12\"" : "";
+                aus += rechteckMit(r, k.wurzel ? "getoent" : "flaeche", (stil.empty() ? "" : "style=\"" + stil + "\"") + ecken);
+                aus += textMittig(zeilen, r.mitte(), o.zeilenHoehe);
                 continue;
             }
             // eine Funktion wie ein Aufruf im Ablauf; der Ausgangspunkt getoent und kraeftig umrandet
@@ -516,7 +527,7 @@ public:
             aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + 8, r.y}, {r.x + 8, r.y + r.hoehe}}) + "\"/>\n";
             aus += "  <polyline class=\"linie\" points=\"" +
                    punkte({{r.x + r.breite - 8, r.y}, {r.x + r.breite - 8, r.y + r.hoehe}}) + "\"/>\n";
-            aus += textMittig({text}, r.mitte(), o.zeilenHoehe);
+            aus += textMittig(zeilen, r.mitte(), o.zeilenHoehe);
         }
         for (std::size_t e = 0; e < graph.kanten.size(); ++e)
         {
