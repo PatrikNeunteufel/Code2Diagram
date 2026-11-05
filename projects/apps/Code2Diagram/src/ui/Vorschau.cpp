@@ -629,7 +629,85 @@ public:
         gehoert(stueck, kasten, a.eintrag);
     }
 
+    /// Ein Knoten einer Abfrage: der Titel fett und mittig, darunter (nach einem Strich) die Zeilen links;
+    /// das Ergebnis getoent mit runden Ecken, eine View gestrichelt, ein Name des WITH mit runden Ecken,
+    /// eine Unterabfrage in FROM dazu gestrichelt, eine Funktion mit doppelten Seiten, das Ziel kraeftig,
+    /// ein fremder Name grau, eine Mengenoperation ein Sechseck.
+    void abfrageKnoten(KnotenId id, const AbfrageKnoten& k, const QRectF& r, double zeilenHoehe)
+    {
+        QPainterPath form;
+        QPen stift = m_strich;
+        QColor pinsel = m_flaeche;
+        switch (k.art)
+        {
+            case AbfrageKnotenArt::Menge:
+            {
+                QPolygonF ecken;
+                for (const Punkt& p : sechseck({r.x(), r.y(), r.width(), r.height()})) ecken << alsPunkt(p);
+                form.addPolygon(ecken);
+                form.closeSubpath();
+                pinsel = m_getoent;
+                break;
+            }
+            case AbfrageKnotenArt::Ergebnis:
+                form.addRoundedRect(r, 10, 10);
+                pinsel = m_getoent;
+                break;
+            case AbfrageKnotenArt::Mit: form.addRoundedRect(r, 6, 6); break;
+            case AbfrageKnotenArt::Abgeleitet:
+                form.addRoundedRect(r, 6, 6);
+                stift.setStyle(Qt::DashLine);
+                break;
+            case AbfrageKnotenArt::View:
+                form.addRect(r);
+                stift.setStyle(Qt::DashLine);
+                break;
+            case AbfrageKnotenArt::Fremd:
+                form.addRect(r);
+                stift = QPen(m_fremdStrich, 1.2);
+                pinsel = m_fremd;
+                break;
+            case AbfrageKnotenArt::Ziel:
+                form.addRect(r);
+                stift.setWidthF(2.4);
+                break;
+            case AbfrageKnotenArt::Funktion:
+                form.addRect(r);
+                form.moveTo(r.left() + 6, r.top());
+                form.lineTo(r.left() + 6, r.bottom());
+                form.moveTo(r.right() - 6, r.top());
+                form.lineTo(r.right() - 6, r.bottom());
+                break;
+            case AbfrageKnotenArt::Tabelle:
+            case AbfrageKnotenArt::Werte: form.addRect(r); break;
+        }
+        QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
+        stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        stueck->setZValue(2);
+        QString tipp = QStringLiteral("Click: show in the source.");
+        if (k.art == AbfrageKnotenArt::Tabelle || k.art == AbfrageKnotenArt::Ziel)
+            tipp += QStringLiteral(" Double-click: show it in Data types.");
+        if (k.art == AbfrageKnotenArt::View) tipp += QStringLiteral(" Double-click: show its query.");
+        if (k.art == AbfrageKnotenArt::Fremd) tipp = QStringLiteral("A name the project does not define");
+        QStringList ganz{QString::fromStdString(k.titel)};
+        for (const std::string& z : k.zeilen) ganz << QString::fromStdString(z);
+        stueck->setToolTip(ganz.join(QLatin1Char('\n')) + QStringLiteral("\n\n") + tipp);
+        const QRectF kopf(r.left(), r.top() + 9, r.width(), zeilenHoehe);
+        text(gekuerzt(k.titel), k.art == AbfrageKnotenArt::Menge ? r : kopf, true, k.art == AbfrageKnotenArt::Fremd)
+            ->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        if (k.zeilen.empty()) return;
+        if (k.art != AbfrageKnotenArt::Ergebnis)
+            m_szene.addLine(r.left(), r.top() + zeilenHoehe + 9, r.right(), r.top() + zeilenHoehe + 9, stift)->setZValue(2);
+        for (std::size_t i = 0; i < k.zeilen.size(); ++i)
+        {
+            QGraphicsSimpleTextItem* zeile =
+                textLinks(gekuerzt(k.zeilen[i]), QPointF(r.left() + 8, r.top() + 9 + zeilenHoehe * static_cast<double>(i + 1)));
+            zeile->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        }
+    }
+
     const QPen& strich() const { return m_strich; }
+    const QColor& grund() const { return m_grund; }
     QGraphicsScene& szene() { return m_szene; }
 
 private:
@@ -927,6 +1005,56 @@ void Vorschau::zeige(const Aufrufgraph& graph, bool nachRechts)
         z.kante(a.kanten[e], gekuerzt(beschriftung(k)), a.beschriftungen[e], stift);
     }
     for (std::size_t i = 0; i < a.knoten.size(); ++i) z.aufrufKnoten(i, graph.knoten[i], alsRect(a.knoten[i]));
+    for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
+
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.knoten.size());
+    m_rahmen = static_cast<int>(a.gruppen.size());
+}
+
+void Vorschau::zeige(const Abfragediagramm& diagramm, bool nachRechts)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.nachRechts = nachRechts;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const FlussAnordnung a = ordneAn(diagramm, optionen);
+
+    Zeichner z(*scene(), dunkel());
+    for (std::size_t r = 0; r < a.gruppen.size() && r < diagramm.rahmen.size(); ++r)
+    {
+        const QString titel = QString::fromStdString(diagramm.rahmen[r].titel);
+        const auto passt = static_cast<qsizetype>(titelZeichen(a.gruppen[r], optionen));
+        z.rahmen(r, titel.size() <= passt ? titel : titel.left(passt - 3) + QStringLiteral("..."), alsRect(a.gruppen[r]), QColor(),
+                 titel);
+    }
+    // Join durchgezogen, WHERE gestrichelt, korreliert gepunktet — ohne Spitze; Fluss und Schreiben mit
+    for (std::size_t e = 0; e < a.kanten.size(); ++e)
+    {
+        const AbfrageKante& k = diagramm.kanten[e];
+        const Linienzug& l = a.kanten[e];
+        if (l.size() < 2) continue;
+        QPen stift = z.strich();
+        if (k.art == AbfrageKantenArt::Wo) stift.setStyle(Qt::DashLine);
+        if (k.art == AbfrageKantenArt::Korreliert) stift.setStyle(Qt::DotLine);
+        if (k.art == AbfrageKantenArt::Schreibt) stift.setWidthF(2.4);
+        if (k.art == AbfrageKantenArt::Fluss || k.art == AbfrageKantenArt::Schreibt)
+        {
+            z.kante(l, gekuerzt(k.text), a.beschriftungen[e], stift);
+            continue;
+        }
+        QPainterPath weg(alsPunkt(l[0]));
+        for (std::size_t i = 1; i < l.size(); ++i) weg.lineTo(alsPunkt(l[i]));
+        z.szene().addPath(weg, stift)->setZValue(1);
+        if (k.text.empty()) continue;
+        QGraphicsSimpleTextItem* schild = z.textLinks(gekuerzt(k.text), {});
+        const QRectF masse = schild->boundingRect();
+        schild->setPos(a.beschriftungen[e].x - masse.width() / 2, a.beschriftungen[e].y - masse.height() / 2);
+        schild->setZValue(5);
+        schild->setToolTip(QString::fromStdString(k.text));
+        z.szene().addRect(schild->sceneBoundingRect().adjusted(-2, 0, 2, 0), Qt::NoPen, z.grund())->setZValue(4);
+    }
+    for (std::size_t i = 0; i < a.knoten.size(); ++i) z.abfrageKnoten(i, diagramm.knoten[i], alsRect(a.knoten[i]), optionen.zeilenHoehe);
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);

@@ -49,6 +49,9 @@ public:
     /// Ein Knoten des Aufrufgraphen ist fuer Doppelklick, Kontextmenue und markiere()
     /// wie ein Knoten des Flussdiagramms: seine Stelle in Aufrufgraph::knoten.
     void zeige(const c2d::diagramm::Aufrufgraph& graph, bool nachRechts);
+    /// Eine Abfrage; ein Knoten ist fuer Klick, Doppelklick, Kontextmenue und markiere() wie ein Knoten
+    /// des Flussdiagramms: seine Stelle in Abfragediagramm::knoten.
+    void zeige(const c2d::diagramm::Abfragediagramm& diagramm, bool nachRechts);
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
     void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},

@@ -6,6 +6,7 @@
 //                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
 //                                            [--ohne-fremde]]
 //                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
+//                             [--abfrage [<name>|<zeile>]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
@@ -131,6 +132,7 @@ int aufruf()
                  "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
                  "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
                  "                         [--schaltet <name>] [--schalter] [--breite]\n"
+                 "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -175,6 +177,13 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
         std::cout << "object    " << kObjektArt[static_cast<int>(o.art)] << ' ' << o.name << zugriffe(o.zugriffe) << '\n';
     for (const c2d::modell::Funktion& f : einheit.funktionen)
         if (!f.zugriffe.empty()) std::cout << "access    " << f.vollerName() << zugriffe(f.zugriffe) << '\n';
+    for (const c2d::modell::Abfrage& q : einheit.abfragen)
+    {
+        std::size_t quellen = 0;
+        for (const c2d::modell::AbfrageBlock& b : q.bloecke) quellen += b.quellen.size();
+        std::cout << "query     " << q.name << " (" << q.bloecke.size() << " blocks, " << quellen << " sources"
+                  << (q.ziel.empty() ? std::string() : ", " + q.schreibt + " " + q.ziel) << ")\n";
+    }
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)
         std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';
@@ -229,6 +238,8 @@ int main(int argc, char* argv[])
     bool wahrheitstabelle = false, entscheidungstabelle = false, zuordnung = false, nachschlagetabellen = false;
     bool konfiguration = false, breite = false, schalter = false, abhaengigkeiten = false;
     std::string objekt;  // --abhaengigkeiten <objekt>
+    bool abfrage = false;
+    std::string abfrageName;  // --abfrage <name>|<zeile>
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
     c2d::diagramm::ErNotation notation = c2d::diagramm::ErNotation::Tabellen;  // --notation (Entscheid N5)
@@ -295,6 +306,12 @@ int main(int argc, char* argv[])
             aufrufgraph = true;
             // der Name der Funktion darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') funktion = argv[++i];
+        }
+        else if (a == "--abfrage")
+        {
+            abfrage = true;
+            // der Name (oder die Zeile) darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') abfrageName = argv[++i];
         }
         else if (a == "--abhaengigkeiten")
         {
@@ -453,6 +470,8 @@ int main(int argc, char* argv[])
             for (const Zustandsdiagramm& z : automatenVon(einheit)) pruefe(z, "automaton " + z.titel);
             if (!einheit.typen.empty()) pruefe(strukturVon(einheit), "data types");
             if (mitRumpf) pruefe(c2d::projekt::aufrufgraphDerDatei(p, i, graph).graph, "call graph of the file");
+            for (std::size_t q = 0; q < einheit.abfragen.size(); ++q)
+                pruefe(c2d::projekt::abfrageIn(p, i, q), "query " + einheit.abfragen[q].name);
         }
         std::cout << "checked " << geprueft << " layouts, " << zuBreit << " wider than x" << kHoechstesQuerVerhaeltnis
                   << " of their widest layer";
@@ -517,6 +536,29 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Schaltstellen, s);
+    }
+
+    // --abfrage: das Diagramm einer Abfrage (Entscheid Q5) — nach Name, nach Zeile, sonst die erste der Datei
+    if (abfrage)
+    {
+        const std::size_t d = gewaehlteDatei != c2d::projekt::kKeine ? gewaehlteDatei : 0;
+        const std::vector<c2d::modell::Abfrage>& abfragen = p.dateien[d].ergebnis.einheit.abfragen;
+        std::size_t welche = abfragen.empty() ? c2d::projekt::kKeine : 0;
+        if (!abfrageName.empty())
+        {
+            welche = c2d::projekt::kKeine;
+            if (std::all_of(abfrageName.begin(), abfrageName.end(), [](char c) { return c >= '0' && c <= '9'; }))
+                welche = c2d::diagramm::abfrageZurZeile(abfragen, std::stoi(abfrageName));
+            for (std::size_t k = 0; k < abfragen.size() && welche == c2d::projekt::kKeine; ++k)
+                if (abfragen[k].name == abfrageName) welche = k;
+        }
+        if (welche == c2d::projekt::kKeine)
+        {
+            std::cerr << "c2d: no query" << (abfrageName.empty() ? std::string() : " '" + abfrageName + "'") << " in "
+                      << vorn(p.dateien[d].pfad) << (abfragen.empty() ? std::string() : " - see --liste (query)") << '\n';
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Abfrage, c2d::projekt::abfrageIn(p, d, welche));
     }
 
     // --abhaengigkeiten: was liest, schreibt, ruft (Entscheid A1) — ab einem Objekt, oder alles einer Datei

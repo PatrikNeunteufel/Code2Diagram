@@ -917,3 +917,47 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **AB4 Host-Code:** `beispiele/sql/lager_db.py`: `Data dependencies (4)`; `Lager::menge` (wie eine Funktion, Rand mit
       zwei Strichen) liest `bestand`; Doppelklick auf `Lager::menge` zeigt ihren Ablauf.
 - [ ] **AB5 Formate und Thema:** Format mermaid (`[(` Zylinder, `{{` Sechseck), dot, drawio; dunkles Thema lesbar.
+
+## AC. Abfragen
+
+- [ ] **AC0 Vorbereiten:** File > Open source file… `beispiele/sql/schule.sql`, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/sql/schule.sql` `aktion: ansicht_waehlen name=preview`
+- [ ] **AC1 Die Liste:** Diagram bietet `Queries (5)`. Gewählt, steht daneben ein zweites Feld mit
+      `notenliste (line 56)`, `query@66 (line 66)`, `query@71 (line 71)`, `query@82 (line 82)`, `query@90 (line 90)`.
+      `aktion: abfrage_zeigen name=notenliste`
+- [ ] **AC2 Joins:** `notenliste` zeigt eine Kette:
+      - `schueler s` → `belegt b` → `kurs k` → `lehrer l`, jede Linie ohne Spitze und beschriftet
+        `inner: b.schueler_id = s.schueler_id` … `left: l.lehrer_id = k.lehrer_id`.
+      - Je Kasten der Titel fett, darunter nach einem Strich die genutzten Spalten.
+      - Ein Ergebnis (getönt, runde Ecken) mit `select …`, `where b.note IS NOT NULL`, `order by s.name`.
+      - Darunter das Ziel `notenliste` (kräftiger Rand), Kante `create view` mit Spitze.
+      - Statuszeile `query notenliste: 6 node(s), 5 edge(s), 0 frame(s)`.
+- [ ] **AC3 Join im WHERE:** `query@66`: `klasse kl` und `schueler s` verbindet eine **gestrichelte** Linie
+      `where: s.klasse_id = kl.klasse_id`; das Ergebnis trägt `where kl.bezeichnung LIKE '5%'`.
+      `aktion: abfrage_zeigen name=66`
+- [ ] **AC4 WITH und korreliert:** `query@71`:
+      - Ein Rahmen `WITH schnitt` mit `belegt` und seinem Ergebnis `avg(note) AS mittel`, ein Pfeil von ihm zu
+        `schnitt x` (runde Ecken).
+      - Die Linie `belegt b`–`schnitt x` trägt `inner: x.kurs_id = b.kurs_id; where: b.note < x.mittel`.
+      - Ein Rahmen `subquery (EXISTS)` mit `ausweis a`, eine **gepunktete** Linie
+        `correlated: a.schueler_id = s.schueler_id` zu `schueler s`, und der Pfeil `exists` ins Ergebnis.
+- [ ] **AC5 UNION:** `query@82`: ein Rahmen `derived t`, darin `branch 1` und `branch 2`, beide in ein Sechseck
+      `UNION ALL`, von dort zu `t` (gestrichelt, runde Ecken) und ins Ergebnis.
+- [ ] **AC6 Ziel:** `query@90`: Rahmen `subquery (NOT EXISTS)`, Pfeil `not exists`, Ziel `ausweis` mit `insert into`.
+- [ ] **AC7 Klick, Doppelklick, Menü:**
+      - Ein Klick auf `kurs k` in `notenliste` zeigt Zeile 60.
+      - Doppelklick auf `kurs k` zeigt Data types mit `kurs`, Back zurück.
+      - Rechtsklick: *Show kurs in Data types*, *Data dependencies from kurs*, *Show in the source*.
+      - Doppelklick auf das Ziel `notenliste` bleibt bei der Abfrage (sie ist es selbst).
+      `aktion: klicken name=kurs k`
+- [ ] **AC8 Wege hinein:**
+      - Rechtsklick im Quelltext in Zeile 79 → *Query diagram* zeigt `query@71`.
+      - In *Data dependencies* am Knoten `notenliste` → *Query diagram of notenliste*.
+      - In `beispiele/sql/lager_db.py` im Ablauf von `Lager::menge` am Knoten mit dem SQL → *Query diagram*
+        zeigt `Lager::menge@34`.
+- [ ] **AC9 Formate und Thema:**
+      - mermaid: `flowchart` mit `subgraph`, `---|…|`, `-.-`, `==>`.
+      - dot: `cluster_`, `style=dotted`.
+      - drawio: `swimlane`.
+      - csv sagt `Query is not available in csv`.
+      - Dunkles Thema lesbar.

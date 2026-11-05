@@ -54,6 +54,7 @@ public:
     [[nodiscard]] std::string schreibe(const Strukturdiagramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Zustandsdiagramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Aufrufgraph&, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(const Abfragediagramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }
 
     [[nodiscard]] std::string schreibe(std::span<const Wahrheitstabelle> tabellen, const Optionen&) const override

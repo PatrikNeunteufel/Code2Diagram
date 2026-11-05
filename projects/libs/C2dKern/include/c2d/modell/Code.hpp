@@ -314,6 +314,100 @@ struct Datenbankobjekt
     std::string ereignis;  ///< nur Trigger: wann er laeuft, wie in der Quelle (`AFTER INSERT OR UPDATE`)
 };
 
+// ---------------------------------------------------------------------------
+// SQL: Abfragen (Entscheide Q1-Q5) — vom Leser schon zerlegt, damit die Ableitung kein SQL kennt
+// ---------------------------------------------------------------------------
+
+/// "Kein Block" einer Abfrage.
+inline constexpr std::size_t kKeinBlock = static_cast<std::size_t>(-1);
+
+/// Eine Spalte, wie die Abfrage sie nennt: `f.title` (qualifizierer `f`), `title` (ohne).
+struct Spaltenbezug
+{
+    std::string qualifizierer;  ///< Alias oder Name der Quelle, wie in der Quelle; leer = ohne
+    std::string spalte;
+
+    friend bool operator==(const Spaltenbezug&, const Spaltenbezug&) = default;
+};
+
+/// Ein Teil einer Bedingung (`ON`, `WHERE`, `HAVING`), an den aeussersten `AND` zerlegt.
+struct Bedingungsteil
+{
+    std::string text;                    ///< wie in der Quelle; eine Unterabfrage darin als `(…)`
+    std::vector<Spaltenbezug> bezuege;   ///< die Spalten, die er nennt (ohne die seiner Unterabfrage)
+    std::size_t unterabfrage = kKeinBlock;  ///< ein Block, den er befragt: `EXISTS (…)`, `x IN (…)`, `x = (…)`
+    std::string wie;                     ///< dann wie: `exists`, `not exists`, `in`, `not in`, `=`, `>` …
+};
+
+/// Woher ein Block liest.
+enum class QuellArt
+{
+    Tabelle,     ///< ein Name: Tabelle, View oder ein Name eines WITH
+    Funktion,    ///< eine Funktion, die eine Tabelle liefert (`generate_series(…)`, `LATERAL VIEW explode(…)`)
+    Abgeleitet,  ///< eine Unterabfrage in FROM (`(SELECT …) t`)
+    Werte,       ///< `VALUES (…), (…)`
+};
+
+/// Eine Quelle in FROM und wie sie zu den vorigen kommt.
+struct AbfrageQuelle
+{
+    QuellArt art = QuellArt::Tabelle;
+    std::string name;   ///< Tabelle oder Funktion, wie in der Quelle (`public.film`); bei Abgeleitet leer
+    std::string alias;  ///< leer = keiner
+    std::size_t block = kKeinBlock;  ///< Abgeleitet: ihr Block
+    /// Wie sie dazukommt: leer (die erste), `,` (Komma), `inner`, `left`, `right`, `full`, `cross`,
+    /// `natural`, `natural left` …, `semi`, `anti`, `apply`, `outer apply`, `merge` (MERGE … USING)
+    std::string verbindung;
+    std::vector<std::string> mit;          ///< `USING (a, b)`: die Spalten
+    std::vector<Bedingungsteil> bedingung;  ///< `ON …`, zerlegt
+    int zeile = 0;
+
+    /// Wie sie in einer Bedingung genannt wird: der Alias, sonst der letzte Teil des Namens.
+    [[nodiscard]] std::string kennung() const;
+};
+
+/// Was ein Block fuer seinen Eltern ist.
+enum class BlockRolle
+{
+    Haupt,       ///< die Abfrage selbst (bloecke[0])
+    Mit,         ///< ein Name eines WITH (`titel` = der Name)
+    Abgeleitet,  ///< eine Unterabfrage in FROM (`titel` = ihr Alias)
+    Bedingung,   ///< eine Unterabfrage in einer Bedingung (der Teil nennt sie)
+    Auswahl,     ///< eine Unterabfrage in der Liste von SELECT
+    Zweig,       ///< ein Zweig von UNION / INTERSECT / EXCEPT
+};
+
+/// Ein SELECT — oder, mit `zweige`, eine Mengenoperation ueber Bloecke.
+struct AbfrageBlock
+{
+    BlockRolle rolle = BlockRolle::Haupt;
+    std::string titel;
+    std::size_t eltern = kKeinBlock;
+    std::vector<AbfrageQuelle> quellen;
+    std::vector<Bedingungsteil> wo;      ///< WHERE, zerlegt
+    std::vector<Bedingungsteil> haben;   ///< HAVING, zerlegt
+    std::string auswahl;                 ///< die Liste von SELECT, wie in der Quelle (Unterabfragen `(…)`)
+    std::string gruppe, ordnung, grenze, fenster;  ///< GROUP BY, ORDER BY, LIMIT/OFFSET/FETCH/TOP, WINDOW/QUALIFY
+    std::vector<Spaltenbezug> bezuege;   ///< jede Spalte, die der Block nennt (SELECT, ON, WHERE, GROUP …)
+    std::vector<std::string> ausgabe;    ///< die Namen seiner Spalten nach aussen (Alias, sonst die Spalte)
+    std::vector<std::string> aliase;     ///< davon die, die ein Alias einfuehrt (`AS n`, `count(*) n`)
+    std::vector<std::size_t> zweige;     ///< eine Mengenoperation: ihre Zweige
+    std::string mengen;                  ///< dann welche: `UNION`, `UNION ALL`, `INTERSECT`, `EXCEPT`
+    int zeile = 0;
+};
+
+/// Eine Abfrage: eine Anweisung mit SELECT (auch der SELECT-Teil eines INSERT, CREATE … AS, UPDATE … FROM,
+/// DELETE … USING, MERGE … USING).
+struct Abfrage
+{
+    std::string name;  ///< die View; `routine@zeile`; `query@zeile` (im Projekt: `funktion@zeile`)
+    int zeile = 0;
+    int bisZeile = 0;
+    std::vector<AbfrageBlock> bloecke;  ///< [0] ist die Abfrage selbst
+    std::string ziel;       ///< wohin sie schreibt; leer = nirgends
+    std::string schreibt;   ///< dann wie: `insert into`, `create table`, `create view`, `update`, `delete`, `merge into`, `select into`
+};
+
 /// Ein Fremdschluessel (SQL `REFERENCES`, `FOREIGN KEY`): Felder eines Typs nennen Zeilen eines anderen.
 struct Verweis
 {
@@ -409,6 +503,8 @@ struct Einheit
     /// SQL: was die Anweisungen ausserhalb der Objekte lesen, schreiben, rufen (ein Skript; bei SQL in
     /// Zeichenketten die Abfrage selbst).
     std::vector<Zugriff> zugriffe;
+    /// SQL: jede Abfrage der Datei, in der Reihenfolge der Quelle (auch in Views und Routinen).
+    std::vector<Abfrage> abfragen;
 };
 
 // ---------------------------------------------------------------------------

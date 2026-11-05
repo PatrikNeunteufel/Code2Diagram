@@ -576,6 +576,69 @@ public:
         return tabelle(ordneAn(t, o), t.titel, o);
     }
 
+    /// Eine Abfrage: hinten die Rahmen, dann die Kanten (Join durchgezogen, WHERE gestrichelt, korreliert
+    /// gepunktet, Fluss mit Spitze), darauf die Knoten (der Titel fett, die Zeilen links), vorn die Texte.
+    [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const FlussAnordnung a = ordneAn(d, o);
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        for (const Rechteck& r : a.gruppen) aus += rechteck(r, "rahmen");
+        for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        {
+            const Linienzug& l = a.kanten[e];
+            if (l.size() < 2) continue;
+            const AbfrageKante& k = d.kanten[e];
+            std::string stil;
+            if (k.art == AbfrageKantenArt::Wo) stil = " style=\"stroke-dasharray:6 4\"";
+            if (k.art == AbfrageKantenArt::Korreliert) stil = " style=\"stroke-dasharray:2 3\"";
+            if (k.art == AbfrageKantenArt::Schreibt) stil = " style=\"stroke-width:2.4\"";
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" + stil + "/>\n";
+            if (k.art == AbfrageKantenArt::Fluss || k.art == AbfrageKantenArt::Schreibt) aus += spitze(l[l.size() - 2], l.back(), true);
+        }
+        for (std::size_t g = 0; g < a.gruppen.size() && g < d.rahmen.size(); ++g)
+            aus += rahmenTitel(kuerze(d.rahmen[g].titel, titelZeichen(a.gruppen[g], o)), a.gruppen[g], o, "font-style=\"italic\"");
+        for (std::size_t i = 0; i < a.knoten.size(); ++i) aus += abfrageKnoten(d.knoten[i], a.knoten[i], o);
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+            if (!d.kanten[e].text.empty()) aus += schild(kuerze(d.kanten[e].text, optionen.maxZeilenLaenge), a.beschriftungen[e], o);
+        return aus + "</svg>\n";
+    }
+
+    [[nodiscard]] static std::string abfrageKnoten(const AbfrageKnoten& k, const Rechteck& r, const AnordnungOptionen& o)
+    {
+        std::string aus;
+        const double kopf = o.zeilenHoehe + 9;  // die Zeile des Titels samt Rand oben
+        const std::string titel = kuerze(k.titel, o.maxZeilenLaenge);
+        switch (k.art)
+        {
+            case AbfrageKnotenArt::Menge:
+                aus += "  <polygon class=\"getoent\" points=\"" + punkte(sechseck(r)) + "\"/>\n";
+                return aus + textMittig({titel}, r.mitte(), o.zeilenHoehe, "font-weight=\"bold\"");
+            case AbfrageKnotenArt::Ergebnis: aus += rechteckMit(r, "getoent", "rx=\"10\""); break;
+            case AbfrageKnotenArt::Fremd: aus += rechteck(r, "fremd"); break;
+            case AbfrageKnotenArt::View: aus += rechteckMit(r, "flaeche", "style=\"stroke-dasharray:6 4\""); break;
+            case AbfrageKnotenArt::Mit: aus += rechteckMit(r, "flaeche", "rx=\"6\""); break;
+            case AbfrageKnotenArt::Abgeleitet: aus += rechteckMit(r, "flaeche", "rx=\"6\" style=\"stroke-dasharray:6 4\""); break;
+            case AbfrageKnotenArt::Ziel: aus += rechteckMit(r, "flaeche", "style=\"stroke-width:2.4\""); break;
+            case AbfrageKnotenArt::Funktion:
+                aus += rechteck(r, "flaeche");
+                aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + 6, r.y}, {r.x + 6, r.y + r.hoehe}}) + "\"/>\n";
+                aus += "  <polyline class=\"linie\" points=\"" +
+                       punkte({{r.x + r.breite - 6, r.y}, {r.x + r.breite - 6, r.y + r.hoehe}}) + "\"/>\n";
+                break;
+            case AbfrageKnotenArt::Tabelle:
+            case AbfrageKnotenArt::Werte: aus += rechteck(r, "flaeche"); break;
+        }
+        aus += textMittig({titel}, {r.x + r.breite / 2, r.y + 9 + o.zeilenHoehe / 2}, o.zeilenHoehe, "font-weight=\"bold\"");
+        if (k.zeilen.empty()) return aus;
+        if (k.art != AbfrageKnotenArt::Ergebnis)
+            aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x, r.y + kopf}, {r.x + r.breite, r.y + kopf}}) + "\"/>\n";
+        for (std::size_t z = 0; z < k.zeilen.size(); ++z)
+            aus += textLinks(kuerze(k.zeilen[z], o.maxZeilenLaenge), r.x + 8, r.y + 9 + o.zeilenHoehe * static_cast<double>(z + 1),
+                             o.zeilenHoehe);
+        return aus;
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const AnordnungOptionen o = anordnung(optionen);

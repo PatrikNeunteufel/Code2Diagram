@@ -421,6 +421,76 @@ public:
     [[nodiscard]] std::string schreibe(std::span<const Zuordnung>, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle>, const Optionen&) const override { return {}; }
 
+    /// Eine Abfrage als flowchart: je Rahmen ein subgraph (verschachtelt), der Titel eines Knotens fett,
+    /// Join `---`, WHERE und korreliert `-.-` (korreliert dazu gepunktet), Fluss `-->`, Schreiben `==>`.
+    [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kommentar(d.titel);
+        aus += "flowchart ";
+        aus += optionen.richtung;
+        aus += '\n';
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const AbfrageKnoten& k = d.knoten[i];
+            std::string text = "<b>" + maskiere(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</b>";
+            for (const std::string& z : k.zeilen) text += "<br>" + maskiere(kuerze(z, optionen.maxZeilenLaenge));
+            std::string_view auf = "[", zu = "]";
+            switch (k.art)
+            {
+                case AbfrageKnotenArt::Ergebnis: auf = "("; zu = ")"; break;
+                case AbfrageKnotenArt::Menge: auf = "{{"; zu = "}}"; break;
+                case AbfrageKnotenArt::Mit:
+                case AbfrageKnotenArt::Abgeleitet: auf = "(["; zu = "])"; break;
+                case AbfrageKnotenArt::Funktion: auf = "[["; zu = "]]"; break;
+                case AbfrageKnotenArt::Ziel: auf = "[("; zu = ")]"; break;
+                default: break;
+            }
+            aus += einzug + "q" + std::to_string(i) + std::string(auf) + "\"" + text + "\"" + std::string(zu) + "\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph r" + std::to_string(r) + "[\"" + maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\"]\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "end\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        std::string fremd, view;
+        for (std::size_t i = 0; i < d.knoten.size(); ++i)
+        {
+            if (d.knoten[i].art == AbfrageKnotenArt::Fremd) fremd += (fremd.empty() ? "" : ",") + ("q" + std::to_string(i));
+            if (d.knoten[i].art == AbfrageKnotenArt::View || d.knoten[i].art == AbfrageKnotenArt::Abgeleitet)
+                view += (view.empty() ? "" : ",") + ("q" + std::to_string(i));
+        }
+        if (!fremd.empty())
+            aus += "    classDef fremd fill:" + std::string(c2d::diagramm::farbe(Farbe::Fremd)) + ",stroke:" +
+                   std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + "\n    class " + fremd + " fremd\n";
+        if (!view.empty()) aus += "    classDef gestrichelt stroke-dasharray:6 4\n    class " + view + " gestrichelt\n";
+        std::string gepunktet;
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+        {
+            const AbfrageKante& k = d.kanten[e];
+            std::string_view pfeil = "---";
+            switch (k.art)
+            {
+                case AbfrageKantenArt::Join: pfeil = "---"; break;
+                case AbfrageKantenArt::Wo:
+                case AbfrageKantenArt::Korreliert: pfeil = "-.-"; break;
+                case AbfrageKantenArt::Fluss: pfeil = "-->"; break;
+                case AbfrageKantenArt::Schreibt: pfeil = "==>"; break;
+            }
+            if (k.art == AbfrageKantenArt::Korreliert) gepunktet += (gepunktet.empty() ? "" : ",") + std::to_string(e);
+            aus += "    q" + std::to_string(k.von) + " " + std::string(pfeil);
+            if (!k.text.empty()) aus += "|\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"|";
+            aus += " q" + std::to_string(k.nach) + '\n';
+        }
+        if (!gepunktet.empty()) aus += "    linkStyle " + gepunktet + " stroke-dasharray:2 3\n";
+        return aus;
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         std::string aus = kommentar(graph.titel);

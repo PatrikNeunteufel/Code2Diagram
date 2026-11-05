@@ -99,6 +99,8 @@ public:
     /// So beginnen die Abhaengigkeiten ab einem Objekt: `deps:<Objekt>` (eine Tabelle, View, Routine,
     /// ein Trigger `name@tabelle`, eine Funktion mit SQL — wie projekt::datenobjekteIn sie nennt).
     static constexpr const char* kAbhaengigkeiten = "deps:";
+    /// Die Abfragen der Datei (Entscheid Q5): welche, waehlt das zweite Feld.
+    static constexpr const char* kAbfragen = "queries";
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
@@ -216,6 +218,15 @@ public:
     /// projekt::datenobjekteIn es nennt), leer = die der Datei. Richtung, Tiefe und Max wie beim Aufrufgraph.
     /// false = kein solches Objekt, oder die Datei liest, schreibt, ruft nichts.
     bool zeigeAbhaengigkeiten(const QString& objekt = {});
+    /// Eine Abfrage der Datei: nach Name (`knapp`, `f@12`), nach Zeile (die Abfrage, die dort beginnt oder
+    /// in der sie liegt), leer = die erste. false = keine solche.
+    bool zeigeAbfrage(const QString& name = {});
+    /// Die Namen der Abfragen der Datei, in ihrer Reihenfolge.
+    [[nodiscard]] QStringList abfragen() const;
+    /// Die gezeigte Abfrage; leer = keine.
+    [[nodiscard]] QString abfrage() const;
+    /// Die Titel der Knoten der gezeigten Abfrage.
+    [[nodiscard]] QStringList abfrageKnoten() const;
     [[nodiscard]] QString diagramm() const;
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
@@ -396,7 +407,7 @@ private:
         QString diagramm;
         /// der Knoten, von dem aus man weiterging (ein Aufruf); kKeine = keiner
         c2d::diagramm::KnotenId knoten = c2d::diagramm::kKeine;
-        QString typ;  ///< bei den Datentypen: der gewaehlte Typ
+        QString typ;  ///< bei den Datentypen: der gewaehlte Typ; bei den Abfragen: die Stelle der gewaehlten
     };
 
     /// Die Stelle, die gerade gezeigt wird — fuer den Verlauf.
@@ -476,6 +487,15 @@ private:
     void aufrufgraphMenue(c2d::diagramm::KnotenId knoten, const QPoint& ort);
     /// Werden die Abhaengigkeiten der Daten gezeigt (`deps`, `deps:…`)?
     [[nodiscard]] bool istAbhaengigkeiten() const;
+    [[nodiscard]] bool istAbfrage() const;
+    void leiteAbfrageAb();
+    /// Doppelklick auf einen Knoten der Abfrage: eine Tabelle in Data types, eine View ihre Abfrage.
+    void folgeAbfrage(c2d::diagramm::KnotenId knoten);
+    void abfrageMenue(c2d::diagramm::KnotenId knoten);
+    /// Zur Abfrage `index` der Datei `datei`; Back fuehrt zurueck.
+    void geheZuAbfrage(std::size_t datei, std::size_t index, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    /// Die Abfrage einer View oder Routine im Projekt (ihr Name, auch `routine@…`): Datei und Stelle; kKeine = keine.
+    [[nodiscard]] std::pair<std::size_t, std::size_t> abfrageVon(const std::string& name) const;
     /// Die gezeigten Abhaengigkeiten neu ableiten (Richtung, Tiefe, Max).
     void leiteAbhaengigkeitenAb();
     /// Doppelklick auf einen Knoten der Abhaengigkeiten: eine Tabelle in Data types, eine Funktion ihr Ablauf.
@@ -499,6 +519,8 @@ private:
     QTabWidget* m_ansichten = nullptr;
     QComboBox* m_auswahl = nullptr;
     QComboBox* m_typAuswahl = nullptr;  ///< bei den Datentypen: welcher Typ
+    QComboBox* m_abfrageAuswahl = nullptr;  ///< bei den Abfragen: welche (Daten: ihre Stelle)
+    QString m_abfrage;                      ///< die Stelle der gezeigten Abfrage in Einheit::abfragen
     QComboBox* m_format = nullptr;
     QComboBox* m_richtung = nullptr;
     QLineEdit* m_definitionen = nullptr;
@@ -548,6 +570,7 @@ private:
     QStringList m_automatNamen;                                 ///< je Automat sein Name in der Auswahl
     c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph
     c2d::projekt::AbhaengigkeitsErgebnis m_abhaengigkeiten;  ///< die gezeigten Abhaengigkeiten der Daten
+    c2d::diagramm::Abfragediagramm m_abfrageDiagramm;        ///< die gezeigte Abfrage
     std::vector<c2d::projekt::Fundstelle> m_aufgeklappt;  ///< darin aufgeklappt
     QString m_gezeigt;                      ///< wofuer m_fluss (m_aufrufgraph) gebaut ist
     QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()

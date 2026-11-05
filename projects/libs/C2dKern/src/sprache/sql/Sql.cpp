@@ -20,10 +20,12 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include "../Leser.hpp"
+#include "Abfrage.hpp"
 
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -308,7 +310,7 @@ std::string ohneBegrenzer(std::string_view text)
     return s;
 }
 
-class SqlLeser final : public Leser
+class SqlLeser final : public Leser, public sqlteile::Tokenquelle
 {
 public:
     SqlLeser(std::string_view text, const Dialekt& dialekt, std::string platzhalter, Ergebnis& aus)
@@ -341,7 +343,7 @@ public:
     }
 
     /// Nur die Zugriffe aller Anweisungen, nach `zugriffe` (fuer den Rumpf einer Routine in `$$…$$`):
-    /// temporaere Tabellen, die er anlegt, nach `eigene`.
+    /// temporaere Tabellen, die er anlegt, nach `eigene`; die Abfragen nach Einheit::abfragen.
     void liesRumpf(std::vector<Zugriff>& zugriffe, std::vector<std::string>& eigene)
     {
         while (!amEnde(m_p))
@@ -350,12 +352,47 @@ public:
             const std::size_t b = anweisungsEnde(a);
             const std::size_t trenner = trennerLaenge(b);
             if (b > a) sammleZugriffe(a, b, zugriffe, eigene);
+            if (b > a && !m_routine.empty()) abfragenIn(a, b, m_routine);
             m_p = b + trenner;
             if (m_p == a) ++m_p;
         }
     }
 
+    // --- Tokenquelle (fuer den Zerleger der Abfragen) ---------------------------
+
+    [[nodiscard]] const Token& token(std::size_t i) const override { return tok(i); }
+    [[nodiscard]] std::string quelltext(std::size_t a, std::size_t b) const override { return textVon(a, b); }
+    [[nodiscard]] std::size_t hinterKlammer(std::size_t i) const override { return nachKlammer(i); }
+
 private:
+    /// Jede Abfrage in [a, b) (eine Anweisung, ein Rumpf) nach Einheit::abfragen, je `vorn@zeile`.
+    void abfragenIn(std::size_t a, std::size_t b, const std::string& vorn)
+    {
+        sqlteile::AbfrageLeser leser(*this);
+        leser.selectIntoTabelle = m_dialekt.name == "tsql";
+        for (Abfrage& x : leser.suche(a, b, vorn)) m_aus.einheit.abfragen.push_back(std::move(x));
+    }
+
+    /// Die Anweisung [a, b) als eine Abfrage namens `name` (eine View, CREATE TABLE … AS).
+    void abfrageAus(std::size_t a, std::size_t b, const std::string& name)
+    {
+        sqlteile::AbfrageLeser leser(*this);
+        leser.selectIntoTabelle = m_dialekt.name == "tsql";
+        if (std::optional<Abfrage> x = leser.lies(a, b, name)) m_aus.einheit.abfragen.push_back(std::move(*x));
+    }
+
+    /// Alle Zeilen einer Abfrage um `um` weiter (ein Rumpf, der fuer sich gelesen wurde).
+    static void verschiebe(Abfrage& x, int um)
+    {
+        x.zeile += um;
+        x.bisZeile += um;
+        for (AbfrageBlock& b : x.bloecke)
+        {
+            b.zeile += um;
+            for (AbfrageQuelle& q : b.quellen) q.zeile += um;
+        }
+    }
+
     // --- Token ---------------------------------------------------------------
 
     /// Ist das Token i dieses Wort (klein, ohne Ruecksicht auf Gross/klein, nicht in Begrenzern)?
@@ -645,6 +682,7 @@ private:
             // Namen ihres WITH gelten nur in ihr
             std::vector<std::string> eigene;
             sammleZugriffe(a, b, m_aus.einheit.zugriffe, eigene);
+            abfragenIn(a, b, "query");
             return;
         }
         melde(Schwere::Warnung, t, "statement '" + std::string(t.text) + "' is not understood");
@@ -666,7 +704,10 @@ private:
                 if (eindeutig) liesEindeutigenIndex(k + 1, b);
             }
             else if (g->gebilde == Gebilde::Tabelle)
+            {
                 liesCreateTable(k + 1, b);
+                abfrageAus(a, b, "query@" + std::to_string(tok(a).ort.zeile));  // CREATE TABLE … AS SELECT
+            }
             else if (g->gebilde == Gebilde::Objekt)
                 liesObjekt(g->objekt, a, k + 1, b);
             return;
@@ -955,7 +996,10 @@ private:
         }
         std::vector<std::string> eigene;  // was das Objekt selbst anlegt: Namen eines WITH, temporaere Tabellen
         if (art == ObjektArt::View)
+        {
             sammleZugriffe(k, b, o.zugriffe, eigene);
+            abfrageAus(a, b, o.name);
+        }
         else if (art == ObjektArt::Trigger)
             liesTrigger(o, k, b, eigene);
         else
@@ -992,6 +1036,7 @@ private:
         else
             o.ereignis = textVon(k, on);
         sammleZugriffe(rumpf, b, o.zugriffe, eigene);
+        abfragenIn(rumpf, b, o.name);
     }
 
     /// Der Rest einer Funktion oder Prozedur ab k: Parameter, dann der Rumpf — in `$$…$$` oder `'…'`
@@ -1022,10 +1067,13 @@ private:
         }
         if (koerper != kKeiner && m_dialekt.name != "tsql" && m_dialekt.name != "mysql")
         {
+            m_routine = o.name;
             liesRumpfText(tok(koerper), o.zugriffe, eigene);
+            m_routine.clear();
             return;
         }
         sammleZugriffe(k, b, o.zugriffe, eigene);
+        abfragenIn(k, b, o.name);
     }
 
     /// Der Rumpf einer Routine in einer Zeichenkette (`$$…$$`, `$f$…$f$`, `'…'`) durch einen zweiten
@@ -1052,8 +1100,15 @@ private:
         std::vector<Zugriff> innere;
         SqlLeser rumpf(innen, m_dialekt, m_platzhalter, neben);
         rumpf.m_imRumpf = true;
+        rumpf.m_routine = m_routine;
         rumpf.liesRumpf(innere, eigene);
         const int versatzZeile = koerper.ort.zeile - 1;
+        for (Abfrage& x : neben.einheit.abfragen)
+        {
+            verschiebe(x, versatzZeile);
+            x.name = m_routine + "@" + std::to_string(x.zeile);
+            m_aus.einheit.abfragen.push_back(std::move(x));
+        }
         for (Zugriff& z : innere)
         {
             z.zeile += versatzZeile;
@@ -1358,6 +1413,7 @@ private:
     const Dialekt& m_dialekt;
     std::string m_platzhalter;  ///< LeseOptionen::platzhalter
     bool m_imRumpf = false;     ///< liest den Rumpf einer Routine in `$$…$$` (PL/pgSQL)
+    std::string m_routine;      ///< die Routine, deren Rumpf gelesen wird (Name ihrer Abfragen)
     std::string m_trenner = ";";
 };
 

@@ -12,6 +12,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Abfragediagramm.hpp"
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
@@ -54,6 +55,7 @@ enum class Diagrammart
     Schaltstellen,
     Schalteruebersicht,
     Abhaengigkeiten,  ///< die Abhaengigkeiten der Daten, im Modell des Aufrufgraphen
+    Abfrage,          ///< eine SQL-Abfrage: Quellen, Joins, Ergebnis, Unterabfragen in Rahmen
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
@@ -82,6 +84,7 @@ public:
                                                const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Aufrufgraph& graph, const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Struktogramm& diagramm, const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Abfragediagramm& diagramm, const Optionen& optionen) const = 0;
     /// Eine oder mehrere Wahrheitstabellen, untereinander.
     [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Wahrheitstabelle> tabellen,
                                                const Optionen& optionen) const = 0;

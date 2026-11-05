@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <deque>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -386,6 +387,56 @@ AbhaengigkeitsErgebnis abhaengigkeitenAb(const Projekt& projekt, std::size_t dat
         ausschnitt(projekt, g, drin, "Data dependencies from " + std::string(name), start, weiter, datei);
     aus.begrenzt = begrenzt;
     return aus;
+}
+
+diagramm::DatenquellenSuche datenquellenIn(const Projekt& projekt, std::size_t datei)
+{
+    // je Name (klein) und je letztem Teil die Tabellen; die eigene Datei zuerst
+    struct Verzeichnis
+    {
+        std::map<std::string, std::vector<const modell::Typ*>> voll, teil;
+        std::set<std::string> views, viewTeile;
+    };
+    auto v = std::make_shared<Verzeichnis>();
+    const auto nimm = [&](const modell::Einheit& e) {
+        for (const modell::Typ& t : e.typen)
+        {
+            if (t.art != modell::TypArt::Tabelle) continue;
+            v->voll[klein(t.name)].push_back(&t);
+            v->teil[letzterTeil(t.name)].push_back(&t);
+        }
+        for (const modell::Datenbankobjekt& o : e.objekte)
+            if (o.art == modell::ObjektArt::View)
+            {
+                v->views.insert(klein(o.name));
+                v->viewTeile.insert(letzterTeil(o.name));
+            }
+    };
+    if (datei < projekt.dateien.size()) nimm(projekt.dateien[datei].ergebnis.einheit);
+    for (std::size_t d = 0; d < projekt.dateien.size(); ++d)
+        if (d != datei) nimm(projekt.dateien[d].ergebnis.einheit);
+    return [v](std::string_view name) {
+        diagramm::Datenquelle q;
+        const std::string n = klein(name);
+        if (const auto x = v->voll.find(n); x != v->voll.end())
+            q.tabelle = x->second.front();
+        else if (const auto y = v->teil.find(letzterTeil(name)); y != v->teil.end())
+        {
+            // ohne Schema ueber den letzten Teil — nur, wenn eindeutig (die eigene Datei zaehlt einmal)
+            std::set<std::string> namen;
+            for (const modell::Typ* t : y->second) namen.insert(klein(t->name));
+            if (namen.size() == 1) q.tabelle = y->second.front();
+        }
+        if (q.tabelle == nullptr) q.view = v->views.contains(n) || v->viewTeile.contains(letzterTeil(name));
+        return q;
+    };
+}
+
+diagramm::Abfragediagramm abfrageIn(const Projekt& projekt, std::size_t datei, std::size_t abfrage)
+{
+    const std::vector<modell::Abfrage>& abfragen = projekt.dateien[datei].ergebnis.einheit.abfragen;
+    if (abfrage >= abfragen.size()) return {};
+    return diagramm::abfrageVon(abfragen[abfrage], datenquellenIn(projekt, datei));
 }
 
 }  // namespace c2d::projekt

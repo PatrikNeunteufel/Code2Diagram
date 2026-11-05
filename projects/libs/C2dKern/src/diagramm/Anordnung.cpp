@@ -1421,6 +1421,55 @@ StrukturAnordnung ordneAn(const Strukturdiagramm& diagramm, const AnordnungOptio
     return a;
 }
 
+FlussAnordnung ordneAn(const Abfragediagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    // dieselbe Anordnung wie der Ablauf: Knoten mit ihren Zeilen, Kanten mit Text, Rahmen als Gruppen
+    Flussdiagramm fluss(diagramm.titel);
+    for (const AbfrageRahmen& r : diagramm.rahmen)
+    {
+        Gruppe g;
+        g.titel = r.titel;
+        g.eltern = r.eltern;
+        fluss.neueGruppe(std::move(g));
+    }
+    // Je oberster Rahmen ein Band, die Abfrage selbst im letzten: so umfasst kein Rahmen einen Knoten eines
+    // anderen Blocks (in einer Schicht stehen sonst Quellen aussen und innen nebeneinander)
+    std::vector<std::size_t> oberster(diagramm.rahmen.size(), kKeine);
+    std::vector<double> bandBreite;
+    for (std::size_t r = 0; r < diagramm.rahmen.size(); ++r)
+        if (diagramm.rahmen[r].eltern == kKeine)
+        {
+            oberster[r] = bandBreite.size();
+            bandBreite.push_back(titelBreite(diagramm.rahmen[r].titel, optionen) - 2 * kGruppenRand);
+        }
+    const std::size_t aussen = bandBreite.size();
+    bandBreite.push_back(0);
+    const auto bandVon = [&](std::size_t r) {
+        while (r != kKeine && diagramm.rahmen[r].eltern != kKeine) r = diagramm.rahmen[r].eltern;
+        return r == kKeine ? aussen : oberster[r];
+    };
+    std::vector<std::size_t> baender;
+    for (const AbfrageKnoten& k : diagramm.knoten)
+    {
+        Knoten n;
+        n.zeilen.push_back(k.titel);
+        n.zeilen.insert(n.zeilen.end(), k.zeilen.begin(), k.zeilen.end());
+        n.gruppe = k.gruppe;
+        n.quellZeile = k.zeile;
+        fluss.neuerKnoten(std::move(n));
+        baender.push_back(bandVon(k.gruppe));
+    }
+    for (const AbfrageKante& e : diagramm.kanten)
+    {
+        // so lang, wie ein Format sie gekuerzt zeigt
+        std::string text = e.text;
+        if (optionen.maxZeilenLaenge != 0 && text.size() > optionen.maxZeilenLaenge) text.resize(optionen.maxZeilenLaenge);
+        fluss.verbinde(e.von, e.nach, text);
+    }
+    if (aussen == 0) return ordneAn(fluss, optionen);  // keine Unterabfrage: ein Band
+    return ordneFluss(fluss, optionen, baender, {}, bandBreite);
+}
+
 // ---------------------------------------------------------------------------
 // ER-Diagramm (Chen, (min,max))
 // ---------------------------------------------------------------------------

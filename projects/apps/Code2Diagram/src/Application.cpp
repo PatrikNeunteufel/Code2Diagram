@@ -387,6 +387,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.darstellung());
                      });
 
+    anbindung.aktion(QStringLiteral("abfrage_zeigen"),
+                     QStringLiteral("Shows a query of the file (Diagram > Queries): by name, by line, or the first"),
+                     QStringLiteral("name=<query name | line> (empty: the first)"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.zeigeAbfrage(name))
+                             return st::ungueltig(QStringLiteral("No query '%1' - there are: %2")
+                                                      .arg(name, fenster.abfragen().join(QStringLiteral(", "))));
+                         return st::ok(fenster.abfrage());
+                     });
+
     anbindung.aktion(QStringLiteral("notation_waehlen"),
                      QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
                                     "columns are ellipses in Chen and (min,max)"),
@@ -514,7 +525,7 @@ bool Application::init(int argc, char* argv[])
     // Schalter mit Wert; das erste Argument, das zu keinem gehoert, ist die Datei.
     QString datei, diagramm, imProjekt;
     QStringList einbetten, definitionen, springen;
-    QString tiefe, hoechstens, aufrufRichtung, notation, attribute;
+    QString tiefe, hoechstens, aufrufRichtung, notation, attribute, abfrage;
     bool alleZweige = false, varianten = false, rahmen = false, zurueck = false, ohneFremde = false, struktogramm = false,
          entscheidungstabelle = false;
     for (qsizetype i = 1; i < argumente.size(); ++i)
@@ -539,6 +550,7 @@ bool Application::init(int argc, char* argv[])
         else if (a == QLatin1String("--einstellungen")) m_impl->einstellungen = true;
         else if (a == QLatin1String("--struktogramm")) struktogramm = true;
         else if (a == QLatin1String("--notation")) notation = wert();
+        else if (a == QLatin1String("--abfrage")) abfrage = wert();
         else if (a == QLatin1String("--attribute")) attribute = wert();
         else if (a == QLatin1String("--entscheidungstabelle")) entscheidungstabelle = true;
         else if (a == QLatin1String("--aufrufer")) aufrufRichtung = QStringLiteral("callers");
@@ -573,6 +585,8 @@ bool Application::init(int argc, char* argv[])
     // fuer ein Bild der Datentypen; nicht gemerkt (wie --thema)
     if ((!notation.isEmpty() || !attribute.isEmpty()) && !fenster.setzeNotation(notation, attribute))
         qWarning().noquote() << "No notation" << notation << attribute;
+    // eine Abfrage der Datei, nach Name oder Zeile (fuer ein Bild)
+    if (!abfrage.isEmpty() && !fenster.zeigeAbfrage(abfrage)) qWarning().noquote() << "No query" << abfrage;
     if (!diagramm.isEmpty() && !fenster.waehleDiagramm(diagramm))
         qWarning().noquote() << "No diagram" << diagramm << "- there are:" << fenster.diagramme().join(QStringLiteral(", "));
     for (const QString& name : einbetten)

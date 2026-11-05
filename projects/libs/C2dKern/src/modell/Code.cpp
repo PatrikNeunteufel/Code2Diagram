@@ -39,6 +39,13 @@ std::string deklaration(const std::string& typ, const std::string& name, const s
     return s;
 }
 
+std::string AbfrageQuelle::kennung() const
+{
+    if (!alias.empty()) return alias;
+    const std::size_t punkt = name.find_last_of('.');
+    return punkt == std::string::npos ? name : name.substr(punkt + 1);
+}
+
 std::string vollerName(const std::string& bereich, const std::string& name)
 {
     return bereich.empty() ? name : bereich + "::" + name;

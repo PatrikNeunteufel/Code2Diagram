@@ -508,6 +508,66 @@ public:
         return tabelle(ordneAn(t, o), t.titel, o);
     }
 
+    /// Eine Abfrage: je Rahmen ein Behaelter (verschachtelt, Orte relativ zu ihm), Knoten mit dem Titel
+    /// fett, Join ohne Spitze, WHERE gestrichelt, korreliert gepunktet, Fluss mit Spitze.
+    [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override
+    {
+        const FlussAnordnung a = ordneAn(d, anordnung(optionen));
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        const auto in = [&](std::size_t rahmen, Rechteck ort) {
+            if (rahmen < a.gruppen.size())
+            {
+                ort.x -= a.gruppen[rahmen].x;
+                ort.y -= a.gruppen[rahmen].y;
+            }
+            return ort;
+        };
+        const auto eltern = [&](std::size_t rahmen) { return rahmen < a.gruppen.size() ? "r" + std::to_string(rahmen) : std::string("1"); };
+        for (std::size_t r = 0; r < d.rahmen.size() && r < a.gruppen.size(); ++r)
+            aus += ecke("r" + std::to_string(r), html(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)),
+                        "swimlane;startSize=22;fontStyle=2;collapsible=0;container=1;dashed=1;fillColor=none;whiteSpace=wrap;html=1;" +
+                            std::string(kSchrift),
+                        eltern(d.rahmen[r].eltern), in(d.rahmen[r].eltern, a.gruppen[r]));
+        const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+        for (std::size_t i = 0; i < d.knoten.size(); ++i)
+        {
+            const AbfrageKnoten& k = d.knoten[i];
+            std::string stil = "rounded=0;";
+            switch (k.art)
+            {
+                case AbfrageKnotenArt::Ergebnis: stil = "rounded=1;fillColor=" + hell(Farbe::Getoent) + ";"; break;
+                case AbfrageKnotenArt::Menge: stil = "shape=hexagon;perimeter=hexagonPerimeter2;fillColor=" + hell(Farbe::Getoent) + ";"; break;
+                case AbfrageKnotenArt::View: stil = "rounded=0;dashed=1;"; break;
+                case AbfrageKnotenArt::Mit: stil = "rounded=1;arcSize=12;"; break;
+                case AbfrageKnotenArt::Abgeleitet: stil = "rounded=1;arcSize=12;dashed=1;"; break;
+                case AbfrageKnotenArt::Funktion: stil = "shape=process;"; break;
+                case AbfrageKnotenArt::Ziel: stil = "rounded=0;strokeWidth=2;"; break;
+                case AbfrageKnotenArt::Fremd: stil = "rounded=0;fillColor=" + hell(Farbe::Fremd) + ";strokeColor=" + hell(Farbe::FremdStrich) + ";"; break;
+                default: break;
+            }
+            std::string text = "<b>" + html(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</b>";
+            for (const std::string& z : k.zeilen) text += "<br>" + html(kuerze(z, optionen.maxZeilenLaenge));
+            aus += ecke("q" + std::to_string(i), text, stil + "whiteSpace=wrap;html=1;align=left;spacingLeft=6;" + std::string(kSchrift),
+                        eltern(k.gruppe), in(k.gruppe, a.knoten[i]));
+        }
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+        {
+            const AbfrageKante& k = d.kanten[e];
+            std::string stil = "edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;";
+            switch (k.art)
+            {
+                case AbfrageKantenArt::Join: stil += "endArrow=none;"; break;
+                case AbfrageKantenArt::Wo: stil += "endArrow=none;dashed=1;"; break;
+                case AbfrageKantenArt::Korreliert: stil += "endArrow=none;dashed=1;dashPattern=1 3;"; break;
+                case AbfrageKantenArt::Fluss: stil += "endArrow=block;endFill=1;"; break;
+                case AbfrageKantenArt::Schreibt: stil += "endArrow=block;endFill=1;strokeWidth=2;"; break;
+            }
+            aus += kante("e" + std::to_string(e), html(kuerze(k.text, optionen.maxZeilenLaenge)), stil + std::string(kSchrift),
+                         "q" + std::to_string(k.von), "q" + std::to_string(k.nach));
+        }
+        return aus + std::string(kFuss);
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         const FlussAnordnung a = ordneAn(graph, anordnung(optionen));

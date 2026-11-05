@@ -300,6 +300,81 @@ public:
     [[nodiscard]] std::string schreibe(std::span<const Zuordnung>, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle>, const Optionen&) const override { return {}; }
 
+    /// Eine Abfrage: je Rahmen ein cluster (verschachtelt), Knoten mit HTML-Label (der Titel fett, die
+    /// Zeilen links), Join ohne Spitze, WHERE gestrichelt, korreliert gepunktet, Fluss mit Spitze.
+    [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kopf(d.titel, optionen);
+        const auto html = [](std::string_view text) {
+            std::string a;
+            for (const char c : text)
+            {
+                switch (c)
+                {
+                    case '<': a += "&lt;"; break;
+                    case '>': a += "&gt;"; break;
+                    case '&': a += "&amp;"; break;
+                    case '"': a += "&quot;"; break;
+                    case '\n':
+                    case '\r': a += ' '; break;
+                    default: a += c; break;
+                }
+            }
+            return a;
+        };
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const AbfrageKnoten& k = d.knoten[i];
+            std::string label = "<B>" + html(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</B>";
+            for (const std::string& z : k.zeilen) label += "<BR ALIGN=\"LEFT\"/>" + html(kuerze(z, optionen.maxZeilenLaenge));
+            if (!k.zeilen.empty()) label += "<BR ALIGN=\"LEFT\"/>";
+            std::string form = "shape=box";
+            switch (k.art)
+            {
+                case AbfrageKnotenArt::Ergebnis: form = "shape=box, style=\"rounded,filled\", fillcolor=\"" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + "\""; break;
+                case AbfrageKnotenArt::Menge: form = "shape=hexagon"; break;
+                case AbfrageKnotenArt::View: form = "shape=box, style=dashed"; break;
+                case AbfrageKnotenArt::Mit: form = "shape=box, style=rounded"; break;
+                case AbfrageKnotenArt::Abgeleitet: form = "shape=box, style=\"rounded,dashed\""; break;
+                case AbfrageKnotenArt::Funktion: form = "shape=box, peripheries=2"; break;
+                case AbfrageKnotenArt::Ziel: form = "shape=box, penwidth=2"; break;
+                case AbfrageKnotenArt::Fremd:
+                    form = "shape=box, style=filled, fillcolor=\"" + std::string(c2d::diagramm::farbe(Farbe::Fremd)) + "\", color=\"" +
+                           std::string(c2d::diagramm::farbe(Farbe::FremdStrich)) + "\"";
+                    break;
+                default: break;
+            }
+            aus += einzug + "q" + std::to_string(i) + " [" + form + ", label=<" + label + ">];\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph cluster_" + std::to_string(r) + " {\n" + einzug + "    style=dashed; label=\"" +
+                       maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\";\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "}\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        for (const AbfrageKante& k : d.kanten)
+        {
+            aus += "    q" + std::to_string(k.von) + " -> q" + std::to_string(k.nach) + " [";
+            switch (k.art)
+            {
+                case AbfrageKantenArt::Join: aus += "dir=none"; break;
+                case AbfrageKantenArt::Wo: aus += "dir=none, style=dashed"; break;
+                case AbfrageKantenArt::Korreliert: aus += "dir=none, style=dotted"; break;
+                case AbfrageKantenArt::Fluss: aus += "arrowhead=normal"; break;
+                case AbfrageKantenArt::Schreibt: aus += "arrowhead=normal, penwidth=2"; break;
+            }
+            if (!k.text.empty()) aus += ", label=\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"";
+            aus += "];\n";
+        }
+        return aus + "}\n";
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         std::string aus = kopf(graph.titel, optionen);

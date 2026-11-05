@@ -304,6 +304,45 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   wo sie beginnt oder geschrieben wird. Doppelklick: eine Tabelle in Data types, eine Funktion ihr Ablauf.
   Abfragen und Daten auf oberster Ebene (ein Skript) zeigt das Diagramm nicht. Ein erstes Wort, das der
   Leser nicht kennt, gibt eine Meldung.
+- **Abfragen** (Diagram *Queries (n)*, im zweiten Feld welche; `c2d --abfrage`):
+  - **Was eine Abfrage ist:** jede Anweisung mit SELECT, auch in Views, Routinen, Triggern und in SQL in
+    Zeichenketten. Dazu der SELECT-Teil von `INSERT … SELECT`, `CREATE TABLE/VIEW … AS`, `UPDATE … FROM`,
+    `DELETE … USING`, `MERGE … USING` und `SELECT … INTO #t` (T-SQL), mit dem Ziel als letztem Knoten.
+  - **Wie sie heißt:** die View; `routine@zeile`; `funktion@zeile` im Programmcode; sonst `query@zeile`.
+  - **Auch gefunden:** In einem Rumpf ohne `;` (T-SQL) beginnt jede Anweisung am Anfang einer Zeile.
+    `RETURN (SELECT …)`, `IF EXISTS (SELECT …)`, `OPEN c FOR SELECT`, `FOR r IN SELECT … LOOP` und
+    `PERFORM` zählen mit.
+  - **Nicht gezeigt:** Eine Abfrage ohne Quelle und ohne Ziel (`SELECT 1`, `SELECT @x = …`) befragt nichts.
+  - **Knoten:** Jede Quelle ist ein Kasten mit Name und Alias, darunter die Spalten, die die Abfrage
+    von ihr nennt. Eine Spalte ohne Alias gehört der Quelle, die sie laut Schema allein hat, sonst steht
+    sie im Ergebnis unter `unassigned`. Formen je Art:
+    - Tabelle: Kasten.
+    - View: gestrichelt.
+    - Name eines `WITH`: runde Ecken.
+    - Unterabfrage in FROM: runde Ecken, gestrichelt.
+    - Funktion: doppelte Seiten.
+    - Unbekannter Name: grau.
+  - **Kanten:** Eine Bedingung aus `ON` und `WHERE` wird an den äußersten `AND` zerlegt.
+    - Ein Teil, der Spalten genau zweier Quellen vergleicht, ist eine Kante zwischen ihnen. Aus `ON` ist
+      sie durchgezogen und trägt die Art des Joins (`inner`, `left`, `natural`, `using (x)`, `apply` …),
+      aus `WHERE` ist sie gestrichelt (`where: …`).
+    - Ein WHERE-Teil zwischen zwei Quellen, die schon ein Join verbindet, steht an dessen Kante.
+    - Die übrigen Teile sind Filter: `on: …` am Kasten, sonst `where …` im Ergebnis.
+    - Ein Join ohne solche Bedingung (CROSS, NATURAL, USING, APPLY) ist eine Kante zur Quelle davor.
+    - Jede Quelle, von der keine Kante weiterführt, mündet ins Ergebnis.
+  - **Ergebnis je Block:** `select`, `where`, `group by`, `having`, `window`, `order by`, `limit`.
+  - **Unterabfragen:** `WITH`, abgeleitete Tabellen, Unterabfragen in Bedingungen und in der Liste und die
+    Zweige von `UNION`/`INTERSECT`/`EXCEPT` stehen je in einem Rahmen, auch verschachtelt.
+    - Ihr Ergebnis führt dorthin, wo sie gebraucht werden: `exists`, `not exists`, `in`, `=` ins äußere
+      Ergebnis, die Zweige in ein Sechseck `UNION ALL`.
+    - Ein Bezug auf eine Quelle draußen ist eine gepunktete Kante `correlated: …`.
+  - **Bedienung:**
+    - Ein Klick zeigt die Zeile.
+    - Ein Doppelklick führt bei einer Tabelle nach Data types, bei einer View zu ihrer Abfrage.
+    - Rechtsklick im Quelltext, in *Data dependencies* (View, Routine) und am Knoten eines Ablaufs mit SQL:
+      *Query diagram*.
+    - Vorschau, SVG, Mermaid (`flowchart`), DOT, draw.io; csv sagt ab.
+  - **Beispiel:** `beispiele/sql/schule.sql` (unten).
 - **Dialekte:** `sqlite`, `postgres`, `duckdb`, `tsql` zerlegen wie der Kern; in `spark` und `mysql`
   sind `'…'` und `"…"` Zeichenketten mit `\` als Escape (Namen nur in Gravis), und `IF … END IF`,
   `WHILE … END WHILE`, `LOOP`, `REPEAT` zählen als Block. Der Dialekt kommt aus der Projektdatei
@@ -565,7 +604,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax] [--attribute alle|schluessel|keine]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax] [--attribute alle|schluessel|keine]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [--abfrage [<name>|<zeile>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -586,6 +625,9 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   ist die Grenze erreicht, sagt es die Fehlerausgabe), `--aufrufer` (wer ruft), `--beide`,
   `--ohne-fremde`.
   Mehrdeutige Aufrufe nennt die Fehlerausgabe mit Datei und Zeile
+- `--abfrage` zeichnet eine **Abfrage** der Datei (im Projekt mit `--datei`). `--abfrage knapp` wählt
+  nach Name (wie `--liste` sie als `query` nennt), `--abfrage 71` nach Zeile, ohne Wert die erste.
+  csv sagt ab.
 - `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
   ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
   rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
@@ -779,8 +821,21 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   Rückgabetypen, Vorgabewerte, Annotationen und Typ-Parameter stehen nicht im Diagramm; ein zweiter
   Konstruktor ohne Rumpf (`: this(…)`) steht nur als Methode im Kasten. `when`, `if`, `try` tiefer
   in einem Ausdruck bleiben Text. Geprüft nur an eigenen Musterprojekten — fremder Kotlin-Code fehlt.
-- **SQL:** nur das Schema; Views, Routinen und Abfragen (Entscheid S2) kommen noch — in Zeichenketten
-  werden darum nur Anweisungen des Schemas gelesen. Ohne Dialekt ist `"…"` ein Name und `\` kein Escape
+- **SQL:**
+  - **Was noch fehlt:** Prozeduren als Ablauf, die Wahrheitstabelle von `WHERE` und die Zuordnung von
+    `CASE` (Entscheid S2).
+  - **SQL in Zeichenketten:** Ins Datentypen-Diagramm kommt nur das Schema, die übrigen Anweisungen geben
+    Abfragen und Zugriffe.
+  - **Abfragen:**
+    - Ohne Schema im Projekt sind alle Tabellen grau, und eine Spalte ohne Alias gehört keiner Quelle
+      sicher. In TPC-H (`c_custkey = o_custkey`) gibt es darum weder Kanten noch Zuordnung, nur
+      `unassigned`.
+    - Ein Alias der Liste (`count(*) n`, `ORDER BY n`) ist keine Spalte, ein Name dort, den auch eine
+      Quelle hat, schon.
+    - Ein Teil einer Bedingung mit einer Unterabfrage ist ein Filter.
+    - Eine Mengenoperation nennt ihre Spalten nach denen des ersten Zweigs.
+    - Dynamisches SQL (`EXECUTE 'text'`) bleibt außen vor.
+  - **Dialekte:** Ohne Dialekt ist `"…"` ein Name und `\` kein Escape
   (falsch für Spark und MySQL), und ein `IF … THEN` öffnet keine Stufe, ein `END IF` schließt keine
   (Firebird und T-SQL schreiben kein `END IF`). Ein Fremdschlüssel auf eine Tabelle einer anderen Datei
   gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und `LIKE` haben

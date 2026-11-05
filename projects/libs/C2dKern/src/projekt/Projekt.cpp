@@ -285,37 +285,86 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
         mehrereBibliotheken = host.size() > 1 ? host.size() : 0;
     }
 
+    // die Platzhalter wieder, wie sie in der Quelle stehen (`alle`: je Nummer der Text)
+    const auto zurueckIn = [](std::string& s, const std::vector<std::string>& alle) {
+        for (std::size_t p = s.find(kPlatzhalter); p != std::string::npos; p = s.find(kPlatzhalter, p))
+        {
+            std::size_t q = p + kPlatzhalter.size();
+            std::size_t n = 0;
+            while (q < s.size() && s[q] >= '0' && s[q] <= '9') n = n * 10 + static_cast<std::size_t>(s[q++] - '0');
+            if (q >= s.size() || s[q] != '_' || n >= alle.size())
+            {
+                p = q;
+                continue;
+            }
+            s.replace(p, q + 1 - p, alle[n]);
+            p += alle[n].size();
+        }
+    };
+
     for (const sprache::Zeichenkette& z : e.zeichenketten)
     {
         if (z.inhalt.empty()) continue;
         SqlStueck stueck = alsSql(z, text, platzhalter.size());
-        // was eine Funktion des Hosts liest, schreibt, ruft (A4): jede Anweisung, nicht nur das Schema
+        // jede Anweisung, nicht nur das Schema: was eine Funktion des Hosts liest, schreibt, ruft (A4), und
+        // ihre Abfragen (Q1) — je Zeichenkette fuer sich
         if (sprache::beginntMitSql(stueck.text, z.zusammengesetzt))
-            if (modell::Funktion* f = funktionAn(e.einheit, quelle.ort(z.versatz.front()).zeile); f != nullptr)
+        {
+            modell::Funktion* f = funktionAn(e.einheit, quelle.ort(z.versatz.front()).zeile);
+            if (z.zusammengesetzt)
             {
-                if (z.zusammengesetzt)
+                if (f != nullptr)
                     e.meldungen.push_back({Schwere::Hinweis, quelle.ort(z.versatz.front()),
                                            "SQL in a string composed with + is not read"});
-                else
+            }
+            else
+            {
+                sprache::LeseOptionen o = lesen;
+                o.platzhalter = std::string(kPlatzhalter);
+                sprache::Ergebnis s = sprache::sql().lies(stueck.text, name, o);
+                const Zeilen inSql(stueck.text);
+                const auto hostZeile = [&](int zeileImSql) {
+                    return quelle.ort(stueck.woher[std::min(inSql.anfang(zeileImSql), stueck.woher.size() - 1)]).zeile;
+                };
+                const bool sicher = std::find(std::begin(kSqlAufrufe), std::end(kSqlAufrufe),
+                                              std::string_view(z.aufruf)) != std::end(kSqlAufrufe);
+                for (modell::Zugriff zugriff : s.einheit.zugriffe)
                 {
-                    sprache::LeseOptionen o = lesen;
-                    o.platzhalter = std::string(kPlatzhalter);
-                    const sprache::Ergebnis s = sprache::sql().lies(stueck.text, name, o);
-                    const Zeilen inSql(stueck.text);
-                    const bool sicher = std::find(std::begin(kSqlAufrufe), std::end(kSqlAufrufe),
-                                                  std::string_view(z.aufruf)) != std::end(kSqlAufrufe);
-                    for (modell::Zugriff zugriff : s.einheit.zugriffe)
+                    if (f == nullptr) break;
+                    zugriff.zeile = hostZeile(zugriff.zeile);
+                    zugriff.unsicher = !sicher;
+                    const bool schon = std::any_of(f->zugriffe.begin(), f->zugriffe.end(), [&](const modell::Zugriff& x) {
+                        return x.art == zugriff.art && x.ziel == zugriff.ziel && x.imAusdruck == zugriff.imAusdruck;
+                    });
+                    if (!schon) f->zugriffe.push_back(std::move(zugriff));
+                }
+                // die Abfragen: Zeilen der Quelle, Name nach der Funktion, Platzhalter als Text der Quelle
+                std::vector<std::string> alle = platzhalter;
+                alle.insert(alle.end(), stueck.originale.begin(), stueck.originale.end());
+                for (modell::Abfrage& q : s.einheit.abfragen)
+                {
+                    q.zeile = hostZeile(q.zeile);
+                    q.bisZeile = hostZeile(q.bisZeile);
+                    q.name = (f != nullptr ? f->vollerName() : std::string("query")) + "@" + std::to_string(q.zeile);
+                    zurueckIn(q.ziel, alle);
+                    for (modell::AbfrageBlock& b : q.bloecke)
                     {
-                        zugriff.zeile = quelle.ort(stueck.woher[std::min(inSql.anfang(zugriff.zeile),
-                                                                         stueck.woher.size() - 1)]).zeile;
-                        zugriff.unsicher = !sicher;
-                        const bool schon = std::any_of(f->zugriffe.begin(), f->zugriffe.end(), [&](const modell::Zugriff& x) {
-                            return x.art == zugriff.art && x.ziel == zugriff.ziel && x.imAusdruck == zugriff.imAusdruck;
-                        });
-                        if (!schon) f->zugriffe.push_back(std::move(zugriff));
+                        b.zeile = hostZeile(b.zeile);
+                        for (std::string* t : {&b.auswahl, &b.gruppe, &b.ordnung, &b.grenze, &b.fenster, &b.titel})
+                            zurueckIn(*t, alle);
+                        for (modell::AbfrageQuelle& x : b.quellen)
+                        {
+                            x.zeile = hostZeile(x.zeile);
+                            zurueckIn(x.name, alle);
+                            for (modell::Bedingungsteil& t : x.bedingung) zurueckIn(t.text, alle);
+                        }
+                        for (modell::Bedingungsteil& t : b.wo) zurueckIn(t.text, alle);
+                        for (modell::Bedingungsteil& t : b.haben) zurueckIn(t.text, alle);
                     }
+                    e.einheit.abfragen.push_back(std::move(q));
                 }
             }
+        }
         // das Schema (CREATE, ALTER, DROP) aller Zeichenketten als ein Text; eine zusammengesetzte traegt nur
         // ihren Anfang (`"CREATE TABLE " + name`)
         if (!sprache::beginntMitSchema(stueck.text, z.zusammengesetzt)) continue;

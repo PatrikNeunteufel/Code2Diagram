@@ -49,3 +49,45 @@ CREATE TABLE ausweis (
 CREATE UNIQUE INDEX ausweis_je_schueler ON ausweis (schueler_id);
 ALTER TABLE ausweis ADD CONSTRAINT gehoert FOREIGN KEY (schueler_id) REFERENCES schueler (schueler_id);
 ALTER TABLE ausweis ALTER COLUMN schueler_id SET NOT NULL;
+
+-- Abfragen (Diagram > Queries): Joins mit Bedingung, ein Join aus WHERE, WITH, eine korrelierte
+-- Unterabfrage, eine abgeleitete Tabelle, UNION und ein INSERT … SELECT
+
+CREATE VIEW notenliste AS
+SELECT s.name AS schueler, k.titel AS kurs, b.note, l.name AS lehrer
+  FROM schueler s
+  JOIN belegt b ON b.schueler_id = s.schueler_id
+  JOIN kurs k ON k.kurs_id = b.kurs_id
+  LEFT JOIN lehrer l ON l.lehrer_id = k.lehrer_id
+ WHERE b.note IS NOT NULL
+ ORDER BY s.name;
+
+-- der Join steht im WHERE (Komma in FROM)
+SELECT kl.bezeichnung, s.name
+  FROM klasse kl, schueler s
+ WHERE s.klasse_id = kl.klasse_id AND kl.bezeichnung LIKE '5%';
+
+-- WITH und eine korrelierte Unterabfrage: wer in jedem Kurs besser ist als der Schnitt des Kurses
+WITH schnitt AS (
+    SELECT kurs_id, avg(note) AS mittel FROM belegt GROUP BY kurs_id
+)
+SELECT s.name, b.kurs_id, b.note
+  FROM schueler s
+  JOIN belegt b ON b.schueler_id = s.schueler_id
+  JOIN schnitt x ON x.kurs_id = b.kurs_id
+ WHERE b.note < x.mittel
+   AND EXISTS (SELECT 1 FROM ausweis a WHERE a.schueler_id = s.schueler_id AND a.gueltig_bis > current_date);
+
+-- eine abgeleitete Tabelle und UNION
+SELECT t.name, t.rolle FROM (
+    SELECT name, 'teacher' AS rolle FROM lehrer
+    UNION ALL
+    SELECT name, 'pupil' FROM schueler
+) t
+ORDER BY t.name;
+
+-- INSERT … SELECT: wohin die Abfrage schreibt
+INSERT INTO ausweis (ausweis_id, schueler_id, gueltig_bis)
+SELECT s.schueler_id + 1000, s.schueler_id, DATE '2027-07-31'
+  FROM schueler s
+ WHERE NOT EXISTS (SELECT 1 FROM ausweis a WHERE a.schueler_id = s.schueler_id);

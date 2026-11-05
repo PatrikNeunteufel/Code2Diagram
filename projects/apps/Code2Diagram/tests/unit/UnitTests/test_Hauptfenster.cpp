@@ -1083,6 +1083,37 @@ TEST_SUITE("Hauptfenster")
         }
     }
 
+    TEST_CASE("Queries: das zweite Feld, nach Name und Zeile, Klick zeigt die Stelle, Back, Formate")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("CREATE TABLE artikel (artikel_id INTEGER PRIMARY KEY, bezeichnung TEXT);\n"  // 1
+                      "CREATE TABLE bestand (artikel_id INTEGER, menge INTEGER);\n"                  // 2
+                      "CREATE VIEW knapp AS SELECT a.bezeichnung, b.menge FROM artikel a\n"           // 3
+                      "  JOIN bestand b ON b.artikel_id = a.artikel_id WHERE b.menge < 5;\n"          // 4
+                      "\n"                                                                            // 5
+                      "SELECT count(*) FROM bestand;\n",                                              // 6
+                      "s.sql");
+        CHECK(fenster.diagramme().contains("queries"));
+        CHECK(fenster.abfragen() == QStringList{"knapp", "query@6"});
+        CHECK_FALSE(fenster.zeigeAbfrage("gibt_es_nicht"));
+        REQUIRE(fenster.zeigeAbfrage("knapp"));
+        CHECK(fenster.diagramm() == "queries");
+        CHECK(fenster.abfrage() == "knapp");
+        CHECK(fenster.abfrageKnoten() == QStringList{"artikel a", "bestand b", "result", "knapp"});
+        CHECK(fenster.vorschauFormen() == 4);
+        CHECK(fenster.klicke("bestand b"));
+        CHECK(fenster.gezeigteStelle() == "s.sql:4");
+        // nach Zeile, dann zurueck zur View
+        REQUIRE(fenster.zeigeAbfrage("6"));
+        CHECK(fenster.abfrage() == "query@6");
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.abfrage() == "knapp");
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().contains("---|\"inner: b.artikel_id = a.artikel_id\"|"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("Query is not available in csv"));
+    }
+
     TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")
     {
         using namespace c2d::diagramm;

@@ -11,6 +11,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Abfragediagramm.hpp"
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Projekt.hpp"
@@ -64,5 +65,13 @@ struct AbhaengigkeitsErgebnis
 /// Alles einer Datei — ihre Tabellen, Objekte, Funktionen mit SQL — und was sie direkt lesen, schreiben,
 /// rufen oder was sie liest, schreibt, ruft.
 [[nodiscard]] AbhaengigkeitsErgebnis abhaengigkeitenDerDatei(const Projekt& projekt, std::size_t datei);
+
+/// Was das Projekt ueber einen Namen in einer Abfrage weiss (Entscheid Q4): eine Tabelle — erst in der
+/// Datei `datei`, dann im Projekt, ohne Ruecksicht auf Gross/klein, ohne Schema ueber den letzten Teil
+/// (eindeutig) — oder eine View. Gilt, solange das Projekt lebt.
+[[nodiscard]] diagramm::DatenquellenSuche datenquellenIn(const Projekt& projekt, std::size_t datei);
+
+/// Das Diagramm der Abfrage `abfrage` (Stelle in Einheit::abfragen) der Datei `datei`, mit dem Schema des Projekts.
+[[nodiscard]] diagramm::Abfragediagramm abfrageIn(const Projekt& projekt, std::size_t datei, std::size_t abfrage);
 
 }  // namespace c2d::projekt

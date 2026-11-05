@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include "c2d/diagramm/Abfragediagramm.hpp"
 #include "c2d/diagramm/Aufrufgraph.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/ErDiagramm.hpp"
@@ -282,6 +283,11 @@ inline constexpr std::size_t kAtomZeichen = 30;
 /// der Dateien, Fremd und Makro im letzten; so umfasst kein Rahmen einen fremden
 /// Knoten. `gruppen` je Datei. Die Legende nennt die Bedingungen der Kanten mit Farbe.
 [[nodiscard]] FlussAnordnung ordneAn(const Aufrufgraph& graph, const AnordnungOptionen& optionen = {});
+
+/// Eine Abfrage ordnet sich wie ein Flussdiagramm: je Knoten ein Knoten (sein Titel, darunter seine
+/// Zeilen), je Kante eine Kante (beschriftet mit ihrem Text), je Rahmen eine Gruppe — verschachtelt wie
+/// die Unterabfragen. `gruppen` je Rahmen, in der Reihenfolge des Modells.
+[[nodiscard]] FlussAnordnung ordneAn(const Abfragediagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Wie viele Zeichen des Titels in den Rahmen `rahmen` passen (mindestens ein
 /// paar): wer zeichnet, kuerzt ihn darauf — ganz steht er in der Legende.
