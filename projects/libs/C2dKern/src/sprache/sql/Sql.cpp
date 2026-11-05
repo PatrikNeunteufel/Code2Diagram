@@ -79,6 +79,79 @@ constexpr lexer::Sprachtabelle kTabelle{
     .dollarZeichenketten = true,
 };
 
+/// MySQL und Spark (Databricks): `'…'` und `"…"` sind Zeichenketten, `\` maskiert; Namen nur in Gravis.
+constexpr lexer::Sprachtabelle kTabelleMitRueckstrich{
+    .schluesselwoerter = kSchluesselwoerter,
+    .operatoren = kOperatoren,
+    .zeilenKommentar = "--",
+    .blockKommentarAuf = "/*",
+    .blockKommentarZu = "*/",
+    .zeichenkettenBegrenzer = "'\"",
+    .zeichenBegrenzer = "",
+    .zeichenkettenVorsaetze = kVorsaetze,
+    .namensZeichen = "@$",
+    .verschachtelteKommentare = true,
+    .schluesselwoerterOhneFall = true,
+    .verdoppelteBegrenzer = true,
+    .escapeMitRueckstrich = true,
+    .namensBegrenzer = "`",
+};
+
+/// Ein Dialekt (Entscheid S3): wie der Text zerlegt wird und ob Schleifen und IF ein eigenes END haben.
+struct Dialekt
+{
+    std::string_view name;
+    const lexer::Sprachtabelle* tabelle;
+    /// `IF … THEN … END IF`, `WHILE … DO … END WHILE`, `LOOP … END LOOP`, `REPEAT … END REPEAT` (MySQL,
+    /// Spark): sie oeffnen eine Stufe, die ihr END schliesst. Sonst nur BEGIN und CASE (T-SQL, Firebird).
+    bool endeMitArt;
+};
+
+constexpr Dialekt kKern{"", &kTabelle, false};
+
+constexpr Dialekt kDialekte[] = {
+    {"sqlite", &kTabelle, false},
+    {"postgres", &kTabelle, false},  // Routinen in $$…$$: ihr Rumpf ist eine Zeichenkette
+    {"duckdb", &kTabelle, false},
+    {"spark", &kTabelleMitRueckstrich, true},
+    {"mysql", &kTabelleMitRueckstrich, true},
+    {"tsql", &kTabelle, false},
+};
+
+constexpr std::string_view kDialektNamen[] = {"sqlite", "postgres", "duckdb", "spark", "mysql", "tsql"};
+
+/// Eine Zeile, die ein Werkzeug an den Anfang der Datei schreibt und die den Dialekt belegt (Entscheid E2):
+/// im Kommentar vor der ersten Anweisung.
+struct Kopf
+{
+    std::string_view zeile;
+    std::string_view dialekt;
+};
+
+constexpr Kopf kKoepfe[] = {
+    {"-- Databricks notebook source", "spark"},
+    {"-- PostgreSQL database dump", "postgres"},
+};
+
+/// Der Dialekt, den ein Kopf der Datei belegt; leer = keiner.
+std::string_view dialektAusKopf(std::string_view text)
+{
+    if (text.starts_with("\xEF\xBB\xBF")) text.remove_prefix(3);
+    while (!text.empty())
+    {
+        const std::size_t ende = text.find('\n');
+        std::string_view zeile = text.substr(0, ende);
+        while (!zeile.empty() && (zeile.back() == '\r' || zeile.back() == ' ' || zeile.back() == '\t')) zeile.remove_suffix(1);
+        while (!zeile.empty() && (zeile.front() == ' ' || zeile.front() == '\t')) zeile.remove_prefix(1);
+        if (!zeile.empty() && !zeile.starts_with("--")) return {};  // die erste Anweisung
+        for (const Kopf& k : kKoepfe)
+            if (zeile == k.zeile) return k.dialekt;
+        if (ende == std::string_view::npos) break;
+        text.remove_prefix(ende + 1);
+    }
+    return {};
+}
+
 /// Die ersten Woerter einer Anweisung, die der Leser kennt und die nichts zum Schema beitragen:
 /// Abfragen und Daten, Rechte, Transaktionen, Einstellungen, Befehle der Werkzeuge — und was in
 /// einer Routine ohne `BEGIN … END` als eigene Anweisung dasteht.
@@ -220,7 +293,10 @@ std::string ohneBegrenzer(std::string_view text)
 class SqlLeser final : public Leser
 {
 public:
-    SqlLeser(std::string_view text, Ergebnis& aus) : Leser(text, kTabelle, aus) {}
+    SqlLeser(std::string_view text, const Dialekt& dialekt, Ergebnis& aus)
+        : Leser(text, *dialekt.tabelle, aus), m_dialekt(dialekt)
+    {
+    }
 
     void liesAlles()
     {
@@ -336,21 +412,38 @@ private:
     }
 
     /// Oeffnet das Wort bei j in einem Block eine Stufe, die ein `END` schliesst? `BEGIN` (keine
-    /// Transaktion) und `CASE`. Ein `IF`, `WHILE`, `LOOP` … zaehlt nicht: MySQL, PL/pgSQL und Spark
-    /// schliessen es mit `END IF`, `END WHILE` …, Firebird und T-SQL gar nicht (`IF … THEN BEGIN … END`) —
-    /// darum schliesst ein `END IF` keine Stufe (anweisungsEnde).
+    /// Transaktion) und `CASE`. Im Dialekt mit endeMitArt (MySQL, Spark) auch `LOOP`, `REPEAT`,
+    /// `IF … THEN`, `WHILE … DO`, `FOR … DO` (THEN bzw. DO vor dem naechsten `;`). Sonst zaehlt ein IF
+    /// nicht: Firebird und T-SQL schliessen es nicht (`IF … THEN BEGIN … END`), und ohne Dialekt laesst
+    /// sich das von MySQL nicht unterscheiden — dann schliesst ein `END IF` keine Stufe (schliesstSchleife).
     [[nodiscard]] bool oeffnetStufe(std::size_t j) const
     {
         if (wort(j, "begin")) return !beginntTransaktion(j);
-        return wort(j, "case");
+        if (wort(j, "case")) return true;
+        if (!m_dialekt.endeMitArt) return false;
+        if (wort(j, "loop") || wort(j, "repeat")) return true;
+        const bool wenn = wort(j, "if");
+        if (!wenn && !wort(j, "while") && !wort(j, "for")) return false;
+        for (std::size_t k = j + 1; !amEnde(k) && !tok(k).istOp(";");)
+        {
+            if (oeffnet(tok(k)))
+            {
+                k = nachKlammer(k);
+                continue;
+            }
+            if (wort(k, wenn ? "then" : "do")) return true;
+            if (wort(k, "begin")) return false;
+            ++k;
+        }
+        return false;
     }
 
     /// `END` bei j schliesst eine Schleife oder ein IF (`END IF`, `END LOOP`, `END WHILE`, `END REPEAT`,
-    /// `END FOR`), keine Stufe.
+    /// `END FOR`), keine Stufe — ausser im Dialekt mit endeMitArt, wo sie eine geoeffnet haben.
     [[nodiscard]] bool schliesstSchleife(std::size_t j) const
     {
-        return wort(j + 1, "if") || wort(j + 1, "loop") || wort(j + 1, "while") || wort(j + 1, "repeat") ||
-               wort(j + 1, "for");
+        return !m_dialekt.endeMitArt && (wort(j + 1, "if") || wort(j + 1, "loop") || wort(j + 1, "while") ||
+                                         wort(j + 1, "repeat") || wort(j + 1, "for"));
     }
 
     /// Steht bei a eine Anweisung, in der Bloecke stehen koennen — eine Routine (das erste Gebilde
@@ -420,7 +513,9 @@ private:
                     const bool schleife = schliesstSchleife(j);
                     if (!schleife) --tiefe;
                     // das Wort dahinter gehoert zum END: eine Marke, IF, LOOP …, CASE, TRY, CATCH (T-SQL)
-                    const bool dazu = schleife || wort(j + 1, "case") || wort(j + 1, "try") || wort(j + 1, "catch") ||
+                    const bool dazu = schleife || wort(j + 1, "if") || wort(j + 1, "loop") || wort(j + 1, "while") ||
+                                      wort(j + 1, "repeat") || wort(j + 1, "for") || wort(j + 1, "case") ||
+                                      wort(j + 1, "try") || wort(j + 1, "catch") ||
                                       (tok(j + 1).art == TokenArt::Bezeichner && !goZeile(j + 1));
                     if (dazu && tok(j + 1).ort.zeile == tok(j).ort.zeile) ++j;
                 }
@@ -746,6 +841,7 @@ private:
             }
     }
 
+    const Dialekt& m_dialekt;
     std::string m_trenner = ";";
     /// Je Art, die erkannt, aber noch nicht gezeigt wird: wie oft, und wo zuerst.
     std::map<std::string_view, std::pair<int, quelle::Position>> m_gezaehlt;
@@ -758,14 +854,40 @@ public:
     [[nodiscard]] std::span<const std::string_view> endungen() const override { return kEndungen; }
     [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return kTabelle; }
 
+    /// Der Dialekt: aus den Optionen (Projektdatei, Host), sonst aus einem Kopf der Datei (Entscheid E2),
+    /// sonst der allgemeine Kern — mit einem Hinweis, wie man ihn setzt.
     [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
-                                const LeseOptionen& /*optionen*/) const override
+                                const LeseOptionen& optionen) const override
     {
         Ergebnis ergebnis;
         ergebnis.einheit.name = std::string(einheitName);
-        SqlLeser(text, ergebnis).liesAlles();
+        const Dialekt* dialekt = &kKern;
+        const std::string_view gewaehlt = !optionen.dialekt.empty() ? std::string_view(optionen.dialekt) : dialektAusKopf(text);
+        if (!gewaehlt.empty())
+        {
+            const auto d = std::find_if(std::begin(kDialekte), std::end(kDialekte),
+                                        [&](const Dialekt& x) { return x.name == gewaehlt; });
+            if (d != std::end(kDialekte))
+                dialekt = &*d;
+            else
+                ergebnis.meldungen.push_back({quelle::Schwere::Warnung, {},
+                                              "unknown SQL dialect '" + std::string(gewaehlt) +
+                                                  "' - read as common SQL (known: sqlite, postgres, duckdb, spark, mysql, tsql)"});
+        }
+        else
+            ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {},
+                                          "SQL dialect not known - read as common SQL (\"sql\" in code2diagram.json sets it)"});
+        SqlLeser(text, *dialekt, ergebnis).liesAlles();
+        ergebnis.zeichenketten.clear();  // SQL in den Zeichenketten von SQL sucht niemand
         return ergebnis;
     }
+};
+
+/// Woerter zwischen CREATE (DROP, ALTER) und dem Gebilde, die beginntMitSql erlaubt.
+constexpr std::string_view kVorGebilde[] = {
+    "or",      "replace",  "alter",     "refresh",  "temp",      "temporary", "global",     "local",
+    "unlogged", "external", "unique",   "clustered", "nonclustered", "virtual", "materialized", "streaming",
+    "live",    "recursive", "secure",   "transient", "volatile",  "if",        "not",        "exists",
 };
 
 }  // namespace
@@ -774,6 +896,96 @@ const Sprache& sql()
 {
     static const Sql sprache;
     return sprache;
+}
+
+std::span<const std::string_view> sqlDialekte()
+{
+    return kDialektNamen;
+}
+
+bool beginntMitSchema(std::string_view text, bool nurAnfang)
+{
+    std::size_t p = 0;
+    while (p < text.size() && (text[p] == ' ' || text[p] == '\t' || text[p] == '\r' || text[p] == '\n')) ++p;
+    std::size_t q = p;
+    while (q < text.size() && ((text[q] >= 'a' && text[q] <= 'z') || (text[q] >= 'A' && text[q] <= 'Z'))) ++q;
+    const std::string erstes = klein(text.substr(p, q - p));
+    return (erstes == "create" || erstes == "alter" || erstes == "drop") && beginntMitSql(text, nurAnfang);
+}
+
+bool beginntMitSql(std::string_view text, bool nurAnfang)
+{
+    // vorab ohne Lexer: das erste Wort (die meisten Zeichenketten sind kein SQL)
+    std::size_t p = 0;
+    while (p < text.size() && (text[p] == ' ' || text[p] == '\t' || text[p] == '\r' || text[p] == '\n')) ++p;
+    std::size_t q = p;
+    while (q < text.size() && ((text[q] >= 'a' && text[q] <= 'z') || (text[q] >= 'A' && text[q] <= 'Z'))) ++q;
+    static constexpr std::string_view kErste[] = {"select", "insert", "replace", "merge", "update", "delete",
+                                                  "with",   "pragma", "create",  "alter", "drop"};
+    if (q == p || !enthaelt(kErste, klein(text.substr(p, q - p)))) return false;
+
+    std::vector<quelle::Meldung> meldungen;
+    const std::vector<lexer::Token> t = lexer::zerlege(text.substr(0, std::min<std::size_t>(text.size(), 4000)),
+                                                       kTabelle, meldungen);
+    const auto w = [&](std::size_t i) {
+        return i < t.size() && (t[i].art == lexer::TokenArt::Schluesselwort || t[i].art == lexer::TokenArt::Bezeichner)
+                   ? klein(t[i].text)
+                   : std::string();
+    };
+    const auto spaeter = [&](std::string_view wort) {
+        for (std::size_t i = 1; i < t.size(); ++i)
+            if (w(i) == wort) return true;
+        return false;
+    };
+    const std::string a = w(0);
+    if (a == "select") return spaeter("from");
+    if (a == "insert" || a == "replace" || a == "merge")
+    {
+        // `INSERT [OR x] INTO name (…)|VALUES|SELECT|DEFAULT|SET` — nicht „Insert into the selected list“
+        std::size_t k = a == "insert" && w(1) == "or" ? 3 : 1;
+        if (w(k) != "into" || w(k + 1).empty()) return false;
+        k += 1;
+        while (k + 2 < t.size() && t[k + 1].istOp(".") && !w(k + 2).empty()) k += 2;
+        const std::string danach = w(k + 1);
+        return (k + 1 < t.size() && t[k + 1].istOp("(")) || danach == "values" || danach == "select" ||
+               danach == "default" || danach == "set" || danach == "with" || danach == "using";
+    }
+    if (a == "update") return w(2) == "set" || (t.size() > 4 && w(4) == "set");  // `UPDATE t SET`, `UPDATE s.t SET`
+    if (a == "delete") return w(1) == "from";
+    if (a == "with") return (w(2) == "as" || w(1) == "recursive") && spaeter("select");
+    if (a == "pragma") return t.size() > 2;
+    if (a == "create" || a == "alter" || a == "drop")
+    {
+        for (std::size_t i = 1; i < t.size() && i < 12; ++i)
+        {
+            const std::string x = w(i);
+            if (enthaelt(kVorGebilde, x)) continue;
+            if (!std::any_of(std::begin(kGebilde), std::end(kGebilde), [&](const GebildeWort& g) { return g.wort == x; }))
+                return false;
+            if (nurAnfang) return true;
+            // hinter dem Gebilde ein Name (auch mit Schema), dann, was zu der Anweisung passt —
+            // sonst ist es ein Satz („Create table for users“)
+            std::size_t k = i + 1;
+            while (w(k) == "if" || w(k) == "not" || w(k) == "exists") ++k;
+            if (w(k).empty()) return false;
+            while (k + 2 < t.size() && t[k + 1].istOp(".") && !w(k + 2).empty()) k += 2;
+            const std::string danach = w(k + 1);
+            const bool klammer = k + 1 < t.size() && t[k + 1].istOp("(");
+            if (a == "drop")
+                return k + 1 >= t.size() || t[k + 1].art == lexer::TokenArt::Ende || t[k + 1].istOp(";") ||
+                       danach == "cascade" || danach == "restrict";
+            if (a == "alter")
+                return danach == "add" || danach == "drop" || danach == "alter" || danach == "rename" ||
+                       danach == "owner" || danach == "set" || danach == "with";
+            if (x == "table") return klammer || danach == "as" || danach == "like" || danach == "using";
+            if (x == "view") return spaeter("as");
+            if (x == "index") return danach == "on";
+            if (x == "trigger")
+                return danach == "before" || danach == "after" || danach == "instead" || danach == "for" || danach == "on";
+            return klammer || danach == "as";
+        }
+    }
+    return false;
 }
 
 }  // namespace c2d::sprache

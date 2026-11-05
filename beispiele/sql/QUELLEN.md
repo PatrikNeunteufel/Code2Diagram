@@ -20,7 +20,9 @@ Zusammen 988 Dateien, rund 20 MB. Auf Wunsch Patriks auch dbdemos (Option b), ob
 Nutzung an die Databricks-Dienste bindet — nicht weitergeben, nicht ins Repo.
 
 Neu laden: `python -I beispiele/sql/lade_proben.py beispiele/sql/fremd [ordner …]` (Tabelle
-`QUELLEN` im Skript).
+`QUELLEN` im Skript). Es legt in die Ordner mit einem Dialekt eine `code2diagram.json` (`"sql"`:
+spark-sql-tests und dbdemos `spark`, wwi-ssdt `tsql`, pagila `postgres`, duckdb-tpch `duckdb`);
+Chinook und Sakila tragen mehrere Dialekte und bleiben ohne.
 
 Eigene Event-Logs von Spark: `beispiele/spark/eventlogs_aufnehmen.py` (nach
 `beispiele/spark/fremd/`, unversioniert).

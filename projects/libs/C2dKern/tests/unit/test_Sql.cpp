@@ -24,9 +24,12 @@ using lexer::TokenArt;
 namespace
 {
 
-sprache::Ergebnis sq(std::string_view text)
+/// Mit einem Dialekt, der wie der Kern zerlegt (sonst kaeme in jedem Fall der Hinweis auf den Dialekt).
+sprache::Ergebnis sq(std::string_view text, std::string dialekt = "sqlite")
 {
-    return sprache::sql().lies(text, "T.sql");
+    sprache::LeseOptionen o;
+    o.dialekt = std::move(dialekt);
+    return sprache::sql().lies(text, "T.sql", o);
 }
 
 std::vector<Token> token(std::string_view text)

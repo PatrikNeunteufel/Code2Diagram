@@ -27,8 +27,12 @@ QUELLEN = [
 ]
 LIZENZEN = {
     "spark-sql-tests": "LICENSE", "spark-examples": "LICENSE", "wwi-ssdt": "license.txt", "chinook": "LICENSE.md",
-    "sakila": "LICENSE", "duckdb-tpch": "LICENSE", "dbdemos": "LICENSE", "pagila": "README.md",
+    "sakila": "LICENSE", "duckdb-tpch": "LICENSE", "dbdemos": "LICENSE", "pagila": "README",
 }
+# Je Quelle mit einem Dialekt eine Projektdatei (Entscheid S3): `c2d <ordner>` liest sie dann so.
+# Chinook und Sakila tragen mehrere Dialekte in einem Ordner: ohne.
+DIALEKTE = {"spark-sql-tests": "spark", "dbdemos": "spark", "wwi-ssdt": "tsql", "pagila": "postgres",
+            "duckdb-tpch": "duckdb"}
 
 
 def hole(url: str) -> bytes:
@@ -69,9 +73,11 @@ def main() -> int:
             summe += len(daten)
         try:
             lizenz = hole(f"https://raw.githubusercontent.com/{repo}/{zweig}/{LIZENZEN[ordner]}")
-            (ziel / ordner / ("_README_der_Quelle.md" if ordner == "pagila" else "_LIZENZ.txt")).write_bytes(lizenz)
+            (ziel / ordner / ("_README_der_Quelle.txt" if ordner == "pagila" else "_LIZENZ.txt")).write_bytes(lizenz)
         except RuntimeError as fehler:
             print(f"  keine Lizenzdatei: {fehler}", file=sys.stderr)
+        if ordner in DIALEKTE:
+            (ziel / ordner / "code2diagram.json").write_text(f'{{ "sql": "{DIALEKTE[ordner]}" }}\n', encoding="utf-8")
         print(f"{ordner}: {len(dateien)} Dateien, {summe / 1e6:.2f} MB ({repo} {zweig}:{pfad or '/'})")
     return 0
 

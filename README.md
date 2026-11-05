@@ -272,6 +272,22 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
 - Views, Funktionen, Prozeduren, Trigger und Makros werden erkannt und gezählt, aber noch nicht
   gezeigt (je Datei ein Hinweis); Abfragen und Daten gehören nicht zum Schema. Ein erstes Wort, das der
   Leser nicht kennt, gibt eine Meldung.
+- **Dialekte:** `sqlite`, `postgres`, `duckdb`, `tsql` zerlegen wie der Kern; in `spark` und `mysql`
+  sind `'…'` und `"…"` Zeichenketten mit `\` als Escape (Namen nur in Gravis), und `IF … END IF`,
+  `WHILE … END WHILE`, `LOOP`, `REPEAT` zählen als Block. Der Dialekt kommt aus der Projektdatei
+  (`"sql": "duckdb"`), sonst aus dem Kopf der Datei (`-- Databricks notebook source` → spark,
+  `-- PostgreSQL database dump` → postgres), sonst gilt der allgemeine Kern mit einem Hinweis.
+- **SQL in Zeichenketten** der anderen Sprachen: jede Zeichenkette, die mit einer Anweisung des Schemas
+  beginnt (`CREATE TABLE name (…`, `ALTER TABLE name ADD …`; kein Satz wie „Create table for users“),
+  wird gelesen — alle einer Datei als ein Text, so findet ein Fremdschlüssel seine Tabelle auch in einer
+  anderen Zeichenkette. Die Tabellen stehen in *Data types* neben den Klassen der Datei, ein Klick zeigt
+  die Zeile im Quelltext. Mehrere Literale hintereinander (C, C++, Python) sind eine Zeichenkette;
+  Escapes, `r"…"`, `R"(…)"`, `@"…"` werden aufgelöst. Eine zusammengesetzte (`"…" + x`, `f"{x}"`,
+  `${x}`, `$x` in Kotlin, `.arg(…)`, `.format(…)`, `%`) bleibt außen vor, mit Hinweis. Der Dialekt:
+  aus der Projektdatei, sonst aus der Bibliothek, die die Datei einbindet (`import duckdb`, `sqlite3`,
+  `psycopg`, `pyspark`, `pymysql`, `using Npgsql`, `Microsoft.Data.SqlClient` …) oder aus dem Namen
+  eines Qt-Treibers (`"QSQLITE"`); zeigen zwei Bibliotheken verschiedene, gilt der Kern (Hinweis).
+  Beispiel: `beispiele/sql/lager_db.py`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -721,13 +737,14 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   Rückgabetypen, Vorgabewerte, Annotationen und Typ-Parameter stehen nicht im Diagramm; ein zweiter
   Konstruktor ohne Rumpf (`: this(…)`) steht nur als Methode im Kasten. `when`, `if`, `try` tiefer
   in einem Ausdruck bleiben Text. Geprüft nur an eigenen Musterprojekten — fremder Kotlin-Code fehlt.
-- **SQL:** nur das Schema; Views, Routinen, Abfragen (Entscheid S2) und SQL in Zeichenketten anderer
-  Sprachen (S1) kommen noch. Die **Dialekte** unterscheidet der Leser noch nicht (S3): `"…"` ist immer
-  ein Name, `\` nie ein Escape — in Spark/Databricks (dort ist `"…"` eine Zeichenkette) und MySQL
-  (`'it\'s'`) liest er solche Zeichenketten falsch. Ein Fremdschlüssel auf eine Tabelle einer anderen
-  Datei gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und
-  `LIKE` haben keine Spalten (Hinweis). Ein `IF … THEN` ohne `END IF` und ohne `BEGIN` öffnet keine
-  Stufe, ein `END IF` schließt keine — nötig, solange der Dialekt nicht bekannt ist.
+- **SQL:** nur das Schema; Views, Routinen und Abfragen (Entscheid S2) kommen noch — in Zeichenketten
+  werden darum nur Anweisungen des Schemas gelesen. Ohne Dialekt ist `"…"` ein Name und `\` kein Escape
+  (falsch für Spark und MySQL), und ein `IF … THEN` öffnet keine Stufe, ein `END IF` schließt keine
+  (Firebird und T-SQL schreiben kein `END IF`). Ein Fremdschlüssel auf eine Tabelle einer anderen Datei
+  gibt einen Hinweis und keine Kante (Datentypen je Datei). `CREATE TABLE … AS SELECT` und `LIKE` haben
+  keine Spalten (Hinweis). Eine Vorlage, die erst zur Laufzeit ausgefüllt wird (UART baut sein Schema
+  mit `QStringLiteral("… %1").arg(…)` je Datenbank), bleibt außen vor. Stehen mehrere Literale auf
+  verschiedenen Zeilen, gilt ein Zeilenwechsel dazwischen (für SQL Leerraum).
 - **Zustandsautomaten nur als `switch`:** ein Automat aus `if`-Ketten
   (`if (s == A) … s = B;`), über eine Funktion (`setze_zustand(B)`) oder über eine Tabelle von
   Funktionszeigern wird nicht erkannt. Ein berechneter Wert (`s = ok ? A : B`) wird ein Zustand

@@ -118,6 +118,8 @@ struct Sprachtabelle
     /// Zeichenketten wie in SQL: ein verdoppelter Begrenzer ist ein Zeichen darin (`'it''s'`), `\`
     /// ist kein Escape, sie laufen ueber Zeilen.
     bool verdoppelteBegrenzer = false;
+    /// Nur mit verdoppelteBegrenzer: `\` maskiert doch das naechste Zeichen (`'it\'s'` — MySQL, Spark).
+    bool escapeMitRueckstrich = false;
     /// Zeichen, die einen Namen in Begrenzern oeffnen — SQL `"Album"`, MySQL `` `x` ``, T-SQL `[x]`
     /// (schliesst mit `]`); ein verdoppelter schliessender ist ein Zeichen darin. Ein Token der Art
     /// Bezeichner, samt Begrenzern, in einer Zeile. `[` nur, wo kein Wert davor steht und gleich ein

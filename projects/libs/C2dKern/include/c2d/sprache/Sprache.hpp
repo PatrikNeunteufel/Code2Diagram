@@ -59,6 +59,21 @@ struct LeseOptionen
     bool bereiche = false;
     /// Gelten zusaetzlich zu den #define der Datei, vom Anfang der Datei an.
     std::vector<Definition> definitionen;
+    /// Nur SQL: der Dialekt (sqlDialekte); leer = nicht bekannt — dann gilt ein eindeutiger Kopf der
+    /// Datei (`-- Databricks notebook source`), sonst der allgemeine Kern mit einem Hinweis.
+    std::string dialekt;
+};
+
+/// Eine Zeichenkette der Quelle — ein Literal oder mehrere unmittelbar hintereinander, die die Sprache
+/// verbindet (C `"a" "b"`, Python): ihr Inhalt ohne Vorsatz, Begrenzer und Escapes, und je Byte des
+/// Inhalts die Stelle (Versatz in Bytes) des Zeichens der Quelle, aus dem es kommt.
+struct Zeichenkette
+{
+    std::string inhalt;
+    std::vector<std::size_t> versatz;  ///< so lang wie inhalt
+    /// Mit `+` an etwas anderes gehaengt oder mit eingebetteten Ausdruecken (`f"…{x}"`, `${x}`): der
+    /// Inhalt ist nur ein Teil dessen, was zur Laufzeit dasteht.
+    bool zusammengesetzt = false;
 };
 
 // Die Beschreibung der bedingten Uebersetzung gehoert zum Codemodell (modell/Code.hpp):
@@ -95,6 +110,9 @@ struct Ergebnis
     /// will, gibt sie in LeseOptionen::definitionen an. In der Reihenfolge des
     /// Texts, jeder einmal.
     std::vector<std::string> unbekannteNamen;
+    /// Die Zeichenketten des gelesenen Texts, in seiner Reihenfolge (bei bedingter Uebersetzung nur die
+    /// der Zweige, die gelten) — darin sucht das Projekt SQL (Entscheid S1).
+    std::vector<Zeichenkette> zeichenketten;
 };
 
 class Sprache
@@ -202,5 +220,19 @@ public:
 /// erkannt und noch nicht gezeigt (Hinweis). Namen ohne Ruecksicht auf Gross/klein, ausser in
 /// Begrenzern. Kein Praeprozessor; LeseOptionen gelten nicht.
 [[nodiscard]] const Sprache& sql();
+
+/// Die Dialekte von SQL, wie LeseOptionen::dialekt und die Projektdatei (`"sql"`) sie nennen: `sqlite`,
+/// `postgres`, `duckdb`, `spark`, `mysql`, `tsql`.
+[[nodiscard]] std::span<const std::string_view> sqlDialekte();
+
+/// Beginnt der Text wie eine Anweisung in SQL — `SELECT … FROM`, `INSERT INTO`, `UPDATE … SET`,
+/// `DELETE FROM`, `CREATE [OR REPLACE] … TABLE|VIEW|INDEX|TRIGGER|…`, `ALTER TABLE`, `DROP TABLE|…`,
+/// `WITH name AS (`, `PRAGMA`? Fuer SQL in Zeichenketten: ein Satz wie „Delete the file“ ist es nicht.
+/// `nurAnfang`: bei CREATE, ALTER, DROP genuegt das Gebilde (`CREATE TABLE `) — fuer den Anfang einer
+/// zusammengesetzten Zeichenkette, deren Rest erst zur Laufzeit dasteht.
+[[nodiscard]] bool beginntMitSql(std::string_view text, bool nurAnfang = false);
+
+/// Wie beginntMitSql, und die Anweisung gehoert zum Schema: `CREATE`, `ALTER`, `DROP`.
+[[nodiscard]] bool beginntMitSchema(std::string_view text, bool nurAnfang = false);
 
 }  // namespace c2d::sprache

@@ -172,6 +172,11 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
             vor(1);
             while (i < text.size())
             {
+                if (sprache.escapeMitRueckstrich && text[i] == '\\' && i + 1 < text.size())
+                {
+                    vor(2);
+                    continue;
+                }
                 if (text[i] == c)
                 {
                     if (text.substr(i + 1, 1) == std::string_view(&c, 1))

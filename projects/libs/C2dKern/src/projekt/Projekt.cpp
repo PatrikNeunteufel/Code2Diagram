@@ -103,16 +103,182 @@ sprache::Definition alsDefinition(const modell::Makro& m)
     return {m.name, wert};
 }
 
+/// Woran der Host-Code den Dialekt seines SQL zeigt (Entscheid S3): eine Einbindung, die so heisst oder
+/// so beginnt (`import duckdb`, `from pyspark.sql import …`, `using Npgsql;`), oder — Qt — der Name des
+/// Treibers als Zeichenkette (`QSqlDatabase::addDatabase("QSQLITE")`).
+struct SqlBibliothek
+{
+    std::string_view name;
+    std::string_view dialekt;
+};
+
+constexpr SqlBibliothek kSqlBibliotheken[] = {
+    {"duckdb", "duckdb"},
+    {"sqlite3", "sqlite"},
+    {"aiosqlite", "sqlite"},
+    {"psycopg", "postgres"},
+    {"psycopg2", "postgres"},
+    {"asyncpg", "postgres"},
+    {"pyspark", "spark"},
+    {"databricks", "spark"},
+    {"pymysql", "mysql"},
+    {"MySQLdb", "mysql"},
+    {"mysql", "mysql"},  // auch mysql.connector
+    {"Npgsql", "postgres"},
+    {"Microsoft.Data.Sqlite", "sqlite"},
+    {"System.Data.SQLite", "sqlite"},
+    {"Microsoft.Data.SqlClient", "tsql"},
+    {"System.Data.SqlClient", "tsql"},
+    {"MySql.Data", "mysql"},
+    {"MySqlConnector", "mysql"},
+    {"better-sqlite3", "sqlite"},
+    {"pg", "postgres"},
+    {"mysql2", "mysql"},
+    {"android.database.sqlite", "sqlite"},
+    {"androidx.room", "sqlite"},
+    {"androidx.sqlite", "sqlite"},
+    {"org.sqlite", "sqlite"},
+    {"org.postgresql", "postgres"},
+};
+
+constexpr SqlBibliothek kQtTreiber[] = {{"QSQLITE", "sqlite"}, {"QPSQL", "postgres"}, {"QMYSQL", "mysql"}};
+
+/// Die Dialekte, die der Host-Code zeigt, jeder einmal, mit dem, woran.
+std::vector<std::pair<std::string_view, std::string>> dialekteVonHost(const sprache::Ergebnis& e)
+{
+    std::vector<std::pair<std::string_view, std::string>> aus;
+    const auto nimm = [&](std::string_view dialekt, std::string woran) {
+        if (std::none_of(aus.begin(), aus.end(), [&](const auto& x) { return x.first == dialekt; }))
+            aus.emplace_back(dialekt, std::move(woran));
+    };
+    for (const modell::Einbindung& b : e.einheit.einbindungen)
+    {
+        std::string_view ziel = b.ziel;
+        while (!ziel.empty() && (ziel.front() == '"' || ziel.front() == '\'')) ziel.remove_prefix(1);
+        while (!ziel.empty() && (ziel.back() == '"' || ziel.back() == '\'' || ziel.back() == ';')) ziel.remove_suffix(1);
+        for (const SqlBibliothek& s : kSqlBibliotheken)
+            if (ziel == s.name || (ziel.starts_with(s.name) && ziel.size() > s.name.size() &&
+                                   std::string_view(".:/").find(ziel[s.name.size()]) != std::string_view::npos))
+                nimm(s.dialekt, std::string(s.name));
+    }
+    for (const sprache::Zeichenkette& z : e.zeichenketten)
+        for (const SqlBibliothek& s : kQtTreiber)
+            if (z.inhalt == s.name) nimm(s.dialekt, std::string(s.name));
+    return aus;
+}
+
+/// Die Stelle (Zeile, Spalte) eines Versatzes in einem Text.
+class Zeilen
+{
+public:
+    explicit Zeilen(std::string_view text)
+    {
+        m_anfang.push_back(0);
+        for (std::size_t i = 0; i < text.size(); ++i)
+            if (text[i] == '\n') m_anfang.push_back(i + 1);
+    }
+
+    [[nodiscard]] quelle::Position ort(std::size_t versatz) const
+    {
+        const auto z = std::upper_bound(m_anfang.begin(), m_anfang.end(), versatz) - 1;
+        return {versatz, static_cast<int>(z - m_anfang.begin()) + 1, static_cast<int>(versatz - *z) + 1};
+    }
+
+    /// Wo Zeile z (ab 1) beginnt.
+    [[nodiscard]] std::size_t anfang(int z) const
+    {
+        return m_anfang[std::clamp<std::size_t>(static_cast<std::size_t>(std::max(z, 1)) - 1, 0, m_anfang.size() - 1)];
+    }
+
+private:
+    std::vector<std::size_t> m_anfang;
+};
+
+/// SQL in den Zeichenketten einer Datei (Entscheide S1, E1 a): jede, die mit einer Anweisung des Schemas beginnt
+/// (sprache::beginntMitSchema), wird gelesen — alle einer Datei als ein Text, damit ein Fremdschluessel seine
+/// Tabelle in einer anderen Zeichenkette findet; ihre Tabellen kommen in die Einheit der Datei, ihre
+/// Stellen und Meldungen auf die Stellen der Quelle umgerechnet. Der Dialekt: der der Projektdatei, sonst
+/// der, den der Host-Code zeigt. Eine zusammengesetzte Zeichenkette bleibt aussen vor (Hinweis).
+void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const std::string& name,
+                          const std::string& dialekt)
+{
+    std::string sql;
+    std::vector<std::size_t> herkunft;  // je Byte von `sql` der Versatz in `text`
+    const Zeilen quelle(text);
+    for (const sprache::Zeichenkette& z : e.zeichenketten)
+    {
+        // heute nur das Schema (CREATE, ALTER, DROP): aus Abfragen leitet noch nichts ab (Entscheid S2)
+        // eine zusammengesetzte traegt nur ihren Anfang (`"CREATE TABLE " + name`)
+        if (z.inhalt.empty() || !sprache::beginntMitSchema(z.inhalt, z.zusammengesetzt)) continue;
+        if (z.zusammengesetzt)
+        {
+            e.meldungen.push_back({Schwere::Hinweis, quelle.ort(z.versatz.front()),
+                                   "SQL in a composed string (+ or embedded expressions) is not read"});
+            continue;
+        }
+        for (std::size_t j = 0; j < z.inhalt.size(); ++j)
+        {
+            // zwischen zwei Literalen auf verschiedenen Zeilen (`"CREATE TABLE a ("` / `"  x INT)"`) ein
+            // Zeilenwechsel — fuer SQL Leerraum, und jede Zeile des SQL liegt auf einer der Quelle
+            if (j > 0 && z.versatz[j] > z.versatz[j - 1] + 1 && z.inhalt[j - 1] != '\n' &&
+                text.find('\n', z.versatz[j - 1] + 1) < z.versatz[j])
+            {
+                sql += '\n';
+                herkunft.push_back(z.versatz[j - 1]);
+            }
+            sql += z.inhalt[j];
+            herkunft.push_back(z.versatz[j]);
+        }
+        sql += ";\n";  // trennt, auch wenn die Zeichenkette kein `;` traegt
+        herkunft.insert(herkunft.end(), 2, z.versatz.back());
+    }
+    if (sql.empty()) return;
+
+    sprache::LeseOptionen lesen;
+    lesen.dialekt = dialekt;
+    std::string bibliotheken;
+    if (lesen.dialekt.empty())
+    {
+        const auto host = dialekteVonHost(e);
+        if (host.size() == 1) lesen.dialekt = std::string(host.front().first);
+        for (const auto& [d, woran] : host) bibliotheken += (bibliotheken.empty() ? "" : ", ") + woran;
+        if (host.size() > 1)
+            e.meldungen.push_back({Schwere::Hinweis, quelle.ort(herkunft.front()),
+                                   "several SQL libraries (" + bibliotheken + ") - SQL read as common SQL"});
+    }
+    sprache::Ergebnis s = sprache::sql().lies(sql, name, lesen);
+
+    const Zeilen inSql(sql);
+    const auto ort = [&](std::size_t versatz) { return quelle.ort(herkunft[std::min(versatz, herkunft.size() - 1)]); };
+    const auto zeile = [&](int z) { return ort(inSql.anfang(z)).zeile; };
+    for (modell::Typ& t : s.einheit.typen)
+    {
+        t.zeile = zeile(t.zeile);
+        for (modell::Feld& f : t.felder) f.zeile = zeile(f.zeile);
+        for (modell::Verweis& v : t.verweise) v.zeile = zeile(v.zeile);
+        e.einheit.typen.push_back(std::move(t));
+    }
+    for (quelle::Meldung& m : s.meldungen)
+    {
+        m.ort = ort(m.ort.versatz);
+        e.meldungen.push_back(std::move(m));
+    }
+}
+
 sprache::Ergebnis lies(const sprache::Sprache& sprache, const std::string& text, const std::string& name,
-                       const std::vector<sprache::Definition>& definitionen, const ProjektOptionen& optionen)
+                       const std::vector<sprache::Definition>& definitionen, const ProjektOptionen& optionen,
+                       const std::string& sqlDialekt = {})
 {
     sprache::LeseOptionen lesen;
     lesen.alleZweige = optionen.alleZweige;
     lesen.varianten = optionen.varianten;
     lesen.bereiche = optionen.bereiche;
     lesen.definitionen = definitionen;
+    lesen.dialekt = sqlDialekt;
     fuegeHinzu(lesen.definitionen, optionen.definitionen);
-    return sprache.lies(text, name, lesen);
+    sprache::Ergebnis e = sprache.lies(text, name, lesen);
+    if (&sprache != &sprache::sql()) lieseingebettetesSql(e, text, name, sqlDialekt);
+    return e;
 }
 
 /// Die Include-Pfade fuer eine Datei: die des Projekts, dann die der passenden Abschnitte.
@@ -207,7 +373,7 @@ public:
         for (Datei& d : m_p.dateien)
         {
             d.definitionen = definitionenFuer(m_p.einstellungen, d.pfad);
-            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen);
+            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
         std::vector<std::vector<sprache::Definition>> ausKoepfen(m_p.dateien.size());
@@ -219,7 +385,7 @@ public:
             if (ausKoepfen[i].empty()) continue;
             Datei& d = m_p.dateien[i];
             fuegeHinzu(d.definitionen, ausKoepfen[i]);
-            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen);
+            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
         }
     }
 

@@ -111,7 +111,8 @@ public:
             else if (name == "includePfade") aus.includePfade = texte(wert, name);
             else if (name == "uebergehen") aus.uebergehen = texte(wert, name);
             else if (name == "abschnitte") aus.abschnitte = abschnitte(wert);
-            else unbekannt(wert, name, "definitionen, includePfade, uebergehen, abschnitte");
+            else if (name == "sql") aus.sql = dialekt(wert);
+            else unbekannt(wert, name, "definitionen, includePfade, uebergehen, abschnitte, sql");
         }
         return aus;
     }
@@ -170,6 +171,18 @@ private:
             aus.push_back(std::move(d));
         }
         return aus;
+    }
+
+    /// `"sql": "duckdb"` — einer aus sprache::sqlDialekte.
+    std::string dialekt(const json::Wert& wert)
+    {
+        if (!erwarte(wert, json::Art::Text, "\"sql\"")) return {};
+        const auto namen = sprache::sqlDialekte();
+        if (std::find(namen.begin(), namen.end(), std::string_view(wert.text)) != namen.end()) return wert.text;
+        std::string bekannt;
+        for (const std::string_view n : namen) bekannt += (bekannt.empty() ? "" : ", ") + std::string(n);
+        melde(Schwere::Warnung, wert, "unknown SQL dialect \"" + wert.text + "\" - ignored (known: " + bekannt + ")");
+        return {};
     }
 
     std::vector<Abschnitt> abschnitte(const json::Wert& wert)
@@ -241,6 +254,7 @@ std::string schreibe(const Projektdatei& datei)
     aus += "  \"definitionen\": " + liste(alsTexte(datei.definitionen), "  ") + ",\n";
     aus += "  \"includePfade\": " + liste(datei.includePfade, "  ") + ",\n";
     aus += "  \"uebergehen\": " + liste(datei.uebergehen, "  ") + ",\n";
+    if (!datei.sql.empty()) aus += "  \"sql\": " + json::zitat(datei.sql) + ",\n";
     aus += "  \"abschnitte\": [";
     for (std::size_t i = 0; i < datei.abschnitte.size(); ++i)
     {

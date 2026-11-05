@@ -5,7 +5,8 @@
  * Was beim Kompilieren als Argument mitgeht, steht hier fuer das ganze Projekt:
  * Definitionen (wie `-D`; `!NAME` hebt auf wie `-U`, in einer Liste gilt der
  * spaetere Eintrag) und Include-Pfade (wie `-I`), dazu je Ordner eigene
- * (`abschnitte`) und die Ordner, die beim Einlesen uebergangen werden. Fehlt die
+ * (`abschnitte`), die Ordner, die beim Einlesen uebergangen werden, und der Dialekt von SQL
+ * (`"sql": "duckdb"`). Fehlt die
  * Datei, gelten die Vorgaben (alles leer). Ein Beispiel:
  *
  *     {
@@ -54,6 +55,9 @@ struct Projektdatei
     std::vector<std::string> includePfade;  ///< relativ zum Wurzelordner (oder absolut)
     std::vector<std::string> uebergehen;    ///< Ordnermuster
     std::vector<Abschnitt> abschnitte;
+    /// Der Dialekt von SQL im Projekt (`"sql": "duckdb"`, sprache::sqlDialekte) — fuer `.sql`-Dateien und SQL
+    /// in Zeichenketten; leer = aus dem Kopf der Datei oder dem Host-Code, sonst der allgemeine Kern.
+    std::string sql;
 };
 
 /// Liest den Text einer Projektdatei. Was nicht passt — kein gueltiges JSON, ein
