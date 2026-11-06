@@ -981,12 +981,29 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.markiert().contains("setOnClickListener"));
     }
 
+    TEST_CASE("Notebook: das Skript im Quelltext, je Zelle <cell n>, Klick nennt die Zelle")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral(R"nb({"nbformat": 4, "nbformat_minor": 5,
+            "metadata": {"language_info": {"name": "python"}},
+            "cells": [{"cell_type": "markdown", "metadata": {}, "source": ["# Laden"]},
+                      {"cell_type": "code", "metadata": {}, "outputs": [], "source": ["%pip install x\n", "for i in range(3):\n", "    tu(i)"]}]})nb"),
+                      QStringLiteral("n.ipynb"));
+        CHECK(fenster.meldungen() == 1);  // die Magie
+        CHECK(fenster.diagramme().contains("<cell 2>"));
+        CHECK_FALSE(fenster.diagramme().contains("<module>"));
+        REQUIRE(fenster.waehleDiagramm("<cell 2>"));
+        CHECK(fenster.diagrammText().contains("tu(i)"));
+        REQUIRE(fenster.klicke("tu(i)"));
+        CHECK(fenster.gezeigteStelle() == "n.ipynb:7 (cell 2, line 3)");
+    }
+
     TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
     {
         // aus sprachen() gebildet: eine neue Sprache braucht hier keine neue Zeile
         const auto sprachen = c2d::sprache::sprachen();
         const QStringList filter = Hauptfenster::dateiFilter().split(QStringLiteral(";;"));
-        REQUIRE(filter.size() == static_cast<qsizetype>(sprachen.size()) + 1);
+        REQUIRE(filter.size() == static_cast<qsizetype>(sprachen.size()) + 2);  // dazu Notebooks und alle
         for (std::size_t i = 0; i < sprachen.size(); ++i)
         {
             QStringList muster;
@@ -998,6 +1015,7 @@ TEST_SUITE("Hauptfenster")
                       muster.join(QLatin1Char(' ')) + QLatin1Char(')'));
         }
         CHECK(filter.back() == "All files (*)");
+        CHECK(filter[filter.size() - 2] == "Jupyter notebooks (*.ipynb)");
         // Stichproben, damit der Test nicht nur sich selbst nachrechnet
         CHECK(filter.front() == "C files (*.c *.h)");
         CHECK(filter.contains("C# files (*.cs)"));

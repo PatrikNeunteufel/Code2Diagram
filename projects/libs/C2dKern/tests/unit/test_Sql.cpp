@@ -403,6 +403,46 @@ TEST_SUITE("SQL")
         CHECK(ts.einheit.typen.empty());  // #zwischen gehoert der Prozedur
     }
 
+    TEST_CASE("Zugriffe (C1): CREATE TABLE … AS SELECT liest seine Quellen und schreibt die Tabelle")
+    {
+        using modell::ZugriffArt;
+        const auto hat = [](const std::vector<modell::Zugriff>& z, ZugriffArt a, std::string_view ziel) {
+            return std::any_of(z.begin(), z.end(), [&](const modell::Zugriff& x) { return x.art == a && x.ziel == ziel; });
+        };
+        // auf oberster Ebene (Spark mit USING und Kommentar dazwischen), ohne Abfrage keine Zugriffe
+        const auto e = sq("CREATE OR REPLACE TABLE gold USING delta COMMENT 'x' AS\n"
+                          "SELECT k.id, sum(b.n) FROM silber k JOIN bestellung b ON b.k = k.id GROUP BY k.id;\n"
+                          "CREATE TABLE leer (a int);\n"
+                          "CREATE TEMP TABLE t AS SELECT * FROM quelle;\n",
+                          "spark");
+        const std::vector<modell::Zugriff>& z = e.einheit.zugriffe;
+        CHECK(hat(z, ZugriffArt::Schreibt, "gold"));
+        CHECK(hat(z, ZugriffArt::Liest, "silber"));
+        CHECK(hat(z, ZugriffArt::Liest, "bestellung"));
+        CHECK(hat(z, ZugriffArt::Liest, "quelle"));
+        CHECK_FALSE(hat(z, ZugriffArt::Schreibt, "leer"));
+        CHECK_FALSE(hat(z, ZugriffArt::Schreibt, "t"));  // eine temporaere Tabelle gehoert dem, der sie anlegt
+        // dazu `sum(` als Aufruf im Ausdruck — er zaehlt erst, wo das Projekt eine Routine des Namens kennt
+        CHECK(std::count_if(z.begin(), z.end(), [](const modell::Zugriff& x) { return !x.imAusdruck; }) == 4);
+
+        // im Rumpf einer Routine: das Schreiben gehoert ihr, und ein spaeteres AS SELECT gehoert nicht dazu
+        const auto r = sq("CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$\n"
+                          "BEGIN\n"
+                          "    CREATE TABLE kopie AS SELECT * FROM kurs;\n"
+                          "    CREATE TABLE nur (a int);\n"
+                          "    CREATE VIEW v AS SELECT 1 FROM kurs;\n"
+                          "END $$;\n",
+                          "postgres");
+        REQUIRE(r.einheit.objekte.size() == 1);
+        const std::vector<modell::Zugriff>& o = r.einheit.objekte[0].zugriffe;
+        CHECK(hat(o, ZugriffArt::Schreibt, "kopie"));
+        CHECK(hat(o, ZugriffArt::Liest, "kurs"));
+        CHECK_FALSE(hat(o, ZugriffArt::Schreibt, "nur"));
+        const auto kopie = std::find_if(o.begin(), o.end(), [](const modell::Zugriff& x) { return x.ziel == "kopie"; });
+        REQUIRE(kopie != o.end());
+        CHECK(kopie->zeile == 3);
+    }
+
     TEST_CASE("Die Sprache: Endungen, kein Praeprozessor")
     {
         CHECK(sprache::spracheFuer("schema.SQL") == &sprache::sql());

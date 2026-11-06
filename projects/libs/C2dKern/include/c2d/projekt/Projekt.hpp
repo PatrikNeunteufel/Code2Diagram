@@ -53,11 +53,38 @@ struct ProjektOptionen
     std::vector<sprache::Definition> definitionen;
 };
 
+/// Eine Zelle eines Notebooks (Entscheide N1–N3), gezaehlt ab 1 wie Databricks „Cmd n“, auch Markdown.
+struct Zelle
+{
+    enum class Art
+    {
+        Code,
+        Markdown,
+        Roh,  ///< `.ipynb` "raw": Text, der nicht ausgefuehrt wird
+    };
+
+    Art art = Art::Code;
+    /// Die Zeile ihrer Kopfzeile (`# %% [n]`) bzw. des Trenners `COMMAND` davor; 0 = keine (die erste
+    /// Zelle eines Databricks-Notebooks).
+    int kopf = 0;
+    int zeile = 0;     ///< ihre erste Zeile (ohne Kopf und `DBTITLE`)
+    int bisZeile = 0;  ///< ihre letzte; kleiner als `zeile` = leer
+    /// Wie sie gelesen wird: leer = in der Sprache der Datei; sonst der Name einer Sprache (`SQL`, Entscheid
+    /// N3) oder — nicht gelesen — das Wort ihrer Magie (`%scala`, `%%bash`).
+    std::string sprache;
+    bool gelesen = true;  ///< false: in einer Sprache, die das Projekt nicht kennt (Hinweis)
+    std::string titel;    ///< Databricks `DBTITLE`; leer = keiner
+};
+
 struct Datei
 {
     std::string pfad;  ///< relativ zum Wurzelordner, mit `/`
     const sprache::Sprache* sprache = nullptr;
+    /// Der Text, wie der Leser und das Fenster ihn sehen. Bei einem `.ipynb` nicht die Datei, sondern ihr
+    /// Skript (Entscheid N1): je Zelle eine Kopfzeile `# %% [n]`, Markdown als Kommentar.
     std::string text;
+    /// Die Zellen, wenn die Datei ein Notebook ist (`.ipynb`, Databricks); leer = keins.
+    std::vector<Zelle> zellen;
     sprache::Ergebnis ergebnis;
     /// Mit diesen Definitionen zuletzt gelesen, ohne die von aussen.
     std::vector<sprache::Definition> definitionen;
@@ -94,6 +121,19 @@ struct Projekt
 /// Liest alle Dateien unter `wurzel`, mit `code2diagram.json`, wenn es sie gibt.
 /// Was nicht geht, wird eine Meldung; das Ergebnis ist immer brauchbar.
 [[nodiscard]] Projekt liesOrdner(const std::filesystem::path& wurzel, const ProjektOptionen& optionen = {});
+
+/// Ist die Datei ein Jupyter-Notebook (`.ipynb`)? Es wird gelesen, wenn es seine Sprache gibt.
+[[nodiscard]] bool istNotebook(std::string_view dateiname);
+
+/// Liest das Projekt diese Datei? Eine Sprache kennt ihre Endung, oder sie ist ein Notebook.
+[[nodiscard]] bool kannLesen(std::string_view dateiname);
+
+/// Die Zelle, in der die Zeile von Datei::text liegt (Index in Datei::zellen); kKeine = kein Notebook.
+[[nodiscard]] std::size_t zelleAn(const Datei& datei, int zeile);
+
+/// Wie eine Zeile von Datei::text heisst: in einem Notebook `cell 3, line 2` (die Kopfzeile: `cell 3`),
+/// sonst `line 17`.
+[[nodiscard]] std::string stelleIn(const Datei& datei, int zeile);
 
 /// Liest eine Datei ganz, wie sie ist (Bytes); unter Windows auch ueber einen Weg ab 260 Zeichen.
 /// false = sie liess sich nicht oeffnen.

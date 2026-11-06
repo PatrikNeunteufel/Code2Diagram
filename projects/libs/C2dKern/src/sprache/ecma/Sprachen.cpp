@@ -22,9 +22,9 @@ public:
     [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return ecma::tabelle(); }
 
     [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
-                                const LeseOptionen& /*optionen*/) const override
+                                const LeseOptionen& optionen) const override
     {
-        return ecma::lies(text, einheitName, {.ts = false});
+        return ecma::lies(text, einheitName, {.ts = false}, optionen.abschnitte);
     }
 };
 
@@ -36,9 +36,9 @@ public:
     [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return ecma::tabelle(); }
 
     [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
-                                const LeseOptionen& /*optionen*/) const override
+                                const LeseOptionen& optionen) const override
     {
-        return ecma::lies(text, einheitName, {.ts = true});
+        return ecma::lies(text, einheitName, {.ts = true}, optionen.abschnitte);
     }
 };
 

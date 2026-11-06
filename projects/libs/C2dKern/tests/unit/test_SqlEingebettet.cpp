@@ -300,6 +300,22 @@ TEST_SUITE("SQL eingebettet")
         CHECK(finde(modell::ZugriffArt::Liest, "the")->unsicher);
     }
 
+    TEST_CASE("Eine Huelle, die selbst ausfuehrt: spark.sql(...) ist sicher, QStringLiteral(...) allein nicht")
+    {
+        // `sql` huellt in `con.execute(sql("…"))` ein und fuehrt in `spark.sql("…")` selbst aus
+        const auto p = projekt::liesText("def f(con):\n"
+                                         "    x = spark.sql(\"SELECT a FROM t\")\n"
+                                         "    y = spark.sql(\"SELECT b FROM u\").collect()\n"
+                                         "    con.execute(sql(\"SELECT c FROM v\"))\n",
+                                         "s.py");
+        const modell::Funktion& f = p.dateien[0].ergebnis.einheit.funktionen.front();
+        REQUIRE(f.zugriffe.size() == 3);
+        for (const modell::Zugriff& z : f.zugriffe) CHECK_FALSE(z.unsicher);
+        const auto q = sprache::cpp().lies("auto s = QStringLiteral(\"SELECT a FROM t\");", "q.cpp");
+        REQUIRE(q.zeichenketten.size() == 1);
+        CHECK(q.zeichenketten[0].aufruf == "QStringLiteral");
+    }
+
     TEST_CASE("Projektdatei: \"sql\" gelesen, geschrieben, ein unbekannter Dialekt gemeldet")
     {
         std::vector<quelle::Meldung> m;

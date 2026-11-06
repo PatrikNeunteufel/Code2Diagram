@@ -41,9 +41,22 @@ struct Definition
 /// Eine Definition, wie `definitionAus` sie liest: `NAME` (Wert 1), `NAME=wert` oder `!NAME`.
 [[nodiscard]] std::string alsText(const Definition& definition);
 
+/// Ein Stueck des Texts, dessen Code auf oberster Ebene eine eigene Funktion wird (LeseOptionen::abschnitte).
+struct Abschnitt
+{
+    std::string name;  ///< so heisst die Funktion, etwa `<cell 3>`
+    int zeile = 0;     ///< die erste Zeile des Abschnitts
+    int bisZeile = 0;  ///< die letzte
+};
+
 /// Wie gelesen wird. Was eine Sprache nicht kennt, uebergeht sie.
 struct LeseOptionen
 {
+    /// Nur Python, JavaScript und TypeScript: der Code auf oberster Ebene wird nicht die Funktion `<module>`,
+    /// sondern je Abschnitt, in dem er steht, eine Funktion mit dessen Namen — auch wenn er nur zuweist (ein
+    /// Notebook: je Zelle, Entscheid N2). Nach Zeilen geordnet; eine Anweisung vor dem ersten gehoert zum
+    /// ersten, eine zwischen zweien zum vorderen. Leer = `<module>`.
+    std::vector<Abschnitt> abschnitte;
     /// Bedingte Uebersetzung (#if, #ifdef ...) nicht auswerten, sondern alle
     /// Zweige lesen — als stuende der Code aller Varianten hintereinander.
     bool alleZweige = false;

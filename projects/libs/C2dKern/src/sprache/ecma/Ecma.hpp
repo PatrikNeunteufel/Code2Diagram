@@ -31,7 +31,9 @@ struct Dialekt
 /// Pfeil- oder `function`-Funktion mit Block-Rumpf, benannt nach dem, dem sie zugewiesen wird
 /// (`const f =`, `x.f =`, `f:` in einem Objekt, `f() {…}` in einem Objekt), sonst
 /// `<anonymous:Zeile>` mit der umgebenden Funktion als `aussen`; in der Anweisung, in der sie steht,
-/// bleibt sie als `{…}`. Was auf oberster Ebene ablaeuft, ist die Funktion `<module>`.
-[[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName, Dialekt dialekt);
+/// bleibt sie als `{…}`. Was auf oberster Ebene ablaeuft, ist die Funktion `<module>` — mit `abschnitte`
+/// je Abschnitt eine (LeseOptionen::abschnitte).
+[[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName, Dialekt dialekt,
+                            const std::vector<Abschnitt>& abschnitte = {});
 
 }  // namespace c2d::sprache::ecma

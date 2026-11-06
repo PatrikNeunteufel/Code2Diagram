@@ -9,7 +9,7 @@ Fenster und als Text in einem wählbaren Format.
 | **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
-| **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg | |
+| **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg; Notebooks (`.ipynb`, Databricks) je Zelle | |
 
 Lexer, Leser und Anordnung sind Eigenbau, ohne Fremdbibliothek.
 
@@ -292,7 +292,7 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   `CONNECT`, `exit`) werden übergangen.
 - **Abhängigkeiten der Daten** (Diagram *Data dependencies*): Views, Trigger, Funktionen und Prozeduren
   werden mit ihren Zugriffen gelesen — *reads* (`FROM`, `JOIN`, auch nach `JOIN … ON …, c`), *writes*
-  (`INSERT [INTO]`, `UPDATE … SET`, `DELETE`, `MERGE`, `TRUNCATE`), *ruft* (`CALL`, `EXEC`, `PERFORM`, eine
+  (`INSERT [INTO]`, `UPDATE … SET`, `DELETE`, `MERGE`, `TRUNCATE`, `CREATE TABLE … AS SELECT`), *ruft* (`CALL`, `EXEC`, `PERFORM`, eine
   Routine des Projekts im Ausdruck); Namen eines `WITH`, Variablen (`@t`) und temporäre Tabellen (`#t`,
   `CREATE TEMP TABLE`) zählen nicht. Der Rumpf in `$$…$$` wird noch einmal gelesen, eine Routine in
   einer anderen Sprache (`LANGUAGE plpython3u`) nicht (Hinweis); dynamisches SQL (`EXECUTE 'x'`,
@@ -362,6 +362,27 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   `psycopg`, `pyspark`, `pymysql`, `using Npgsql`, `Microsoft.Data.SqlClient` …) oder aus dem Namen
   eines Qt-Treibers (`"QSQLITE"`); zeigen zwei Bibliotheken verschiedene, gilt der Kern (Hinweis).
   Beispiel: `beispiele/sql/lager_db.py`.
+
+**Notebooks** — das Herauslösen der Zellen macht das Projekt (`projekt/Notebook.*`), kein Leser:
+- **Jupyter (`.ipynb`):** gelesen in der Sprache des Kernels (`language_info.name`, sonst `kernelspec`; fehlt
+  sie, Python mit Hinweis; eine ohne Leser, kaputtes JSON oder Format 3: die Datei fällt mit Meldung heraus).
+  Leser und Fenster sehen nicht das JSON, sondern ein **Skript** wie jupytext: je Zelle eine Kopfzeile
+  `# %% [n]` (mit dem Zeilenkommentar der Sprache), Markdown- und Roh-Zellen als Kommentar. Die Ausgaben
+  der Zellen werden nicht gelesen.
+- **Databricks** (erste Zeile `# Databricks notebook source`, Zellen zwischen `# COMMAND ----------`, in
+  `.py` und `.sql`): bleibt, wie es ist; `DBTITLE` ist der Titel der Zelle, `%md` Text.
+- **Je Code-Zelle eine Funktion `<cell n>`** (gezählt ab 1 über alle Zellen, wie Databricks „Cmd n“) mit
+  Ablauf, Struktogramm und Tabellen; `def` und `class` bleiben Funktionen und Typen; ein Notebook hat kein
+  `<module>`. Im Aufrufgraph der Datei sind die Zellen Knoten. Meldungen und `c2d` nennen die Stelle
+  `cell n, line m`; ein Klick hinterlegt im Fenster die ganze Zelle.
+- **Zellen in anderer Sprache** (`%%sql`, Databricks `%python`, `%sql`) liest deren Leser, das Ergebnis
+  steht in der Einheit des Notebooks (Tabellen in *Data types*). Was eine SQL-Zelle liest und schreibt,
+  gehört `<cell n>` (*Data dependencies*), ihre Abfragen heißen `<cell n>@zeile`. Der Dialekt: Projektdatei,
+  sonst Databricks → spark, sonst die Bibliothek, die das Notebook einbindet (`import sqlite3`).
+- **Magie** (`%pip`, `%time`, `%%time`, `!ls`) steht im Skript, wie sie dasteht, und wird als Leerraum
+  gelesen, je Zeile mit Hinweis; `%run` wird nicht verfolgt (Hinweis); eine Zelle in einer Sprache ohne
+  Leser (`%%bash`, `%scala`, `%sh`, `%pip` als Zelle) bleibt mit Hinweis außen vor.
+- Beispiele: `beispiele/notebooks/lager.ipynb`, `beispiele/notebooks/kunden_databricks.py`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -608,6 +629,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
+- ein **Notebook** (`.ipynb`, Databricks): `--funktion "<cell 5>"`; Meldungen tragen die Zelle
+  (`n.ipynb:8:1 (cell 2, line 1): …`), `--liste` eine Zeile `notebook` mit der Zahl der Zellen
 - ein **Ordner** wird als Projekt gelesen (wie im Fenster); die Fehlerausgabe nennt danach
   Dateien, Funktionen, Typen und übergangene Ordner. `--datei` wählt die Datei, um die es geht;
   `--funktion` muss im Projekt eindeutig sein, sonst nennt `c2d` die Kandidaten.
@@ -872,6 +895,10 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
+- **Notebooks:** die Ausgaben der Zellen (auch `explain()`) werden nicht gelesen; `%run` wird nicht
+  verfolgt; eine SQL-Zelle hat als `<cell n>` keinen Ablauf (nur Zugriffe und Abfragen); dass Zellen in
+  anderer Reihenfolge laufen können als im Notebook, sieht das Diagramm nicht. Eine Zeile mit `%` oder `!`
+  vorn gilt als Magie, auch mitten in einem Ausdruck über mehrere Zeilen.
 - Ein Funktionszeiger als Glied gibt keine Beziehung zu den Typen seiner Parameter.
 - Code, den kein Weg erreicht (hinter `return`), steht als unverbundener Knoten im Diagramm.
 - Gebaut und geprüft ist nur Windows mit Release-clang. Die DOT-Ausgabe ist gegen erwarteten

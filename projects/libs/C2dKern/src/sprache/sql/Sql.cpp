@@ -707,6 +707,12 @@ private:
             {
                 liesCreateTable(k + 1, b);
                 abfrageAus(a, b, "query@" + std::to_string(tok(a).ort.zeile));  // CREATE TABLE … AS SELECT
+                if (alsAbfrage(a, b) != kKeiner)
+                {
+                    // liest seine Quellen und schreibt die Tabelle, wie INSERT … SELECT (Entscheid C1)
+                    std::vector<std::string> eigene;
+                    sammleZugriffe(a, b, m_aus.einheit.zugriffe, eigene);
+                }
             }
             else if (g->gebilde == Gebilde::Objekt)
                 liesObjekt(g->objekt, a, k + 1, b);
@@ -746,6 +752,37 @@ private:
             return;
         }
         typ->eindeutig.push_back(std::move(spalten));
+    }
+
+    /// j steht auf CREATE: legt die Anweisung eine Tabelle aus einer Abfrage an (`CREATE [OR REPLACE] [TEMP …]
+    /// TABLE [IF NOT EXISTS] name [(spalten)] [USING …, PARTITIONED BY …, COMMENT …] AS SELECT|WITH|(`)?
+    /// Dann die Stelle des Namens, sonst kKeiner. Gesucht bis `;`, b oder dem Wort einer neuen Anweisung —
+    /// in einem Rumpf folgen weitere.
+    [[nodiscard]] std::size_t alsAbfrage(std::size_t j, std::size_t b) const
+    {
+        std::size_t k = j + 1;
+        while (k < b && k < j + 6 && !wort(k, "table")) ++k;
+        if (!wort(k, "table")) return kKeiner;
+        ++k;
+        if (wort(k, "if") && wort(k + 1, "not") && wort(k + 2, "exists")) k += 3;
+        if (!istName(k)) return kKeiner;
+        const std::size_t name = k;
+        std::size_t e = k;
+        (void)liesNamen(k, e);
+        static constexpr std::string_view kNeu[] = {"select", "insert", "update", "delete", "merge", "create",
+                                                    "alter",  "drop",   "begin",  "end",    "declare"};
+        for (std::size_t x = e; x < b && !amEnde(x) && !tok(x).istOp(";");)
+        {
+            if (oeffnet(tok(x)))
+            {
+                x = nachKlammer(x);
+                continue;
+            }
+            if (wort(x, "as")) return wort(x + 1, "select") || wort(x + 1, "with") || tok(x + 1).istOp("(") ? name : kKeiner;
+            if (istName(x) && enthaelt(kNeu, klein(tok(x).text))) return kKeiner;
+            ++x;
+        }
+        return kKeiner;
     }
 
     /// Ab i (hinter `TABLE`): `[IF NOT EXISTS] name ( Spalten und Bedingungen ) …`.
@@ -1308,6 +1345,17 @@ private:
                 std::size_t e = k;
                 const std::string n = liesNamen(k, e);
                 if (!n.empty()) eigene.push_back(klein(n));
+                j = e - 1;
+                continue;
+            }
+            if (w == "create")
+            {
+                // CREATE TABLE … AS SELECT schreibt die Tabelle (Entscheid C1); was es liest, nennt sein FROM
+                const std::size_t k = alsAbfrage(j, b);
+                if (k == kKeiner) continue;
+                std::size_t e = k;
+                const std::string n = liesNamen(k, e);
+                neu(ZugriffArt::Schreibt, n, k);
                 j = e - 1;
                 continue;
             }

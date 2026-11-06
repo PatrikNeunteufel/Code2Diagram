@@ -14,11 +14,13 @@
 //                             [--schaltet <name>] [--schalter] [--breite]
 //
 //   <ordner>       ein Projekt: alle Quelldateien darunter, mit code2diagram.json, wenn es sie gibt
+//   <datei>        auch ein Notebook (.ipynb, Databricks): je Code-Zelle eine Funktion "<cell n>";
+//                  Meldungen nennen dazu die Zelle "(cell n, line m)"
 //   ohne Auswahl   das Diagramm der ersten Funktion mit Rumpf; gibt es keine,
 //                  das Strukturdiagramm
 //   --liste        nennt, was die Datei (das Projekt: jede Datei) enthaelt (auch Automaten,
-//                  Zuordnungen "mapping", konstante Tabellen "lookup", die Ketten #if "ifconfig"),
-//                  und endet
+//                  Zuordnungen "mapping", konstante Tabellen "lookup", die Ketten #if "ifconfig",
+//                  die Zellen eines Notebooks "notebook"), und endet
 //   --datei        im Projekt: die Datei, um die es geht (relativ zum Ordner)
 //   --funktion     das Flussdiagramm dieser Funktion (Name allein oder mit Bereich); im
 //                  Projekt muss sie eindeutig sein, sonst --datei
@@ -155,6 +157,19 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
 {
     const c2d::projekt::Datei& d = p.dateien[i];
     const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
+    if (!d.zellen.empty())
+    {
+        int code = 0, text = 0, fremd = 0, ungelesen = 0;
+        for (const c2d::projekt::Zelle& z : d.zellen)
+        {
+            if (z.art == c2d::projekt::Zelle::Art::Code) ++code;
+            else ++text;
+            if (!z.gelesen) ++ungelesen;
+            else if (!z.sprache.empty()) ++fremd;
+        }
+        std::cout << "notebook  " << d.sprache->name() << ", " << d.zellen.size() << " cells (" << code << " code, "
+                  << text << " text, " << fremd << " in another language, " << ungelesen << " not read)\n";
+    }
     for (const c2d::modell::Funktion& f : einheit.funktionen)
         std::cout << (f.rumpf ? "function  " : "prototype ") << f.signatur() << (f.intern ? "  [static]" : "") << '\n';
     for (const c2d::modell::Typ& t : einheit.typen)
@@ -365,16 +380,18 @@ int main(int argc, char* argv[])
         // die Einheit heisst wie die Datei, ohne den Weg dorthin
         const std::size_t strich = ziel.find_last_of("/\\");
         const std::string name = strich == std::string::npos ? ziel : ziel.substr(strich + 1);
-        if (c2d::sprache::spracheFuer(name) == nullptr)
+        if (!c2d::projekt::kannLesen(name))
             std::cerr << "c2d: no reader for this file type - read as " << c2d::sprache::c().name() << '\n';
         p = c2d::projekt::liesText(inhalt, name, lesen);
     }
 
-    // Meldungen: je Datei mit Zeile und Spalte, dann die des Projekts
+    // Meldungen: je Datei mit Zeile und Spalte (in einem Notebook dazu die Zelle), dann die des Projekts
     const auto vorn = [&](const std::string& pfad) { return ordner ? pfad : ziel; };
     for (const c2d::projekt::Datei& d : p.dateien)
         for (const c2d::quelle::Meldung& m : d.ergebnis.meldungen)
-            std::cerr << vorn(d.pfad) << ':' << m.ort.zeile << ':' << m.ort.spalte << ": " << m.text << '\n';
+            std::cerr << vorn(d.pfad) << ':' << m.ort.zeile << ':' << m.ort.spalte
+                      << (d.zellen.empty() ? std::string() : " (" + c2d::projekt::stelleIn(d, m.ort.zeile) + ")") << ": "
+                      << m.text << '\n';
     for (const c2d::projekt::Projektmeldung& m : p.meldungen)
     {
         std::cerr << (m.pfad.empty() ? ziel : m.pfad);
@@ -385,6 +402,8 @@ int main(int argc, char* argv[])
         std::cerr << "c2d: " << p.dateien.size() << " file(s), " << p.funktionen() << " function(s), " << p.typen()
                   << " type(s), " << p.uebergangen.size() << " folder(s) skipped"
                   << (p.mitProjektdatei ? ", with " : ", without ") << c2d::projekt::kProjektdatei << '\n';
+
+    if (!ordner && p.dateien.empty()) return 2;  // ein Notebook, das sich nicht lesen liess (gemeldet)
 
     // die Datei, um die es geht
     std::size_t gewaehlteDatei = ordner ? c2d::projekt::kKeine : 0;

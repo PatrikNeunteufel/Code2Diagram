@@ -209,19 +209,22 @@ constexpr std::string_view kHuellen[] = {"QStringLiteral", "QLatin1String", "QSt
                                          "text",           "sql",           "dedent"};
 
 /// Der Aufruf, dessen Argument die Zeichenkette bei Token i ist: `execute(` vor ihr, auch hinter Huellen
-/// (`q.exec(QStringLiteral(…))`, `con.execute(text(…))`); leer = keiner.
+/// (`q.exec(QStringLiteral(…))`, `con.execute(text(…))`); steht eine Huelle in keinem Aufruf, ist sie es
+/// selbst (`spark.sql(…)`, `QStringLiteral(…)`); leer = keiner.
 std::string aufrufVor(const std::vector<lexer::Token>& t, std::size_t i)
 {
     std::size_t k = i;
+    std::string_view huelle;
     for (int stufe = 0; stufe < 3 && k >= 2 && t[k - 1].istOp("("); ++stufe)
     {
         const lexer::Token& name = t[k - 2];
         if (name.art != lexer::TokenArt::Bezeichner && name.art != lexer::TokenArt::Schluesselwort) break;
         if (std::find(std::begin(kHuellen), std::end(kHuellen), name.text) == std::end(kHuellen))
             return std::string(name.text);
+        huelle = name.text;
         k -= 2;
     }
-    return {};
+    return std::string(huelle);
 }
 
 /// Die Zeichenketten der Token: unmittelbar hintereinander stehende zu einer verbunden. Eine mit `+`
@@ -365,6 +368,38 @@ std::string Leser::textVon(std::size_t a, std::size_t b) const
         s += m_t[i].text;
     }
     return s;
+}
+
+void Leser::legeModulAn(std::vector<modell::AnweisungPtr> code, bool ablauf, int bisZeile, std::string_view modul,
+                        const std::vector<Abschnitt>& abschnitte)
+{
+    const auto alsFunktion = [&](std::string name, std::vector<modell::AnweisungPtr> rumpf, int bis) {
+        modell::Funktion f;
+        f.name = std::move(name);
+        f.zeile = rumpf.front()->zeile;
+        f.bisZeile = std::max(bis, f.zeile);
+        f.rumpf = std::make_unique<modell::Anweisung>();
+        f.rumpf->art = modell::AnweisungArt::Block;
+        f.rumpf->zeile = f.zeile;
+        f.rumpf->kinder = std::move(rumpf);
+        m_aus.einheit.funktionen.push_back(std::move(f));
+    };
+    if (code.empty()) return;
+    if (abschnitte.empty())
+    {
+        if (ablauf) alsFunktion(std::string(modul), std::move(code), bisZeile);
+        return;
+    }
+    // je Abschnitt seine Anweisungen: die vor dem ersten zum ersten, die zwischen zweien zum vorderen
+    std::vector<std::vector<modell::AnweisungPtr>> je(abschnitte.size());
+    std::size_t k = 0;
+    for (modell::AnweisungPtr& a : code)
+    {
+        while (k + 1 < abschnitte.size() && abschnitte[k + 1].zeile <= a->zeile) ++k;
+        je[k].push_back(std::move(a));
+    }
+    for (std::size_t i = 0; i < abschnitte.size(); ++i)
+        if (!je[i].empty()) alsFunktion(abschnitte[i].name, std::move(je[i]), abschnitte[i].bisZeile);
 }
 
 }  // namespace c2d::sprache

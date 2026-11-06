@@ -4,7 +4,12 @@
  */
 #include "c2d/projekt/Projekt.hpp"
 
+#include "Notebook.hpp"
+#include "Zeilen.hpp"
+
 #include <algorithm>
+#include <iterator>
+#include <optional>
 #include <fstream>
 #include <map>
 #include <set>
@@ -166,33 +171,6 @@ std::vector<std::pair<std::string_view, std::string>> dialekteVonHost(const spra
             if (z.inhalt == s.name) nimm(s.dialekt, std::string(s.name));
     return aus;
 }
-
-/// Die Stelle (Zeile, Spalte) eines Versatzes in einem Text.
-class Zeilen
-{
-public:
-    explicit Zeilen(std::string_view text)
-    {
-        m_anfang.push_back(0);
-        for (std::size_t i = 0; i < text.size(); ++i)
-            if (text[i] == '\n') m_anfang.push_back(i + 1);
-    }
-
-    [[nodiscard]] quelle::Position ort(std::size_t versatz) const
-    {
-        const auto z = std::upper_bound(m_anfang.begin(), m_anfang.end(), versatz) - 1;
-        return {versatz, static_cast<int>(z - m_anfang.begin()) + 1, static_cast<int>(versatz - *z) + 1};
-    }
-
-    /// Wo Zeile z (ab 1) beginnt.
-    [[nodiscard]] std::size_t anfang(int z) const
-    {
-        return m_anfang[std::clamp<std::size_t>(static_cast<std::size_t>(std::max(z, 1)) - 1, 0, m_anfang.size() - 1)];
-    }
-
-private:
-    std::vector<std::size_t> m_anfang;
-};
 
 /// Wie der Name eines Platzhalters im SQL beginnt (LeseOptionen::platzhalter).
 constexpr std::string_view kPlatzhalter = "c2d_platzhalter_";
@@ -436,9 +414,10 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
 
 sprache::Ergebnis lies(const sprache::Sprache& sprache, const std::string& text, const std::string& name,
                        const std::vector<sprache::Definition>& definitionen, const ProjektOptionen& optionen,
-                       const std::string& sqlDialekt = {})
+                       const std::string& sqlDialekt = {}, const std::vector<sprache::Abschnitt>& abschnitte = {})
 {
     sprache::LeseOptionen lesen;
+    lesen.abschnitte = abschnitte;
     lesen.alleZweige = optionen.alleZweige;
     lesen.varianten = optionen.varianten;
     lesen.bereiche = optionen.bereiche;
@@ -448,6 +427,135 @@ sprache::Ergebnis lies(const sprache::Sprache& sprache, const std::string& text,
     sprache::Ergebnis e = sprache.lies(text, name, lesen);
     if (&sprache != &sprache::sql()) lieseingebettetesSql(e, text, name, sqlDialekt);
     return e;
+}
+
+/// Die Zelle, in der die Zeile liegt: die letzte, deren Kopf (sonst erste Zeile) nicht dahinter liegt.
+std::size_t zelleIn(const std::vector<Zelle>& zellen, int zeile)
+{
+    if (zellen.empty()) return kKeine;
+    std::size_t aus = 0;
+    for (std::size_t i = 0; i < zellen.size(); ++i)
+        if ((zellen[i].kopf > 0 ? zellen[i].kopf : zellen[i].zeile) <= zeile) aus = i;
+    return aus;
+}
+
+/// Eine Stelle im Text einer fremden Zelle als Stelle im Skript: dieselbe Zeile, die Spalte um das
+/// verschoben, was dort im Skript davor steht (`-- MAGIC `).
+quelle::Position imSkript(const quelle::Position& p, const FremdeZelle& f, const Zeilen& fremd, const Zeilen& skript)
+{
+    const std::size_t spalte = p.versatz - std::min(p.versatz, fremd.anfang(p.zeile));
+    const auto k = static_cast<std::size_t>(std::max(p.zeile, 1) - 1);
+    const std::size_t abzug = k < f.abzug.size() ? f.abzug[k] : 0;
+    return skript.ort(skript.anfang(p.zeile) + abzug + spalte);
+}
+
+/// Haengt an, was eine fremde Zelle gibt (Entscheid N3, wie E1): ihre Funktionen, Typen, Objekte …
+void fuegeEin(modell::Einheit& in, modell::Einheit&& von)
+{
+    const auto haenge = [](auto& ziel, auto& quelle) {
+        ziel.insert(ziel.end(), std::make_move_iterator(quelle.begin()), std::make_move_iterator(quelle.end()));
+    };
+    haenge(in.einbindungen, von.einbindungen);
+    haenge(in.makros, von.makros);
+    haenge(in.aufhebungen, von.aufhebungen);
+    haenge(in.typen, von.typen);
+    haenge(in.aliase, von.aliase);
+    haenge(in.variablen, von.variablen);
+    haenge(in.funktionen, von.funktionen);
+    haenge(in.objekte, von.objekte);
+    haenge(in.zugriffe, von.zugriffe);
+    haenge(in.abfragen, von.abfragen);
+}
+
+/// In einem Notebook gehoert, was SQL ausserhalb einer Funktion liest, schreibt, ruft, der Funktion seiner
+/// Zelle (Entscheide N3, A4) — `<cell n>`, ohne Rumpf, wenn die Zelle keinen Code einer Sprache mit Ablauf
+/// traegt (ihr SQL zeigt der Ablauf erst mit S2); eine Abfrage auf oberster Ebene heisst nach ihr.
+/// Die Funktionen stehen danach in der Reihenfolge des Texts.
+void ordneZellenZu(modell::Einheit& e, const std::vector<Zelle>& zellen)
+{
+    const auto funktionDer = [&](std::size_t zelle) -> modell::Funktion& {
+        const std::string name = zellenName(zelle + 1);
+        for (modell::Funktion& f : e.funktionen)
+            if (f.name == name && f.bereich.empty()) return f;
+        modell::Funktion f;
+        f.name = name;
+        f.zeile = zellen[zelle].zeile;
+        f.bisZeile = 0;  // ohne Rumpf
+        e.funktionen.push_back(std::move(f));
+        return e.funktionen.back();
+    };
+    for (modell::Zugriff& z : e.zugriffe)
+    {
+        const std::size_t zelle = zelleIn(zellen, z.zeile);
+        modell::Funktion& f = funktionDer(zelle);
+        const bool schon = std::any_of(f.zugriffe.begin(), f.zugriffe.end(), [&](const modell::Zugriff& x) {
+            return x.art == z.art && x.ziel == z.ziel && x.imAusdruck == z.imAusdruck;
+        });
+        if (!schon) f.zugriffe.push_back(std::move(z));
+    }
+    e.zugriffe.clear();
+    constexpr std::string_view kOben = "query@";
+    for (modell::Abfrage& q : e.abfragen)
+        if (q.name.starts_with(kOben))
+            q.name = zellenName(zelleIn(zellen, q.zeile) + 1) + "@" + q.name.substr(kOben.size());
+    std::stable_sort(e.funktionen.begin(), e.funktionen.end(),
+                     [](const modell::Funktion& a, const modell::Funktion& b) { return a.zeile < b.zeile; });
+    std::stable_sort(e.abfragen.begin(), e.abfragen.end(),
+                     [](const modell::Abfrage& a, const modell::Abfrage& b) { return a.zeile < b.zeile; });
+    std::stable_sort(e.typen.begin(), e.typen.end(),
+                     [](const modell::Typ& a, const modell::Typ& b) { return a.zeile < b.zeile; });
+}
+
+/// Liest eine Datei: ein Notebook (`notebook`) in seiner Sprache und je fremde Zelle in deren (N3).
+sprache::Ergebnis liesEinheit(const Datei& d, const Notebook* notebook, const std::string& name,
+                              const std::vector<sprache::Definition>& definitionen, const ProjektOptionen& optionen,
+                              const std::string& sqlDialekt)
+{
+    if (notebook == nullptr) return lies(*d.sprache, d.text, name, definitionen, optionen, sqlDialekt);
+    // der Dialekt des SQL (E2, S3): der der Projektdatei, sonst der Kopf (Databricks: spark), sonst fuer die
+    // Zellen in SQL der, den der Code des Notebooks zeigt (`import sqlite3`)
+    std::string dialekt = sqlDialekt.empty() && notebook->databricks ? std::string("spark") : sqlDialekt;
+    sprache::Ergebnis e =
+        lies(*d.sprache, notebook->lesetext, name, definitionen, optionen, dialekt, notebook->abschnitte);
+    if (dialekt.empty())
+        if (const auto host = dialekteVonHost(e); host.size() == 1) dialekt = std::string(host.front().first);
+    const Zeilen skript(d.text);
+    for (const FremdeZelle& f : notebook->fremde)
+    {
+        const Zelle& z = notebook->zellen[f.zelle];
+        sprache::Ergebnis x = lies(*f.sprache, f.text, name, definitionen, optionen, dialekt,
+                                   {{zellenName(f.zelle + 1), z.zeile, z.bisZeile}});
+        const Zeilen fremd(f.text);
+        for (Meldung& m : x.meldungen)
+        {
+            m.ort = imSkript(m.ort, f, fremd, skript);
+            e.meldungen.push_back(std::move(m));
+        }
+        fuegeEin(e.einheit, std::move(x.einheit));
+    }
+    e.meldungen.insert(e.meldungen.end(), notebook->meldungen.begin(), notebook->meldungen.end());
+    std::stable_sort(e.meldungen.begin(), e.meldungen.end(),
+                     [](const Meldung& a, const Meldung& b) { return a.ort.versatz < b.ort.versatz; });
+    ordneZellenZu(e.einheit, notebook->zellen);
+    return e;
+}
+
+/// Macht aus der Datei ein Notebook, wenn sie eins ist: ein `.ipynb` wird sein Skript (N1) und bekommt
+/// seine Sprache; ein Databricks-Notebook bleibt, wie es ist. false = ein `.ipynb`, das sich nicht lesen
+/// laesst (`fehler`).
+bool bereiteNotebook(Datei& d, std::optional<Notebook>& notebook, Meldung& fehler)
+{
+    if (istNotebook(d.pfad))
+    {
+        notebook = ausIpynb(d.text, fehler);
+        if (!notebook) return false;
+        d.text = notebook->skript;
+        d.sprache = notebook->sprache;
+    }
+    else if (d.sprache != nullptr)
+        notebook = ausDatabricks(d.text, *d.sprache);
+    if (notebook) d.zellen = notebook->zellen;
+    return true;
 }
 
 /// Die Include-Pfade fuer eine Datei: die des Projekts, dann die der passenden Abschnitte.
@@ -516,7 +624,7 @@ public:
                 durchsuche(e.path(), weg);
                 continue;
             }
-            if (!e.is_regular_file(art) || sprache::spracheFuer(name) == nullptr) continue;
+            if (!e.is_regular_file(art) || !kannLesen(name)) continue;
             Datei d;
             d.pfad = weg;
             if (!liesDatei(e.path(), d.text))
@@ -524,7 +632,7 @@ public:
                 projektMeldung(weg, Schwere::Fehler, "cannot read the file");
                 continue;
             }
-            d.sprache = sprache::spracheFuer(name, d.text);
+            d.sprache = sprache::spracheFuer(name, d.text);  // ein Notebook bekommt sie in liesAlle
             m_p.dateien.push_back(std::move(d));
         }
     }
@@ -532,6 +640,21 @@ public:
     void liesAlle()
     {
         std::sort(m_p.dateien.begin(), m_p.dateien.end(), [](const Datei& a, const Datei& b) { return a.pfad < b.pfad; });
+        // 0. Notebooks (Entscheide N1–N3); ein `.ipynb`, das sich nicht lesen laesst, faellt mit Meldung heraus
+        std::vector<Datei> dateien;
+        for (Datei& d : m_p.dateien)
+        {
+            std::optional<Notebook> notebook;
+            Meldung fehler;
+            if (!bereiteNotebook(d, notebook, fehler))
+            {
+                m_p.meldungen.push_back({d.pfad, std::move(fehler)});
+                continue;
+            }
+            dateien.push_back(std::move(d));
+            m_notebooks.push_back(std::move(notebook));
+        }
+        m_p.dateien = std::move(dateien);
         for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
         {
             m_index[klein(m_p.dateien[i].pfad)] = i;
@@ -539,10 +662,11 @@ public:
         }
 
         // 1. jede Datei mit den Definitionen von Projekt und Abschnitten
-        for (Datei& d : m_p.dateien)
+        for (std::size_t i = 0; i < m_p.dateien.size(); ++i)
         {
+            Datei& d = m_p.dateien[i];
             d.definitionen = definitionenFuer(m_p.einstellungen, d.pfad);
-            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
+            d.ergebnis = liesEinheit(d, notebook(i), nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
         std::vector<std::vector<sprache::Definition>> ausKoepfen(m_p.dateien.size());
@@ -554,11 +678,16 @@ public:
             if (ausKoepfen[i].empty()) continue;
             Datei& d = m_p.dateien[i];
             fuegeHinzu(d.definitionen, ausKoepfen[i]);
-            d.ergebnis = lies(*d.sprache, d.text, nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
+            d.ergebnis = liesEinheit(d, notebook(i), nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
         }
     }
 
 private:
+    [[nodiscard]] const Notebook* notebook(std::size_t datei) const
+    {
+        return datei < m_notebooks.size() && m_notebooks[datei] ? &*m_notebooks[datei] : nullptr;
+    }
+
     /// Ein Kopf: eine Datei des Projekts oder eine draussen (ueber einen Include-Pfad gefunden).
     struct Kopf
     {
@@ -681,6 +810,7 @@ private:
     std::map<std::string, std::vector<std::size_t>> m_namen;   // klein(Dateiname) -> Dateien
     std::map<std::string, Draussen> m_draussen;
     std::set<std::string> m_gemeldet;
+    std::vector<std::optional<Notebook>> m_notebooks;  ///< je Datei, nach liesAlle Schritt 0
 };
 
 }  // namespace
@@ -775,10 +905,43 @@ Projekt liesText(std::string_view text, std::string_view name, const ProjektOpti
     d.pfad = std::string(name);
     d.text = std::string(text);
     d.sprache = sprache::spracheFuer(name, text);
-    if (d.sprache == nullptr) d.sprache = &sprache::c();
-    d.ergebnis = lies(*d.sprache, d.text, d.pfad, {}, optionen);
+    if (d.sprache == nullptr && !istNotebook(name)) d.sprache = &sprache::c();
+    std::optional<Notebook> notebook;
+    Meldung fehler;
+    if (!bereiteNotebook(d, notebook, fehler))
+    {
+        p.meldungen.push_back({d.pfad, std::move(fehler)});
+        return p;
+    }
+    d.ergebnis = liesEinheit(d, notebook ? &*notebook : nullptr, d.pfad, {}, optionen, {});
     p.dateien.push_back(std::move(d));
     return p;
+}
+
+bool istNotebook(std::string_view dateiname)
+{
+    const std::size_t punkt = dateiname.rfind('.');
+    return punkt != std::string_view::npos && klein(dateiname.substr(punkt + 1)) == "ipynb";
+}
+
+bool kannLesen(std::string_view dateiname)
+{
+    return istNotebook(dateiname) || sprache::spracheFuer(dateiname) != nullptr;
+}
+
+std::size_t zelleAn(const Datei& datei, int zeile)
+{
+    return zelleIn(datei.zellen, zeile);
+}
+
+std::string stelleIn(const Datei& datei, int zeile)
+{
+    const std::size_t i = zelleAn(datei, zeile);
+    if (i == kKeine) return "line " + std::to_string(zeile);
+    const Zelle& z = datei.zellen[i];
+    const std::string zelle = "cell " + std::to_string(i + 1);
+    if (zeile < z.zeile) return zelle;
+    return zelle + ", line " + std::to_string(zeile - z.zeile + 1);
 }
 
 std::vector<Fundstelle> kandidaten(const Projekt& projekt, std::size_t ausDatei, std::string_view aufruf)

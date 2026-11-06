@@ -80,22 +80,13 @@ class PythonLeser final : public Leser
 public:
     PythonLeser(std::string_view text, Ergebnis& aus) : Leser(text, kTabelle, aus) {}
 
-    void liesModul()
+    void liesModul(const std::vector<Abschnitt>& abschnitte)
     {
         const Ort modul;
         std::vector<AnweisungPtr> code;
         liesFolge(modul, code, false);
-        if (!m_ablauf || code.empty()) return;
-        // was auf oberster Ebene ablaeuft, als eigene Funktion — wie Python sie nennt
-        Funktion f;
-        f.name = std::string(kModul);
-        f.zeile = code.front()->zeile;
-        f.bisZeile = m_letzteZeile;
-        f.rumpf = std::make_unique<Anweisung>();
-        f.rumpf->art = AnweisungArt::Block;
-        f.rumpf->zeile = f.zeile;
-        f.rumpf->kinder = std::move(code);
-        m_aus.einheit.funktionen.push_back(std::move(f));
+        // was auf oberster Ebene ablaeuft, als eigene Funktion — wie Python sie nennt (oder je Abschnitt)
+        legeModulAn(std::move(code), m_ablauf, m_letzteZeile, kModul, abschnitte);
     }
 
 private:
@@ -831,11 +822,11 @@ public:
     [[nodiscard]] const lexer::Sprachtabelle& tabelle() const override { return kTabelle; }
 
     [[nodiscard]] Ergebnis lies(std::string_view text, std::string_view einheitName,
-                                const LeseOptionen& /*optionen*/) const override
+                                const LeseOptionen& optionen) const override
     {
         Ergebnis ergebnis;
         ergebnis.einheit.name = std::string(einheitName);
-        PythonLeser(text, ergebnis).liesModul();
+        PythonLeser(text, ergebnis).liesModul(optionen.abschnitte);
         ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
         return ergebnis;
     }

@@ -96,6 +96,12 @@ protected:
     /// Der Text der Token [a, b), mit einem Leerzeichen, wo im Quelltext Abstand war.
     [[nodiscard]] std::string textVon(std::size_t a, std::size_t b) const;
 
+    /// Was auf oberster Ebene ablaeuft (`code`), als Funktion: ohne `abschnitte` eine namens `modul`, wenn
+    /// `ablauf` (es laeuft etwas ab, nicht nur def, class, Zuweisungen); mit ihnen je Abschnitt, in dem
+    /// Code steht, eine Funktion mit dessen Namen (LeseOptionen::abschnitte). `bisZeile`: wo der Text endet.
+    void legeModulAn(std::vector<modell::AnweisungPtr> code, bool ablauf, int bisZeile, std::string_view modul,
+                     const std::vector<Abschnitt>& abschnitte);
+
     Ergebnis& m_aus;
     std::vector<Token> m_t;
     std::size_t m_p = 0;

@@ -298,6 +298,36 @@ $$;
         CHECK(p.einheit.abfragen[1].bloecke[0].quellen.size() == 2);
     }
 
+    TEST_CASE("Leser: ein Hinweis WITH (…) am Zeilenanfang gehoert zur Abfrage (OPENJSON, T-SQL), keine Schleife")
+    {
+        // aus WWI `UpdateColorFromJson.sql`: vorher endete die Abfrage am WITH, und das Uebergehen des Hinweises
+        // las ueber ihr Ende hinaus und kam nie weiter
+        const sprache::Ergebnis t = lies(R"(CREATE PROCEDURE p(@x NVARCHAR(MAX), @id int)
+AS BEGIN
+    UPDATE dbo.kurs SET
+        titel = json.titel
+    FROM OPENJSON (@x)
+        WITH (titel nvarchar(50)) as json
+    WHERE
+        dbo.kurs.kurs_id = @id
+END
+)",
+                                         "tsql");
+        const std::vector<modell::Abfrage>& q = t.einheit.abfragen;
+        REQUIRE(q.size() == 1);
+        CHECK(q[0].schreibt == "update");
+        CHECK(q[0].bisZeile == 8);
+        const modell::AbfrageBlock& b = q[0].bloecke[0];
+        REQUIRE(b.quellen.size() == 2);  // das Ziel des UPDATE … FROM und die Funktion
+        CHECK(b.quellen[0].name == "dbo.kurs");
+        CHECK(b.quellen[1].name == "OPENJSON");
+        CHECK(b.quellen[1].alias == "json");
+
+        // ein Hinweis am Ende des Texts (die Grenze liegt auf dem WITH)
+        const sprache::Ergebnis e = lies("SELECT a FROM t\n WITH (a);\n", "tsql");
+        CHECK(e.einheit.abfragen.size() == 1);
+    }
+
     TEST_CASE("Diagramm: ein Alias der Liste ist keine Spalte; ohne Schema ist eine Spalte ohne Alias unzugeordnet")
     {
         const sprache::Ergebnis e = lies(R"(

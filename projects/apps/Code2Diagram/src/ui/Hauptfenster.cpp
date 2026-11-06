@@ -1018,6 +1018,13 @@ void Hauptfenster::zeigeLage()
 {
     if (m_datei >= m_projekt.dateien.size())
     {
+        if (m_ordner.isEmpty() && !m_projekt.meldungen.empty())
+        {
+            // eine Datei, die sich nicht lesen liess (ein Notebook): warum
+            setWindowTitle(QStringLiteral("%1 - %2").arg(letzterName(m_einzelName), ausStd(appName())));
+            statusBar()->showMessage(projektMeldungen().front());
+            return;
+        }
         setWindowTitle(QStringLiteral("%1 - %2").arg(letzterName(m_ordner), ausStd(appName())));
         statusBar()->showMessage(QStringLiteral("%1: no source files (%2 folder(s) skipped)")
                                      .arg(m_ordner)
@@ -1026,7 +1033,7 @@ void Hauptfenster::zeigeLage()
     }
     const c2d::projekt::Datei& d = m_projekt.dateien[m_datei];
     const QString name = istProjekt() ? ausStd(d.pfad) : m_einzelName;
-    const bool ersatz = c2d::sprache::spracheFuer(letzterName(name).toStdString()) == nullptr;
+    const bool ersatz = !c2d::projekt::kannLesen(letzterName(name).toStdString());
     // die Funktionen der Auswahl: alles, was kein Automat, keine Datentypen und kein Aufrufgraph ist
     int funktionen = 0;
     for (const QString& eintrag : diagramme())
@@ -1035,8 +1042,9 @@ void Hauptfenster::zeigeLage()
             eintrag != QLatin1String(kAbhaengigkeitenDatei) && !eintrag.startsWith(QLatin1String(kAbhaengigkeiten)) &&
             eintrag != QLatin1String(kAbfragen))
             ++funktionen;
-    QString lage = QStringLiteral("%1, read as %2%3: %4 function(s), %5 data type(s)")
-                       .arg(name, ausStd(d.sprache->name()),
+    const QString art = d.zellen.empty() ? QString() : QStringLiteral(" notebook (%1 cells)").arg(d.zellen.size());
+    QString lage = QStringLiteral("%1, read as %2%3%4: %5 function(s), %6 data type(s)")
+                       .arg(name, ausStd(d.sprache->name()), art,
                             ersatz ? QStringLiteral(" (no reader for this file type)") : QString())
                        .arg(funktionen)
                        .arg(d.ergebnis.einheit.typen.size());
@@ -1044,9 +1052,9 @@ void Hauptfenster::zeigeLage()
     if (!d.ergebnis.meldungen.empty())
     {
         const c2d::quelle::Meldung& erste = d.ergebnis.meldungen.front();
-        lage += QStringLiteral(" - %1 message(s), first in line %2: %3")
+        lage += QStringLiteral(" - %1 message(s), first in %2: %3")
                     .arg(d.ergebnis.meldungen.size())
-                    .arg(erste.ort.zeile)
+                    .arg(ausStd(c2d::projekt::stelleIn(d, erste.ort.zeile)))
                     .arg(QString::fromStdString(erste.text));
     }
     if (const QStringList offen = unbekannteNamen(); !offen.isEmpty())
@@ -2663,6 +2671,7 @@ QString Hauptfenster::dateiFilter()
         for (const std::string_view endung : s->endungen()) muster << QStringLiteral("*.") + ausStd(endung);
         filter << QStringLiteral("%1 files (%2)").arg(ausStd(s->name()), muster.join(QLatin1Char(' ')));
     }
+    filter << QStringLiteral("Jupyter notebooks (*.ipynb)");
     filter << QStringLiteral("All files (*)");
     return filter.join(QStringLiteral(";;"));
 }
@@ -3111,11 +3120,32 @@ bool Hauptfenster::zeigeZeile(std::size_t datei, int zeile)
     m_quelle->setTextCursor(zeiger);
     m_quelle->centerCursor();
     // die ganze Zeile hinterlegen, auch wo sie leer ist
+    QList<QTextEdit::ExtraSelection> marken;
+    const c2d::projekt::Datei& d = m_projekt.dateien[datei];
+    if (const std::size_t z = c2d::projekt::zelleAn(d, zeile); z != kKeine)
+    {
+        // in einem Notebook dazu schwach die Zelle, vom Kopf bis zu ihrer letzten Zeile (Entscheid P2)
+        const c2d::projekt::Zelle& zelle = d.zellen[z];
+        const QTextBlock von = m_quelle->document()->findBlockByNumber((zelle.kopf > 0 ? zelle.kopf : zelle.zeile) - 1);
+        const QTextBlock bis = m_quelle->document()->findBlockByNumber(std::max(zelle.bisZeile, zelle.zeile) - 1);
+        if (von.isValid() && bis.isValid())
+        {
+            QTextEdit::ExtraSelection flaeche;
+            flaeche.cursor = QTextCursor(von);
+            flaeche.cursor.setPosition(bis.position() + std::max(bis.length() - 1, 0), QTextCursor::KeepAnchor);
+            QColor farbe = zeilenFarbe();
+            farbe.setAlpha(30);
+            flaeche.format.setBackground(farbe);
+            flaeche.format.setProperty(QTextFormat::FullWidthSelection, true);
+            marken << flaeche;
+        }
+    }
     QTextEdit::ExtraSelection marke;
     marke.cursor = zeiger;
     marke.format.setBackground(zeilenFarbe());
     marke.format.setProperty(QTextFormat::FullWidthSelection, true);
-    m_quelle->setExtraSelections({marke});
+    marken << marke;
+    m_quelle->setExtraSelections(marken);
     m_quelleZeile = zeile;
     return true;
 }
@@ -3345,7 +3375,10 @@ bool Hauptfenster::zeigeImDiagramm(int zeile)
 QString Hauptfenster::gezeigteStelle() const
 {
     if (m_quelleZeigt >= m_projekt.dateien.size() || m_quelleZeile <= 0) return {};
-    return QStringLiteral("%1:%2").arg(ausStd(m_projekt.dateien[m_quelleZeigt].pfad)).arg(m_quelleZeile);
+    const c2d::projekt::Datei& d = m_projekt.dateien[m_quelleZeigt];
+    QString aus = QStringLiteral("%1:%2").arg(ausStd(d.pfad)).arg(m_quelleZeile);
+    if (!d.zellen.empty()) aus += QStringLiteral(" (%1)").arg(ausStd(c2d::projekt::stelleIn(d, m_quelleZeile)));
+    return aus;
 }
 
 void Hauptfenster::speichereUnter()

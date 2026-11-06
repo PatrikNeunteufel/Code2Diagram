@@ -102,19 +102,12 @@ public:
         trenneZeilen();  // je Token, ob vor ihm eine neue Zeile beginnt
     }
 
-    void liesModul()
+    void liesModul(const std::vector<Abschnitt>& abschnitte)
     {
         const Ort modul;
         std::vector<AnweisungPtr> code;
         liesFolge(modul, code, false);
-        if (!m_ablauf || code.empty()) return;
-        Funktion f;
-        f.name = std::string(kModul);
-        f.zeile = code.front()->zeile;
-        f.bisZeile = zeileVor(m_p);
-        f.rumpf = block(std::move(code), m_t.front());
-        f.rumpf->zeile = f.zeile;
-        m_aus.einheit.funktionen.push_back(std::move(f));
+        legeModulAn(std::move(code), m_ablauf, zeileVor(m_p), kModul, abschnitte);
     }
 
 private:
@@ -1459,11 +1452,12 @@ const lexer::Sprachtabelle& tabelle()
     return kTabelle;
 }
 
-Ergebnis lies(std::string_view text, std::string_view einheitName, Dialekt dialekt)
+Ergebnis lies(std::string_view text, std::string_view einheitName, Dialekt dialekt,
+              const std::vector<Abschnitt>& abschnitte)
 {
     Ergebnis ergebnis;
     ergebnis.einheit.name = std::string(einheitName);
-    EcmaLeser(text, dialekt, ergebnis).liesModul();
+    EcmaLeser(text, dialekt, ergebnis).liesModul(abschnitte);
     ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
     return ergebnis;
 }

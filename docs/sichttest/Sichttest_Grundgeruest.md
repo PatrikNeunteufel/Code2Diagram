@@ -961,3 +961,30 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       - drawio: `swimlane`.
       - csv sagt `Query is not available in csv`.
       - Dunkles Thema lesbar.
+
+## AD. Notebooks
+
+- [ ] **AD0 Vorbereiten:** File > Open source file… `beispiele/notebooks/lager.ipynb`, Vorschau. Der Dateifilter
+      bietet `Jupyter notebooks (*.ipynb)`.
+      `aktion: datei_oeffnen pfad=beispiele/notebooks/lager.ipynb` `aktion: ansicht_waehlen name=preview`
+- [ ] **AD1 Das Skript:** Links steht kein JSON, sondern je Zelle eine Kopfzeile `# %% [1] markdown`, `# %% [2]` …;
+      die Markdown-Zelle als Kommentar (`# # Lager`), `%pip install pandas` und `!ls -l lager.db`, wie sie in der
+      Zelle stehen. Statuszeile `lager.ipynb, read as Python notebook (6 cells): 4 function(s), 2 data type(s) -
+      2 message(s), first in cell 2, line 1: IPython magic %pip is not read`.
+- [ ] **AD2 Je Zelle eine Funktion:** Diagram bietet `<cell 2>`, `fehlt`, `<cell 5>`, `<cell 6>`, kein `<module>`.
+      `<cell 5>` zeigt den Ablauf ab `zeilen = db.execute(…)` mit der Schleife und `print(f"…")` am Ende.
+      `aktion: diagramm_waehlen name=<cell 5>`
+- [ ] **AD3 Klick zeigt die Zelle:** Ein Klick auf `menge = fehlt(bestand)` hebt die Zeile hervor und hinterlegt
+      schwach die ganze Zelle 5 vom Kopf `# %% [5]` bis zu `print(…)`.
+      `aktion: klicken name=menge = fehlt(bestand)`
+- [ ] **AD4 Zelle in SQL:** Data types zeigt `artikel` und `fehlmenge` (aus der Zelle `%%sql`) mit dem Fremdschlüssel;
+      Data dependencies: `<cell 5>` liest `artikel`, schreibt `fehlmenge`. Queries bietet `<cell 5>@36`.
+      `aktion: diagramm_waehlen name=types` `aktion: abhaengigkeiten_zeigen`
+- [ ] **AD5 Aufrufgraph:** Call graph (file): `<cell 5>` ruft `fehlt`, die Zellen sind Knoten.
+      `aktion: aufrufgraph_zeigen`
+- [ ] **AD6 Databricks:** `beispiele/notebooks/kunden_databricks.py` öffnen. Statuszeile `read as Python notebook
+      (5 cells)`, `first in cell 2, line 1: %run is not followed`. Diagram bietet `<cell 3>` und `<cell 5>`;
+      Queries `<cell 4>@19` (die Zelle `%sql`, `create table gold.kunden_je_land`) und `<cell 5>@27`.
+      `aktion: datei_oeffnen pfad=beispiele/notebooks/kunden_databricks.py`
+- [ ] **AD7 Ordner:** File > Open folder… `beispiele/notebooks`: beide im Dateibaum, File > Open recent nennt sie.
+      `aktion: ordner_oeffnen pfad=beispiele/notebooks`

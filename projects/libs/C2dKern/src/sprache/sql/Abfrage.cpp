@@ -168,12 +168,16 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
     std::vector<Abfrage> aus;
     // Beginnt bei j eine Abfrage? Am Anfang, nach `;`, nach einem Wort, das einen Block oeffnet, oder am
     // Anfang einer Zeile, wenn die Zeile davor nicht fortgesetzt wird.
+    // ein WITH einer Abfrage (`WITH x AS`, `WITH x (a, b) AS`, `WITH RECURSIVE`), kein Hinweis `WITH (NOLOCK)`
+    // und kein `OPENJSON(…) WITH (…)`
+    const auto mitAbfrage = [&](std::size_t j) {
+        return istName(j + 1) && (wort(j + 2, "as") || istAuf(j + 2) || wort(j + 1, "recursive"));
+    };
     const auto beginnt = [&](std::size_t j) {
         if (!(wort(j, "select") || wort(j, "perform") || wort(j, "with") || wort(j, "insert") || wort(j, "update") || wort(j, "delete") ||
               wort(j, "merge") || wort(j, "create") || wort(j, "alter")))
             return false;
-        if (wort(j, "with") && !(istName(j + 1) && (wort(j + 2, "as") || istAuf(j + 2) || wort(j + 1, "recursive"))))
-            return false;  // ein Hinweis `WITH (NOLOCK)`, kein WITH einer Abfrage
+        if (wort(j, "with") && !mitAbfrage(j)) return false;
         if (j == a) return true;
         const Token& davor = tok(j - 1);
         if (davor.istOp(";")) return true;
@@ -214,7 +218,9 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
             {
                 const std::string w = klein(tok(k).text);
                 bool gehoertDazu = false;
-                if (w == "select" || w == "with")
+                if (w == "with" && !mitAbfrage(k))
+                    gehoertDazu = true;  // ein Hinweis am Zeilenanfang (`FROM OPENJSON(@x)` / `WITH (…)`)
+                else if (w == "select" || w == "with")
                 {
                     const bool fortgesetzt = wort(k - 1, "union") || wort(k - 1, "all") || wort(k - 1, "distinct") ||
                                              wort(k - 1, "intersect") || wort(k - 1, "except") || wort(k - 1, "minus") ||
@@ -808,12 +814,12 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
             for (bool weiter = true; weiter;)
             {
                 weiter = false;
-                if (wort(j, "with") && istAuf(j + 1))
+                if (j + 1 < b && wort(j, "with") && istAuf(j + 1))
                 {
                     j = ueber(j + 1, b);
                     weiter = true;
                 }
-                if (wort(j, "tablesample"))
+                if (j < b && wort(j, "tablesample"))
                 {
                     ++j;
                     while (j < b && istName(j) && !istAuf(j)) ++j;
@@ -821,7 +827,7 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
                     if (wort(j, "repeatable") && istAuf(j + 1)) j = ueber(j + 1, b);
                     weiter = true;
                 }
-                if (wort(j, "final") || wort(j, "only")) ++j;
+                if (j < b && (wort(j, "final") || wort(j, "only"))) ++j;
             }
         };
         uebergehe();

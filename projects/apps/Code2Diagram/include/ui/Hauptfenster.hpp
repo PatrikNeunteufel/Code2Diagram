@@ -240,7 +240,8 @@ public:
     /// ein Typ (der Kopf seines Kastens) oder `Typ::glied` (ein Feld oder eine Methode).
     /// false = nichts dieses Namens, oder es hat keine Stelle.
     bool klicke(const QString& name);
-    /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`; leer = keine.
+    /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`, in einem Notebook dazu
+    /// ` (cell n, line m)`; leer = keine.
     [[nodiscard]] QString gezeigteStelle() const;
     /// Wie Rechtsklick im Quelltext, Truth table of line n: die Wahrheitstabelle der Bedingung in Zeile
     /// `zeile` der Datei im Quelltext, als eigenes Diagramm (Back fuehrt zurueck). false = dort keine.
