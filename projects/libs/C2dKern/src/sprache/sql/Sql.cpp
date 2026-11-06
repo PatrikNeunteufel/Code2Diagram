@@ -373,6 +373,17 @@ private:
         for (Abfrage& x : leser.suche(a, b, vorn)) m_aus.einheit.abfragen.push_back(std::move(x));
     }
 
+    /// Eine Abfrage mit Ziel auf oberster Ebene bekommt die Zugriffe ihrer Token [von, bis) — sie ist ein Knoten
+    /// in *Data dependencies* (Entscheid C2). Je Abfrage, nicht je Anweisung des Lesers: in T-SQL ohne `;` stehen
+    /// viele in einer. `eigene` (temporaere Tabellen, Namen eines WITH) kommt aus der ganzen Anweisung.
+    void gibZugriffe(Abfrage& q, std::size_t von, std::size_t bis, std::vector<std::string> eigene)
+    {
+        if (q.ziel.empty()) return;
+        const std::size_t gemeldet = m_aus.meldungen.size();
+        sammleZugriffe(von, bis, q.zugriffe, eigene);
+        m_aus.meldungen.resize(gemeldet);  // der erste Lauf ueber die ganze Anweisung hat schon gemeldet
+    }
+
     /// Die Anweisung [a, b) als eine Abfrage namens `name` (eine View, CREATE TABLE … AS).
     void abfrageAus(std::size_t a, std::size_t b, const std::string& name)
     {
@@ -682,7 +693,12 @@ private:
             // Namen ihres WITH gelten nur in ihr
             std::vector<std::string> eigene;
             sammleZugriffe(a, b, m_aus.einheit.zugriffe, eigene);
-            abfragenIn(a, b, "query");
+            sqlteile::AbfrageLeser leser(*this);
+            leser.selectIntoTabelle = m_dialekt.name == "tsql";
+            std::vector<Abfrage> gefunden = leser.suche(a, b, "query");
+            for (std::size_t i = 0; i < gefunden.size(); ++i)
+                gibZugriffe(gefunden[i], leser.bereiche[i].first, leser.bereiche[i].second, eigene);
+            for (Abfrage& x : gefunden) m_aus.einheit.abfragen.push_back(std::move(x));
             return;
         }
         melde(Schwere::Warnung, t, "statement '" + std::string(t.text) + "' is not understood");
@@ -706,12 +722,15 @@ private:
             else if (g->gebilde == Gebilde::Tabelle)
             {
                 liesCreateTable(k + 1, b);
+                const std::size_t vorher = m_aus.einheit.abfragen.size();
                 abfrageAus(a, b, "query@" + std::to_string(tok(a).ort.zeile));  // CREATE TABLE … AS SELECT
                 if (alsAbfrage(a, b) != kKeiner)
                 {
                     // liest seine Quellen und schreibt die Tabelle, wie INSERT … SELECT (Entscheid C1)
                     std::vector<std::string> eigene;
                     sammleZugriffe(a, b, m_aus.einheit.zugriffe, eigene);
+                    if (m_aus.einheit.abfragen.size() > vorher)
+                        gibZugriffe(m_aus.einheit.abfragen.back(), a, b, eigene);
                 }
             }
             else if (g->gebilde == Gebilde::Objekt)
@@ -1210,9 +1229,13 @@ private:
             while (true)
             {
                 while (wort(k, "lateral") || wort(k, "only")) ++k;
+                const std::size_t strom = sqlteile::hinterStream(*this, k);
+                const bool inKlammer = strom != k && tok(k + 1).istOp("(");
+                k = strom;
                 if (!tabellenName(k)) return k;
                 std::size_t e = k;
                 const std::string n = liesNamen(k, e);
+                if (inKlammer && tok(e).istOp(")")) ++e;  // STREAM(live.x)
                 if (tok(e).istOp("("))
                 {
                     neu(ZugriffArt::Ruft, n, k, true);  // eine Funktion, die eine Tabelle liefert

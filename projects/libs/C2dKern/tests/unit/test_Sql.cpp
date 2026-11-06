@@ -443,6 +443,30 @@ TEST_SUITE("SQL")
         CHECK(kopie->zeile == 3);
     }
 
+    TEST_CASE("STREAM (Spark/Databricks) ist ein Wort vor der Quelle, keine Tabelle; FROM stream s bleibt eine")
+    {
+        using modell::ZugriffArt;
+        const auto liest = [](const sprache::Ergebnis& e) {
+            std::vector<std::string> n;
+            for (const modell::Zugriff& z : e.einheit.zugriffe)
+                if (z.art == ZugriffArt::Liest) n.push_back(z.ziel);
+            return n;
+        };
+        const auto e = sq("CREATE TABLE a AS SELECT * FROM STREAM read_files('/x', format => 'csv');\n"
+                          "CREATE TABLE b AS SELECT * FROM STREAM(live.roh) r JOIN STREAM live.zwei z ON z.id = r.id;\n"
+                          "SELECT * FROM stream s;\n",
+                          "spark");
+        CHECK(liest(e) == std::vector<std::string>{"live.roh", "live.zwei", "stream"});
+        REQUIRE(e.einheit.abfragen.size() == 3);
+        const modell::AbfrageBlock& b = e.einheit.abfragen[1].bloecke[0];
+        REQUIRE(b.quellen.size() == 2);
+        CHECK(b.quellen[0].name == "live.roh");
+        CHECK(b.quellen[0].alias == "r");
+        CHECK(b.quellen[1].name == "live.zwei");
+        CHECK(e.einheit.abfragen[0].bloecke[0].quellen[0].name == "read_files");
+        CHECK(e.einheit.abfragen[2].bloecke[0].quellen[0].name == "stream");
+    }
+
     TEST_CASE("Die Sprache: Endungen, kein Praeprozessor")
     {
         CHECK(sprache::spracheFuer("schema.SQL") == &sprache::sql());

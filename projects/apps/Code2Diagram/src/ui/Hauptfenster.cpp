@@ -1809,6 +1809,11 @@ void Hauptfenster::folgeAbhaengigkeit(c2d::diagramm::KnotenId knoten)
         geheZuTyp({s.datei, s.index}, knoten);  // in Data types
         return;
     }
+    if (s.art == Art::Abfrage)
+    {
+        geheZuAbfrage(s.datei, s.index, knoten);  // eine Anweisung auf oberster Ebene: ihr Abfragediagramm
+        return;
+    }
     zeigeZeile(s.datei, k.zeile);  // eine View, ein Trigger, eine Routine: ihre Stelle (einen Ablauf haben sie noch nicht)
 }
 
@@ -1852,6 +1857,9 @@ void Hauptfenster::abhaengigkeitenMenue(c2d::diagramm::KnotenId knoten)
                 menue.addAction(QStringLiteral("Show %1 in Data types%2").arg(name, wo), this, [this, knoten] { folgeAbhaengigkeit(knoten); });
             menue.addAction(QStringLiteral("Data dependencies from %1%2").arg(name, wo), this,
                             [this, s, objekt, knoten] { geheZuAbhaengigkeiten(s.datei, objekt, knoten); });
+            if (s.art == Art::Abfrage)
+                menue.addAction(QStringLiteral("Query diagram of %1%2").arg(name, wo), this,
+                                [this, s, knoten] { geheZuAbfrage(s.datei, s.index, knoten); });
             if (s.art == Art::Objekt || s.art == Art::Funktion)
                 if (const auto [d, i] = abfrageVon(k.name); d != kKeine)
                     menue.addAction(QStringLiteral("Query diagram of %1").arg(name), this,

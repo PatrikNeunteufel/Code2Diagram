@@ -192,6 +192,9 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
         std::cout << "object    " << kObjektArt[static_cast<int>(o.art)] << ' ' << o.name << zugriffe(o.zugriffe) << '\n';
     for (const c2d::modell::Funktion& f : einheit.funktionen)
         if (!f.zugriffe.empty()) std::cout << "access    " << f.vollerName() << zugriffe(f.zugriffe) << '\n';
+    // eine Anweisung mit Ziel auf oberster Ebene einer .sql: ein Knoten in Data dependencies (C2)
+    for (const c2d::modell::Abfrage& q : einheit.abfragen)
+        if (!q.ziel.empty() && !q.zugriffe.empty()) std::cout << "statement " << q.name << zugriffe(q.zugriffe) << '\n';
     for (const c2d::modell::Abfrage& q : einheit.abfragen)
     {
         std::size_t quellen = 0;

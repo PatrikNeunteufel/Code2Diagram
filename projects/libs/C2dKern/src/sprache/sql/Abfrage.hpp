@@ -33,6 +33,11 @@ public:
     [[nodiscard]] virtual std::size_t hinterKlammer(std::size_t i) const = 0;
 };
 
+/// Steht bei i in einer FROM-Liste das Wort STREAM von Spark/Databricks (`STREAM read_files(…)`, `STREAM(live.x)`,
+/// `STREAM live.x`): die Stelle des Namens dahinter, sonst i. STREAM gilt als Wort, wenn `(` folgt oder ein Name
+/// mit `(` oder `.` dahinter — `FROM stream s` bleibt eine Tabelle `stream` mit Alias.
+[[nodiscard]] std::size_t hinterStream(const Tokenquelle& q, std::size_t i);
+
 class AbfrageLeser
 {
 public:
@@ -42,8 +47,11 @@ public:
     bool selectIntoTabelle = false;
 
     /// Jede Abfrage in [a, b) — eine Anweisung oder der Rumpf einer Routine, in dem mehrere stehen,
-    /// auch ohne `;` (T-SQL). Name je Abfrage: `vorn@zeile`.
+    /// auch ohne `;` (T-SQL). Name je Abfrage: `vorn@zeile`. Ihre Token stehen danach in `bereiche`.
     [[nodiscard]] std::vector<modell::Abfrage> suche(std::size_t a, std::size_t b, const std::string& vorn);
+
+    /// Nach suche: je gefundene Abfrage (in derselben Reihenfolge) ihre Token [von, bis).
+    std::vector<std::pair<std::size_t, std::size_t>> bereiche;
 
     /// Die Anweisung [a, b) als Abfrage, wenn sie eine ist (SELECT, WITH, INSERT … SELECT, CREATE … AS,
     /// UPDATE … FROM, DELETE … USING, MERGE … USING); `name` ist ihr Name.

@@ -32,6 +32,7 @@ struct Datenstelle
         Tabelle,   ///< einheit.typen[index]
         Objekt,    ///< einheit.objekte[index]
         Funktion,  ///< einheit.funktionen[index]
+        Abfrage,   ///< einheit.abfragen[index]: eine Anweisung auf oberster Ebene einer `.sql` (Entscheid C2)
         Fremd,     ///< nichts des Projekts
     };
     Art art = Art::Fremd;

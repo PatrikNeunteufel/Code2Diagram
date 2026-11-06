@@ -56,7 +56,7 @@ struct LeseOptionen
     /// sondern je Abschnitt, in dem er steht, eine Funktion mit dessen Namen — auch wenn er nur zuweist (ein
     /// Notebook: je Zelle, Entscheid N2). Nach Zeilen geordnet; eine Anweisung vor dem ersten gehoert zum
     /// ersten, eine zwischen zweien zum vorderen. Leer = `<module>`.
-    std::vector<Abschnitt> abschnitte;
+    std::vector<Abschnitt> abschnitte{};
     /// Bedingte Uebersetzung (#if, #ifdef ...) nicht auswerten, sondern alle
     /// Zweige lesen — als stuende der Code aller Varianten hintereinander.
     bool alleZweige = false;

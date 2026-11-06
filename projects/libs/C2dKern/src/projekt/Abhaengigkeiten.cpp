@@ -54,6 +54,13 @@ std::string_view stereotyp(const modell::Datenbankobjekt& o)
 }
 
 constexpr std::string_view kTabelle = "\xC2\xAB" "table" "\xC2\xBB";
+constexpr std::string_view kAnweisung = "\xC2\xAB" "statement" "\xC2\xBB";
+
+/// Eine Anweisung auf oberster Ebene einer `.sql`, die ein eigener Knoten ist (Entscheid C2).
+bool istAnweisung(const modell::Abfrage& q)
+{
+    return !q.ziel.empty() && !q.zugriffe.empty();
+}
 
 /// Der ganze Graph des Projekts.
 class Gesamt
@@ -136,6 +143,12 @@ public:
                     funktionen.push_back(neu({AufrufKnotenArt::Funktion, e.funktionen[i].vollerName(), {},
                                               {Datenstelle::Art::Funktion, d, i}, e.funktionen[i].zeile,
                                               e.funktionen[i].vollerName(), {}}));
+            // Anweisungen mit Ziel auf oberster Ebene: je eine wie eine Routine, «statement», `query@zeile`
+            for (std::size_t i = 0; i < e.abfragen.size(); ++i)
+                if (istAnweisung(e.abfragen[i]))
+                    funktionen.push_back(neu({AufrufKnotenArt::Routine, e.abfragen[i].name, std::string(kAnweisung),
+                                              {Datenstelle::Art::Abfrage, d, i}, e.abfragen[i].zeile,
+                                              e.abfragen[i].name, {}}));
         }
         // 3. die Kanten
         for (const auto& [d, i] : objekte)
@@ -150,7 +163,10 @@ public:
         for (const std::size_t n : funktionen)
         {
             const Datenstelle& s = m_k[n].stelle;
-            for (const modell::Zugriff& z : p.dateien[s.datei].ergebnis.einheit.funktionen[s.index].zugriffe) zugriff(n, z);
+            const modell::Einheit& e = p.dateien[s.datei].ergebnis.einheit;
+            const std::vector<modell::Zugriff>& z =
+                s.art == Datenstelle::Art::Abfrage ? e.abfragen[s.index].zugriffe : e.funktionen[s.index].zugriffe;
+            for (const modell::Zugriff& x : z) zugriff(n, x);
         }
     }
 
@@ -297,6 +313,8 @@ std::vector<std::string> datenobjekteIn(const Projekt& projekt, std::size_t date
     }
     for (const modell::Funktion& f : e.funktionen)
         if (!f.zugriffe.empty()) aus.push_back(f.vollerName());
+    for (const modell::Abfrage& q : e.abfragen)
+        if (istAnweisung(q)) aus.push_back(q.name);
     return aus;
 }
 

@@ -324,6 +324,7 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
                     q.zeile = hostZeile(q.zeile);
                     q.bisZeile = hostZeile(q.bisZeile);
                     q.name = (f != nullptr ? f->vollerName() : std::string("query")) + "@" + std::to_string(q.zeile);
+                    q.zugriffe.clear();  // sie traegt die Funktion (A4), die Anweisung ist kein eigener Knoten
                     zurueckIn(q.ziel, alle);
                     for (modell::AbfrageBlock& b : q.bloecke)
                     {
@@ -496,8 +497,11 @@ void ordneZellenZu(modell::Einheit& e, const std::vector<Zelle>& zellen)
     e.zugriffe.clear();
     constexpr std::string_view kOben = "query@";
     for (modell::Abfrage& q : e.abfragen)
+    {
+        q.zugriffe.clear();  // sie traegt die Zelle (N3), die Anweisung ist kein eigener Knoten
         if (q.name.starts_with(kOben))
             q.name = zellenName(zelleIn(zellen, q.zeile) + 1) + "@" + q.name.substr(kOben.size());
+    }
     std::stable_sort(e.funktionen.begin(), e.funktionen.end(),
                      [](const modell::Funktion& a, const modell::Funktion& b) { return a.zeile < b.zeile; });
     std::stable_sort(e.abfragen.begin(), e.abfragen.end(),

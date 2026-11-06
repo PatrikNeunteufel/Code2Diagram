@@ -406,6 +406,10 @@ struct Abfrage
     std::vector<AbfrageBlock> bloecke;  ///< [0] ist die Abfrage selbst
     std::string ziel;       ///< wohin sie schreibt; leer = nirgends
     std::string schreibt;   ///< dann wie: `insert into`, `create table`, `create view`, `update`, `delete`, `merge into`, `select into`
+    /// Nur eine Anweisung mit Ziel auf oberster Ebene einer `.sql`: was sie liest, schreibt, ruft — sie ist dann
+    /// selbst ein Knoten in *Data dependencies* (Entscheid C2). Sonst leer: die Zugriffe traegt ihr Besitzer
+    /// (View, Routine, Funktion des Host-Codes, Zelle eines Notebooks).
+    std::vector<Zugriff> zugriffe;
 };
 
 /// Ein Fremdschluessel (SQL `REFERENCES`, `FOREIGN KEY`): Felder eines Typs nennen Zeilen eines anderen.

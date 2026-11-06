@@ -302,8 +302,11 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   direkt an `execute(`, `exec(`, `QSqlQuery(` … geht. Ansichten: die Datei, oder ab einem Objekt mit
   Richtung, Tiefe und Max wie beim Aufrufgraph; ab einem Objekt löst eine Tabelle ihre Trigger nur aus,
   wo sie beginnt oder geschrieben wird. Doppelklick: eine Tabelle in Data types, eine Funktion ihr Ablauf.
-  Abfragen und Daten auf oberster Ebene (ein Skript) zeigt das Diagramm nicht. Ein erstes Wort, das der
-  Leser nicht kennt, gibt eine Meldung.
+  In einem Skript (oberste Ebene einer `.sql`) ist jede Anweisung, die aus Quellen in ein Ziel schreibt
+  (`CREATE TABLE … AS SELECT`, `INSERT … SELECT`, `UPDATE … FROM` …), ein Knoten «statement» `query@zeile`
+  mit ihren eigenen Kanten; ein Doppelklick zeigt ihr Abfragediagramm. Reine Abfragen und `… VALUES` sind
+  keine Knoten (sie stehen in *Queries*). `STREAM` (Spark, `FROM STREAM read_files(…)`) ist ein Wort, keine
+  Tabelle. Ein erstes Wort, das der Leser nicht kennt, gibt eine Meldung.
 - **Abfragen** (Diagram *Queries (n)*, im zweiten Feld welche; `c2d --abfrage`):
   - **Was eine Abfrage ist:** jede Anweisung mit SELECT, auch in Views, Routinen, Triggern und in SQL in
     Zeichenketten. Dazu der SELECT-Teil von `INSERT … SELECT`, `CREATE TABLE/VIEW … AS`, `UPDATE … FROM`,

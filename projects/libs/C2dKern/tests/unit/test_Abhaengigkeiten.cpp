@@ -164,6 +164,68 @@ TEST_SUITE("Abhaengigkeiten")
         CHECK(e.stellen[knoten(g, AufrufKnotenArt::FremdeTabelle, "lager_extern")].datei == projekt::kKeine);
     }
 
+    TEST_CASE("Anweisungen oben in einer .sql (C2): je eine mit Ziel ein Knoten query@zeile, reine Abfragen nicht")
+    {
+        const TempOrdner t;
+        t.lege("schema.sql", kSchema);
+        t.lege("laden.sql", "CREATE TABLE knapp_kopie AS SELECT * FROM knapp;\n"
+                            "INSERT INTO protokoll SELECT a.id FROM artikel a;\n"
+                            "SELECT * FROM bestand;\n"
+                            "INSERT INTO protokoll VALUES ('ohne Quelle');\n"
+                            "UPDATE bestand SET menge = 0 FROM artikel a WHERE a.id = bestand.artikel;\n");
+        const projekt::Projekt p = projekt::liesOrdner(t.weg());
+        REQUIRE(p.dateien.size() == 2);
+        const std::size_t laden = p.dateien[0].pfad == "laden.sql" ? 0 : 1;
+        const projekt::AbhaengigkeitsErgebnis e = projekt::abhaengigkeitenDerDatei(p, laden);
+        const diagramm::Aufrufgraph& g = e.graph;
+
+        const std::size_t ctas = knoten(g, AufrufKnotenArt::Routine, "query@1");
+        const std::size_t insert = knoten(g, AufrufKnotenArt::Routine, "query@2");
+        const std::size_t update = knoten(g, AufrufKnotenArt::Routine, "query@5");
+        REQUIRE(ctas != projekt::kKeine);
+        REQUIRE(insert != projekt::kKeine);
+        REQUIRE(update != projekt::kKeine);
+        CHECK(knoten(g, AufrufKnotenArt::Routine, "query@3") == projekt::kKeine);  // liest nur: steht in Queries
+        CHECK(knoten(g, AufrufKnotenArt::Routine, "query@4") == projekt::kKeine);  // INSERT … VALUES: keine Abfrage
+        CHECK(g.knoten[ctas].stereotyp == "\xC2\xAB" "statement" "\xC2\xBB");
+        CHECK(g.knoten[ctas].zeile == 1);
+
+        // je Anweisung ihre eigenen Kanten: die Kette View -> Kopie bleibt getrennt vom INSERT
+        CHECK(kante(g, ctas, knoten(g, AufrufKnotenArt::View, "knapp"))->zugriff == ZugriffKante::Liest);
+        CHECK(kante(g, ctas, knoten(g, AufrufKnotenArt::Tabelle, "knapp_kopie"))->zugriff == ZugriffKante::Schreibt);
+        CHECK(kante(g, ctas, knoten(g, AufrufKnotenArt::Tabelle, "artikel")) == nullptr);
+        CHECK(kante(g, insert, knoten(g, AufrufKnotenArt::Tabelle, "artikel"))->zugriff == ZugriffKante::Liest);
+        CHECK(kante(g, insert, knoten(g, AufrufKnotenArt::Tabelle, "protokoll"))->zugriff == ZugriffKante::Schreibt);
+        CHECK(kante(g, update, knoten(g, AufrufKnotenArt::Tabelle, "bestand"))->zugriff == ZugriffKante::Schreibt);
+
+        REQUIRE(e.stellen.size() == g.knoten.size());
+        CHECK(e.stellen[insert].art == projekt::Datenstelle::Art::Abfrage);
+        CHECK(p.dateien[laden].ergebnis.einheit.abfragen[e.stellen[insert].index].name == "query@2");
+
+        // ab der Anweisung, und unter den Objekten der Datei
+        const projekt::AbhaengigkeitsErgebnis ab = projekt::abhaengigkeitenAb(p, laden, "query@2", {});
+        CHECK(ab.graph.knoten[knoten(ab.graph, AufrufKnotenArt::Routine, "query@2")].wurzel);
+        const std::vector<std::string> namen = projekt::datenobjekteIn(p, laden);
+        CHECK(std::find(namen.begin(), namen.end(), "query@1") != namen.end());
+        CHECK(std::find(namen.begin(), namen.end(), "query@3") == namen.end());
+
+        // T-SQL ohne `;` (WWI PostDeploymentScripts): der Leser sieht eine Anweisung bis GO, jede Abfrage
+        // darin traegt nur ihre eigenen Zugriffe
+        const projekt::Projekt w = projekt::liesText("DECLARE @t datetime2(7) = '20200101'\n"
+                                                     "INSERT dbo.a (x) SELECT q.x FROM dbo.q1 AS q\n"
+                                                     "INSERT dbo.b (x) SELECT q.x FROM dbo.q2 AS q\n"
+                                                     "GO\n",
+                                                     "w.sql");
+        const std::vector<modell::Abfrage>& q = w.dateien[0].ergebnis.einheit.abfragen;
+        REQUIRE(q.size() == 2);
+        REQUIRE(q[0].zugriffe.size() == 2);
+        CHECK(q[0].zugriffe[0].ziel == "dbo.a");
+        CHECK(q[0].zugriffe[1].ziel == "dbo.q1");
+        REQUIRE(q[1].zugriffe.size() == 2);
+        CHECK(q[1].zugriffe[0].ziel == "dbo.b");
+        CHECK(q[1].zugriffe[1].ziel == "dbo.q2");
+    }
+
     TEST_CASE("Dasselbe Schema in zwei Dateien (je Dialekt): jede Datei zeigt es mit ihrer Stelle")
     {
         const TempOrdner t;

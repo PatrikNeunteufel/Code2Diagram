@@ -917,6 +917,11 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **AB4 Host-Code:** `beispiele/sql/lager_db.py`: `Data dependencies (4)`; `Lager::menge` (wie eine Funktion, Rand mit
       zwei Strichen) liest `bestand`; Doppelklick auf `Lager::menge` zeigt ihren Ablauf.
 - [ ] **AB5 Formate und Thema:** Format mermaid (`[(` Zylinder, `{{` Sechseck), dot, drawio; dunkles Thema lesbar.
+- [ ] **AB6 Eine Anweisung im Skript (C2):** `beispiele/sql/schule.sql`, Data dependencies: ein Knoten «statement»
+      `query@90` (Rand mit zwei Strichen) liest `schueler` und `ausweis` und schreibt `ausweis` (eine Kante
+      `reads, writes`). Klick zeigt Zeile 90; Doppelklick zeigt ihr Abfragediagramm (Ziel `ausweis`), Back zurück;
+      Kontextmenü *Query diagram of query@90*, *Data dependencies from query@90*. Die übrigen Abfragen der Datei
+      (reine SELECT) sind keine Knoten.
 
 ## AC. Abfragen
 

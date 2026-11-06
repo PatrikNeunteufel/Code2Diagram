@@ -99,6 +99,22 @@ constexpr std::string_view kNeueAnweisung[] = {
 
 }  // namespace
 
+std::size_t hinterStream(const Tokenquelle& q, std::size_t i)
+{
+    const auto name = [&](std::size_t k) {
+        const TokenArt a = q.token(k).art;
+        return a == TokenArt::Bezeichner || a == TokenArt::Schluesselwort;
+    };
+    if (!name(i) || klein(q.token(i).text) != "stream") return i;
+    if (q.token(i + 1).istOp("("))
+    {
+        const std::string w = klein(q.token(i + 2).text);
+        return name(i + 2) && w != "select" && w != "with" ? i + 2 : i;  // nicht STREAM(SELECT …)
+    }
+    if (name(i + 1) && (q.token(i + 2).istOp("(") || q.token(i + 2).istOp("."))) return i + 1;
+    return i;
+}
+
 // --- Token ------------------------------------------------------------------
 
 bool AbfrageLeser::wort(std::size_t i, std::string_view w) const
@@ -166,6 +182,7 @@ std::size_t AbfrageLeser::neuerBlock(BlockRolle rolle, std::string titel, std::s
 std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std::string& vorn)
 {
     std::vector<Abfrage> aus;
+    bereiche.clear();
     // Beginnt bei j eine Abfrage? Am Anfang, nach `;`, nach einem Wort, das einen Block oeffnet, oder am
     // Anfang einer Zeile, wenn die Zeile davor nicht fortgesetzt wird.
     // ein WITH einer Abfrage (`WITH x AS`, `WITH x (a, b) AS`, `WITH RECURSIVE`), kein Hinweis `WITH (NOLOCK)`
@@ -249,7 +266,10 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
             const std::size_t zu = ueber(j, b);
             if (abfrageInKlammer(j) && j > a)
                 if (std::optional<Abfrage> x = lies(j + 1, zu > j + 1 ? zu - 1 : zu, vorn + "@" + std::to_string(tok(j + 1).ort.zeile)))
+                {
                     aus.push_back(std::move(*x));
+                    bereiche.emplace_back(j + 1, zu > j + 1 ? zu - 1 : zu);
+                }
             j = zu;
             continue;
         }
@@ -259,7 +279,11 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
             continue;
         }
         const std::size_t e = ende(j);
-        if (std::optional<Abfrage> x = lies(j, e, vorn + "@" + std::to_string(tok(j).ort.zeile))) aus.push_back(std::move(*x));
+        if (std::optional<Abfrage> x = lies(j, e, vorn + "@" + std::to_string(tok(j).ort.zeile)))
+        {
+            aus.push_back(std::move(*x));
+            bereiche.emplace_back(j, e);
+        }
         j = std::max(e, j + 1);
     }
     return aus;
@@ -760,6 +784,9 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
             continue;
         }
         if (wort(j, "lateral")) ++j;
+        const std::size_t strom = hinterStream(m_q, j);
+        const bool streamKlammer = strom != j && istAuf(j + 1);  // STREAM(live.x)
+        j = strom;
         if (j >= b) break;
 
         AbfrageQuelle q;
@@ -802,6 +829,7 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
                 ++j;
                 continue;
             }
+            if (streamKlammer && istZu(e)) ++e;
             if (istAuf(e))
             {
                 q.art = QuellArt::Funktion;
