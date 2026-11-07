@@ -22,6 +22,31 @@ namespace c2d::modell
 {
 
 // ---------------------------------------------------------------------------
+// Zugriffe auf die Datenbank (SQL)
+// ---------------------------------------------------------------------------
+
+/// Wie etwas auf eine Tabelle oder eine Routine der Datenbank zugreift (Entscheid A2).
+enum class ZugriffArt
+{
+    Liest,     ///< FROM, JOIN, Unterabfragen
+    Schreibt,  ///< INSERT INTO, UPDATE, DELETE FROM, MERGE INTO, TRUNCATE
+    Ruft,      ///< CALL, EXEC, eine Funktion im Ausdruck
+};
+
+struct Zugriff
+{
+    ZugriffArt art = ZugriffArt::Liest;
+    std::string ziel;  ///< wie es in der Quelle heisst, ohne Begrenzer, mit Schema (`public.actor`)
+    int zeile = 0;
+    /// Nur Ruft: aus einem Ausdruck (`f(x)`), nicht aus CALL/EXEC — es zaehlt nur, wenn das Ziel eine
+    /// Routine des Projekts ist (sonst ist es eine eingebaute Funktion wie `count`).
+    bool imAusdruck = false;
+    /// Aus SQL in einer Zeichenkette, die nicht in klarer Form steht (nicht als Argument eines Aufrufs
+    /// wie `execute(`): es zaehlt nur, wenn das Ziel eine Tabelle des Projekts ist (Entscheid A4).
+    bool unsicher = false;
+};
+
+// ---------------------------------------------------------------------------
 // Anweisungen
 // ---------------------------------------------------------------------------
 
@@ -66,6 +91,15 @@ enum class AnweisungArt
     Bedingt,
 };
 
+/// Eine Spalte, wie eine Abfrage oder Bedingung sie nennt: `f.title` (qualifizierer `f`), `title` (ohne).
+struct Spaltenbezug
+{
+    std::string qualifizierer;  ///< Alias oder Name der Quelle, wie in der Quelle; leer = ohne
+    std::string spalte;
+
+    friend bool operator==(const Spaltenbezug&, const Spaltenbezug&) = default;
+};
+
 /// Die Logik einer Bedingung (`(a && b) || !c`): ein Baum aus Und, Oder, Nicht und Atomen.
 /// Ein Atom ist, was zwischen den logischen Operatoren steht: ein Vergleich, ein Aufruf, ein Name.
 struct Logik
@@ -81,6 +115,20 @@ struct Logik
     std::string text;           ///< nur Atom: wie es in der Quelle steht
     bool mitAufruf = false;     ///< nur Atom: es ruft eine Funktion (Kurzschluss kann ihn auslassen)
     std::vector<Logik> teile;
+    /// Nur Atom einer Bedingung in SQL (Entscheid W3): es ist der Form nach nie unbekannt (`IS [NOT] NULL`,
+    /// `IS [NOT] DISTINCT FROM`, `EXISTS`, nur Literale) — sonst haengt es an `spalten` und `variablen`.
+    bool zweiwertig = false;
+    std::vector<Spaltenbezug> spalten;   ///< nur Atom in SQL: die Spalten, die es nennt (ohne Unterabfragen)
+    std::vector<std::string> variablen;  ///< nur Atom in SQL: Variablen (`@x`) — sie koennen NULL sein
+};
+
+/// Eine Bedingung einer Abfrage als Ganzes (`WHERE`, `HAVING`, `ON`, Entscheid W1): ihr Text, ihre Zeile und ihre
+/// Logik, wenn sie mindestens zwei Atome hat.
+struct Klausel
+{
+    std::string text;  ///< wie in der Quelle, mit Unterabfragen
+    int zeile = 0;
+    std::optional<Logik> logik;
 };
 
 /// Ein Glied einer Aufrufkette: `.name`, mit Klammer ein Aufruf; `[…]` heisst `[]`.
@@ -164,7 +212,25 @@ struct Anweisung
     /// Die Aufrufketten in `text` (Einfach, Ruecksprung, Wurf, Mit; bei Schleifen und if der Kopf), aeussere vor
     /// inneren, in Textfolge; ein Name allein nur als ganzer Wert. Bisher fuellt sie der Leser von Python.
     std::vector<Aufrufkette> ketten;
+    /// Wo der Leser die Aufrufe selbst nennt (SQL, Entscheid R5): die Routinen, die der Text dieser Anweisung
+    /// ruft (bei Schleifen und if ihr Kopf) — CALL, EXEC, PERFORM, ein Name vor `(` mit `imAusdruck` (er zaehlt
+    /// nur, wenn er eine Routine des Projekts ist; sonst eine eingebaute Funktion wie `coalesce`). Dann sucht
+    /// niemand im Text (aufrufeIn). Nur Zugriffe der Art Ruft.
+    std::vector<Zugriff> aufrufe;
+    bool aufrufeGenannt = false;
+    /// Die Anweisung ist ein Aufruf einer Routine (SQL: CALL, EXEC, PERFORM): die Form eines Aufrufs im Ablauf,
+    /// wie `f(x);` in der C-Familie.
+    bool istAufruf = false;
+    /// Nur TueSolange: die Schleife endet, wenn `text` wahr ist (`REPEAT … UNTIL c`) — `yes` fuehrt hinaus.
+    bool endetWennWahr = false;
+    /// Nur Einfach: steht im Ablauf abseits, ohne Kanten — sie laeuft nicht an ihrer Stelle, sondern nach
+    /// jeder Anweisung, die ihre Bedingung ausloest (SQL `DECLARE CONTINUE HANDLER`, Entscheid R3).
+    bool abseits = false;
 };
+
+/// Die Namen, die eine Anweisung in `text` (ihrem Text oder einem Teil des Kopfs) ruft: die genannten
+/// (Anweisung::aufrufeGenannt), sonst aufrufeIn(text).
+[[nodiscard]] std::vector<std::string> aufrufeDer(const Anweisung& a, std::string_view text);
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;
 
@@ -200,27 +266,6 @@ struct Parameter
 /// `name(typ name, ...)`
 [[nodiscard]] std::string signatur(const std::string& name, const std::vector<Parameter>& parameter);
 
-/// Wie etwas auf eine Tabelle oder eine Routine der Datenbank zugreift (Entscheid A2).
-enum class ZugriffArt
-{
-    Liest,     ///< FROM, JOIN, Unterabfragen
-    Schreibt,  ///< INSERT INTO, UPDATE, DELETE FROM, MERGE INTO, TRUNCATE
-    Ruft,      ///< CALL, EXEC, eine Funktion im Ausdruck
-};
-
-struct Zugriff
-{
-    ZugriffArt art = ZugriffArt::Liest;
-    std::string ziel;  ///< wie es in der Quelle heisst, ohne Begrenzer, mit Schema (`public.actor`)
-    int zeile = 0;
-    /// Nur Ruft: aus einem Ausdruck (`f(x)`), nicht aus CALL/EXEC — es zaehlt nur, wenn das Ziel eine
-    /// Routine des Projekts ist (sonst ist es eine eingebaute Funktion wie `count`).
-    bool imAusdruck = false;
-    /// Aus SQL in einer Zeichenkette, die nicht in klarer Form steht (nicht als Argument eines Aufrufs
-    /// wie `execute(`): es zaehlt nur, wenn das Ziel eine Tabelle des Projekts ist (Entscheid A4).
-    bool unsicher = false;
-};
-
 struct Funktion
 {
     std::string name;     ///< ohne Bereich; auch `~Motor`, `operator==`
@@ -239,6 +284,10 @@ struct Funktion
     std::string aussen;
     /// Was SQL in ihrem Rumpf liest, schreibt, ruft (Entscheid A4) — vom Projekt aus den Zeichenketten.
     std::vector<Zugriff> zugriffe;
+    /// Eine Routine der Datenbank (SQL, Entscheid R1): der Name (`public.film_in_stock`, ohne Bereich) kennt
+    /// kein Gross/klein, und ein Aufruf ohne Schema meint sie ueber den letzten Teil (`film_in_stock`), einer mit
+    /// Schema ueber den ganzen Namen — wie in *Data dependencies*.
+    bool namenOhneFall = false;
 
     [[nodiscard]] std::string vollerName() const { return modell::vollerName(bereich, name); }
     /// Meint ein Aufruf diese Funktion, dem Namen nach? `f` passt auf jede
@@ -275,6 +324,9 @@ struct Aufrufstelle
     std::string bedingung;
     /// false: er steht in einem Zweig von Varianten, der mit den Definitionen nicht gilt.
     bool gilt = true;
+    /// Er zaehlt nur, wenn er eine Funktion des Projekts meint (Zugriff::imAusdruck): sonst ist er kein
+    /// fremder Aufruf, sondern nichts (eine eingebaute Funktion in SQL).
+    bool nurImProjekt = false;
 };
 
 /// Was der Rumpf einer Funktion ruft, mit den Bedingungen: jede Verbindung aus Name,
@@ -355,15 +407,6 @@ struct Datenbankobjekt
 /// "Kein Block" einer Abfrage.
 inline constexpr std::size_t kKeinBlock = static_cast<std::size_t>(-1);
 
-/// Eine Spalte, wie die Abfrage sie nennt: `f.title` (qualifizierer `f`), `title` (ohne).
-struct Spaltenbezug
-{
-    std::string qualifizierer;  ///< Alias oder Name der Quelle, wie in der Quelle; leer = ohne
-    std::string spalte;
-
-    friend bool operator==(const Spaltenbezug&, const Spaltenbezug&) = default;
-};
-
 /// Ein Teil einer Bedingung (`ON`, `WHERE`, `HAVING`), an den aeussersten `AND` zerlegt.
 struct Bedingungsteil
 {
@@ -394,6 +437,7 @@ struct AbfrageQuelle
     std::string verbindung;
     std::vector<std::string> mit;          ///< `USING (a, b)`: die Spalten
     std::vector<Bedingungsteil> bedingung;  ///< `ON …`, zerlegt
+    Klausel bedingungGanz;                  ///< `ON …` als Ganzes (Wahrheitstabelle, W1); leer = keins
     int zeile = 0;
 
     /// Wie sie in einer Bedingung genannt wird: der Alias, sonst der letzte Teil des Namens.
@@ -420,6 +464,8 @@ struct AbfrageBlock
     std::vector<AbfrageQuelle> quellen;
     std::vector<Bedingungsteil> wo;      ///< WHERE, zerlegt
     std::vector<Bedingungsteil> haben;   ///< HAVING, zerlegt
+    Klausel woGanz;                      ///< WHERE als Ganzes (Wahrheitstabelle, W1); leer = keins
+    Klausel habenGanz;                   ///< HAVING als Ganzes
     std::string auswahl;                 ///< die Liste von SELECT, wie in der Quelle (Unterabfragen `(…)`)
     std::string gruppe, ordnung, grenze, fenster;  ///< GROUP BY, ORDER BY, LIMIT/OFFSET/FETCH/TOP, WINDOW/QUALIFY
     std::vector<Spaltenbezug> bezuege;   ///< jede Spalte, die der Block nennt (SELECT, ON, WHERE, GROUP …)

@@ -161,6 +161,7 @@ private:
                     break;
                 }
             }
+            if (q.bedingungGanz.logik) k.tabellen.push_back(q.bedingungGanz.zeile);  // ihr ON hat eine Tabelle (W6)
             m_knoten[b].push_back(neu(std::move(k)));
         }
         AbfrageKnoten e;
@@ -176,6 +177,9 @@ private:
             e.art = AbfrageKnotenArt::Ergebnis;
             e.titel = "result";
         }
+        // WHERE vor HAVING: ein Klick auf das Symbol zeigt die erste (W6)
+        if (x.woGanz.logik) e.tabellen.push_back(x.woGanz.zeile);
+        if (x.habenGanz.logik) e.tabellen.push_back(x.habenGanz.zeile);
         m_ergebnis[b] = neu(std::move(e));
     }
 
@@ -460,6 +464,123 @@ Abfragediagramm abfrageVon(const Abfrage& abfrage, const DatenquellenSuche& such
         return d;
     }
     return Bau(abfrage, suche).baue();
+}
+
+NullFaehig nullFaehigkeit(const Abfrage& abfrage, std::size_t block, const Spaltenbezug& s, const DatenquellenSuche& suche,
+                          std::size_t imOn)
+{
+    if (block >= abfrage.bloecke.size()) return NullFaehig::Unbekannt;
+    // die Quelle: zuerst im Block, dann in den Bloecken um ihn (ein Bezug nach aussen)
+    std::size_t b = kKeinBlock;
+    std::size_t q = kKeine;
+    const std::string qual = letzterTeil(s.qualifizierer);
+    for (std::size_t e = block; e != kKeinBlock && q == kKeine; e = abfrage.bloecke[e].eltern)
+    {
+        const std::vector<AbfrageQuelle>& qs = abfrage.bloecke[e].quellen;
+        if (s.qualifizierer.empty())
+        {
+            // ohne Qualifizierer: die einzige Quelle, oder die einzige Tabelle des Schemas mit dieser Spalte
+            if (qs.size() == 1)
+                q = 0;
+            else if (suche)
+            {
+                std::size_t zahl = 0;
+                for (std::size_t i = 0; i < qs.size(); ++i)
+                    if (const Datenquelle d = suche(qs[i].name); d.tabelle != nullptr)
+                        for (const Feld& f : d.tabelle->felder)
+                            if (gleich(f.name, s.spalte))
+                            {
+                                q = i;
+                                ++zahl;
+                            }
+                if (zahl != 1) q = kKeine;
+            }
+        }
+        else
+            for (std::size_t i = 0; i < qs.size() && q == kKeine; ++i)
+                if (gleich(qs[i].kennung(), qual) || gleich(qs[i].name, s.qualifizierer) ||
+                    (qs[i].alias.empty() && gleich(letzterTeil(qs[i].name), qual)))
+                    q = i;
+        if (q != kKeine) b = e;
+        if (s.qualifizierer.empty()) break;  // ohne Qualifizierer nur der eigene Block
+    }
+    if (q == kKeine || !suche) return NullFaehig::Unbekannt;
+    const std::vector<AbfrageQuelle>& qs = abfrage.bloecke[b].quellen;
+    if (qs[q].art != QuellArt::Tabelle) return NullFaehig::Unbekannt;
+    for (const AbfrageBlock& m : abfrage.bloecke)
+        if (m.rolle == BlockRolle::Mit && gleich(m.titel, qs[q].name)) return NullFaehig::Unbekannt;  // ein WITH
+    const Datenquelle d = suche(qs[q].name);
+    if (d.tabelle == nullptr) return NullFaehig::Unbekannt;
+    const auto feld = std::find_if(d.tabelle->felder.begin(), d.tabelle->felder.end(),
+                                   [&](const Feld& f) { return gleich(f.name, s.spalte); });
+    if (feld == d.tabelle->felder.end()) return NullFaehig::Unbekannt;
+    if (!feld->nichtNull) return NullFaehig::Kann;
+    // die aufgefuellte Seite eines aeusseren Joins kann NULL sein — im WHERE nach allen Joins, im ON der Quelle j nach
+    // den Joins vor j (die Quelle j selbst ist dort noch nicht aufgefuellt)
+    const auto rechtsAussen = [](const std::string& v) {  // die Quelle selbst wird aufgefuellt
+        return v.starts_with("left") || v.starts_with("full") || v == "outer apply" || v.starts_with("natural left") ||
+               v.starts_with("natural full");
+    };
+    const auto linksAussen = [](const std::string& v) {  // die Quellen davor werden aufgefuellt
+        return v.starts_with("right") || v.starts_with("full") || v.starts_with("natural right") || v.starts_with("natural full");
+    };
+    const std::size_t grenze = b == block && imOn != kKeine ? imOn : qs.size();  // Joins [1, grenze) gelten
+    bool aufgefuellt = q >= 1 && q < grenze && rechtsAussen(qs[q].verbindung);
+    for (std::size_t j = q + 1; j < grenze && !aufgefuellt; ++j) aufgefuellt = linksAussen(qs[j].verbindung);
+    return aufgefuellt ? NullFaehig::Kann : NullFaehig::Nie;
+}
+
+namespace
+{
+
+/// Ob ein Atom unbekannt sein kann: seine Form, seine Variablen, jede seiner Spalten (W3).
+NullFaehig nullFaehigAtom(const Logik& atom, const Abfrage& abfrage, std::size_t block, const DatenquellenSuche& suche,
+                          std::size_t imOn)
+{
+    if (atom.zweiwertig) return NullFaehig::Nie;
+    if (!atom.variablen.empty()) return NullFaehig::Unbekannt;
+    NullFaehig aus = NullFaehig::Nie;
+    for (const Spaltenbezug& s : atom.spalten)
+    {
+        const NullFaehig n = nullFaehigkeit(abfrage, block, s, suche, imOn);
+        if (n == NullFaehig::Kann && aus == NullFaehig::Nie) aus = NullFaehig::Kann;
+        if (n == NullFaehig::Unbekannt) aus = NullFaehig::Unbekannt;
+    }
+    return aus;
+}
+
+}  // namespace
+
+std::vector<Wahrheitstabelle> wahrheitstabellenVon(const Abfrage& abfrage, const DatenquellenSuche& suche)
+{
+    std::vector<Wahrheitstabelle> aus;
+    for (std::size_t b = 0; b < abfrage.bloecke.size(); ++b)
+    {
+        const AbfrageBlock& x = abfrage.bloecke[b];
+        const auto tabelle = [&](const Klausel& k, std::string_view klausel, std::size_t imOn) {
+            if (!k.logik) return;
+            aus.push_back(wahrheitstabelleVonSql(*k.logik, k.text, abfrage.name, klausel, k.zeile, [&](const Logik& atom) {
+                return nullFaehigAtom(atom, abfrage, b, suche, imOn);
+            }));
+        };
+        for (std::size_t q = 0; q < x.quellen.size(); ++q) tabelle(x.quellen[q].bedingungGanz, "ON", q);
+        tabelle(x.woGanz, "WHERE", kKeine);
+        tabelle(x.habenGanz, "HAVING", kKeine);
+    }
+    return aus;
+}
+
+std::vector<int> zeilenMitWahrheitstabelle(const Abfrage& abfrage)
+{
+    std::vector<int> aus;
+    for (const AbfrageBlock& x : abfrage.bloecke)
+    {
+        for (const AbfrageQuelle& q : x.quellen)
+            if (q.bedingungGanz.logik) aus.push_back(q.bedingungGanz.zeile);
+        if (x.woGanz.logik) aus.push_back(x.woGanz.zeile);
+        if (x.habenGanz.logik) aus.push_back(x.habenGanz.zeile);
+    }
+    return aus;
 }
 
 std::size_t abfrageZurZeile(const std::vector<Abfrage>& abfragen, int zeile)

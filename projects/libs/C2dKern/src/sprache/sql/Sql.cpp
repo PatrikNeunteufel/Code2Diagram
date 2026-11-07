@@ -20,7 +20,9 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include "../Leser.hpp"
+#include "../Logik.hpp"
 #include "Abfrage.hpp"
+#include "Rumpf.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -37,6 +39,7 @@ namespace
 {
 
 using namespace c2d::modell;
+using lexer::TokenArt;
 using quelle::Schwere;
 
 // Die Woerter, die der Lexer als Schluesselwort zeigt (klein; Sprachtabelle::schluesselwoerterOhneFall).
@@ -117,6 +120,25 @@ constexpr lexer::Sprachtabelle kTabelleMitRueckstrich{
     .namensBegrenzer = "`",
 };
 
+/// MySQL: wie Spark, dazu `#` als Zeilenkommentar (neben `--`).
+constexpr lexer::Sprachtabelle kTabelleMysql{
+    .schluesselwoerter = kSchluesselwoerter,
+    .operatoren = kOperatoren,
+    .zeilenKommentar = "--",
+    .blockKommentarAuf = "/*",
+    .blockKommentarZu = "*/",
+    .zeichenkettenBegrenzer = "'\"",
+    .zeichenBegrenzer = "",
+    .zeichenkettenVorsaetze = kVorsaetze,
+    .namensZeichen = "@$",
+    .verschachtelteKommentare = true,
+    .schluesselwoerterOhneFall = true,
+    .verdoppelteBegrenzer = true,
+    .escapeMitRueckstrich = true,
+    .namensBegrenzer = "`",
+    .zweiterZeilenKommentar = "#",
+};
+
 /// Ein Dialekt (Entscheid S3): wie der Text zerlegt wird und ob Schleifen und IF ein eigenes END haben.
 struct Dialekt
 {
@@ -134,7 +156,7 @@ constexpr Dialekt kDialekte[] = {
     {"postgres", &kTabelle, false},  // Routinen in $$…$$: ihr Rumpf ist eine Zeichenkette
     {"duckdb", &kTabelle, false},
     {"spark", &kTabelleMitRueckstrich, true},
-    {"mysql", &kTabelleMitRueckstrich, true},
+    {"mysql", &kTabelleMysql, true},
     {"tsql", &kTabelleTsql, false},
 };
 
@@ -310,7 +332,105 @@ std::string ohneBegrenzer(std::string_view text)
     return s;
 }
 
-class SqlLeser final : public Leser, public sqlteile::Tokenquelle
+/// Woerter, mit denen der Rumpf einer Routine ohne `AS` beginnt (MySQL, Spark: hinter den Parametern und
+/// Eigenschaften wie `DETERMINISTIC`, `READS SQL DATA`) — `RETURN`, nicht `RETURNS`.
+constexpr std::string_view kRumpfAnfang[] = {
+    "begin",  "return", "select",   "insert",    "update", "delete",   "merge",  "set",    "call",   "if",
+    "while",  "loop",   "repeat",   "declare",   "with",   "replace",  "values", "do",     "signal", "for",
+    "exec",   "execute", "print",   "raiserror", "throw",  "truncate", "open",   "fetch",  "close",  "commit",
+    "rollback", "goto", "waitfor",
+};
+
+/// Woerter, mit denen ein Text in einer Zeichenkette als Rumpf einer Routine SQL ist (sonst ist er etwas
+/// anderes: der Name einer Klasse in Hive/Spark `AS 'com.x.Udf'`).
+constexpr std::string_view kSqlRumpfAnfang[] = {
+    "begin",  "declare", "return", "select", "insert", "update", "delete", "merge", "with",
+    "values", "perform", "raise",  "if",     "set",    "call",   "do",     "for",   "loop",
+};
+
+/// Die Regeln fuer Bedingungen in SQL (Entscheid R6).
+constexpr std::string_view kZuweisungenSql[] = {"=", ":="};
+constexpr Ausdrucksregeln kRegelnSql{
+    .wahl = Ausdrucksregeln::Wahl::Keine,
+    .nichtUmfasstVergleich = true,
+    .zuweisungen = kZuweisungenSql,
+    .zeiger = false,
+    .wirkungVomLeser = true,
+    .namenOhneFall = true,
+    .zwischenUnd = true,
+    .fallBloecke = true,
+    .unterabfrageRuft = true,
+};
+
+/// Ein Atom einer Bedingung einer Abfrage (Entscheid W3): seine Spalten und Variablen (ohne die einer Unterabfrage),
+/// und ob es der Form nach nie unbekannt ist (`EXISTS`, `IS [NOT] NULL`, `IS [NOT] DISTINCT FROM`, nur Literale).
+void ergaenzeAtome(Logik& l, const lexer::Sprachtabelle& tabelle)
+{
+    for (Logik& t : l.teile) ergaenzeAtome(t, tabelle);
+    if (l.art != Logik::Art::Atom) return;
+    std::vector<quelle::Meldung> stumm;
+    const std::vector<lexer::Token> t = lexer::zerlege(l.text, tabelle, stumm);
+    const auto w = [&](std::size_t i) {
+        return i < t.size() && (t[i].art == TokenArt::Schluesselwort || t[i].art == TokenArt::Bezeichner) ? klein(t[i].text)
+                                                                                                          : std::string();
+    };
+    if (w(0) == "exists") l.zweiwertig = true;
+    for (std::size_t i = 0; i < t.size(); ++i)
+        if (w(i) == "is")
+        {
+            const std::size_t k = w(i + 1) == "not" ? i + 2 : i + 1;
+            if (w(k) == "null" || w(k) == "distinct" || w(k) == "true" || w(k) == "false" || w(k) == "unknown")
+                l.zweiwertig = true;
+        }
+    for (std::size_t i = 0; i < t.size() && t[i].art != TokenArt::Ende; ++i)
+    {
+        if (t[i].istOp("(") && (w(i + 1) == "select" || w(i + 1) == "with"))
+        {
+            // eine Unterabfrage: ihre Spalten gehoeren ihr (ihre Bedingung hat eine eigene Tabelle, W1)
+            int tiefe = 0;
+            for (; i < t.size(); ++i)
+            {
+                if (t[i].istOp("(")) ++tiefe;
+                if (t[i].istOp(")") && --tiefe == 0) break;
+            }
+            continue;
+        }
+        if (t[i].art != TokenArt::Bezeichner || (i > 0 && t[i - 1].istOp("."))) continue;
+        if (i + 1 < t.size() && t[i + 1].istOp("(")) continue;  // eine Funktion
+        if (t[i].text.starts_with('@'))
+        {
+            l.variablen.emplace_back(t[i].text);
+            continue;
+        }
+        if (i + 2 < t.size() && t[i + 1].istOp(".") && t[i + 2].art == TokenArt::Bezeichner)
+        {
+            l.spalten.push_back({ohneBegrenzer(t[i].text), ohneBegrenzer(t[i + 2].text)});
+            i += 2;
+            continue;
+        }
+        l.spalten.push_back({{}, ohneBegrenzer(t[i].text)});
+    }
+    if (l.spalten.empty() && l.variablen.empty()) l.zweiwertig = true;  // nur Literale
+}
+
+/// Je Block jeder Abfrage WHERE, HAVING und jedes ON als Logik (Entscheide W1, W2), mit den Regeln aus R6.
+void ergaenzeKlauseln(modell::Einheit& e, const lexer::Sprachtabelle& tabelle, const Ausdrucksregeln& regeln)
+{
+    const auto mach = [&](Klausel& k) {
+        if (k.text.empty()) return;
+        k.logik = logikVon(k.text, tabelle, regeln);
+        if (k.logik) ergaenzeAtome(*k.logik, tabelle);
+    };
+    for (Abfrage& a : e.abfragen)
+        for (AbfrageBlock& b : a.bloecke)
+        {
+            mach(b.woGanz);
+            mach(b.habenGanz);
+            for (AbfrageQuelle& q : b.quellen) mach(q.bedingungGanz);
+        }
+}
+
+class SqlLeser final : public Leser, public sqlteile::Rumpfquelle
 {
 public:
     SqlLeser(std::string_view text, const Dialekt& dialekt, std::string platzhalter, Ergebnis& aus)
@@ -364,6 +484,28 @@ public:
     [[nodiscard]] std::string quelltext(std::size_t a, std::size_t b) const override { return textVon(a, b); }
     [[nodiscard]] std::size_t hinterKlammer(std::size_t i) const override { return nachKlammer(i); }
 
+    // --- Rumpfquelle (fuer den Leser der Ruempfe) ------------------------------
+
+    [[nodiscard]] std::vector<Zugriff> aufrufeIn(std::size_t a, std::size_t b) override
+    {
+        std::vector<Zugriff> alle;
+        std::vector<std::string> eigene;
+        const std::size_t gemeldet = m_aus.meldungen.size();
+        sammleZugriffe(a, b, alle, eigene);
+        m_aus.meldungen.resize(gemeldet);  // gemeldet hat schon, wer die Zugriffe der Routine sammelt
+        std::erase_if(alle, [](const Zugriff& z) { return z.art != ZugriffArt::Ruft; });
+        return alle;
+    }
+
+    void meldeBei(Schwere schwere, std::size_t bei, std::string text) override { melde(schwere, tok(bei), std::move(text)); }
+
+    /// Der Ablauf der Token [a, b) (Entscheide R1, R2): ein Block der Anweisungen.
+    AnweisungPtr ablaufVon(std::size_t a, std::size_t b, bool plpgsql)
+    {
+        sqlteile::RumpfLeser leser(*this, sqlteile::stilVon(*this, a, b, m_dialekt.name), plpgsql);
+        return leser.lies(a, b);
+    }
+
 private:
     /// Jede Abfrage in [a, b) (eine Anweisung, ein Rumpf) nach Einheit::abfragen, je `vorn@zeile`.
     void abfragenIn(std::size_t a, std::size_t b, const std::string& vorn)
@@ -400,7 +542,13 @@ private:
         for (AbfrageBlock& b : x.bloecke)
         {
             b.zeile += um;
-            for (AbfrageQuelle& q : b.quellen) q.zeile += um;
+            if (b.woGanz.zeile > 0) b.woGanz.zeile += um;
+            if (b.habenGanz.zeile > 0) b.habenGanz.zeile += um;
+            for (AbfrageQuelle& q : b.quellen)
+            {
+                q.zeile += um;
+                if (q.bedingungGanz.zeile > 0) q.bedingungGanz.zeile += um;
+            }
         }
     }
 
@@ -586,11 +734,12 @@ private:
                 {
                     const bool schleife = schliesstSchleife(j);
                     if (!schleife) --tiefe;
-                    // das Wort dahinter gehoert zum END: eine Marke, IF, LOOP …, CASE, TRY, CATCH (T-SQL)
+                    // das Wort dahinter gehoert zum END: eine Marke, IF, LOOP …, CASE, TRY, CATCH (T-SQL) — nicht der
+                    // Trenner (`END $$` nach `DELIMITER $$`: `$$` ist in MySQL ein Name)
                     const bool dazu = schleife || wort(j + 1, "if") || wort(j + 1, "loop") || wort(j + 1, "while") ||
                                       wort(j + 1, "repeat") || wort(j + 1, "for") || wort(j + 1, "case") ||
                                       wort(j + 1, "try") || wort(j + 1, "catch") ||
-                                      (tok(j + 1).art == TokenArt::Bezeichner && !goZeile(j + 1));
+                                      (tok(j + 1).art == TokenArt::Bezeichner && !goZeile(j + 1) && trennerLaenge(j + 1) == 0);
                     if (dazu && tok(j + 1).ort.zeile == tok(j).ort.zeile) ++j;
                 }
                 else if (oeffnetStufe(j))
@@ -685,10 +834,18 @@ private:
         const Token& t = tok(a);
         if (t.art == TokenArt::Operator && (t.text == "(" || t.text == "{"))
             return;  // eine Abfrage in Klammern, ein Block ohne Wort
-        if (t.art == TokenArt::Bezeichner && tok(a + 1).istOp(":")) return;  // ein Block mit Marke (Spark)
+        if (wort(a, "do") && liesDo(a, b)) return;
+        // ein Block auf oberster Ebene (Spark, MySQL; auch mit Marke `L0: BEGIN`) ist eine Funktion `<block:Zeile>`
+        const bool mitMarke = t.art == TokenArt::Bezeichner && tok(a + 1).istOp(":");
+        const std::size_t anfang = mitMarke ? a + 2 : a;
+        const bool block = wort(anfang, "begin") && !beginntTransaktion(anfang);
+        if (mitMarke && !block) return;  // eine Marke vor etwas anderem: nichts zu lesen
         if ((t.art == TokenArt::Schluesselwort || t.art == TokenArt::Bezeichner) &&
-            enthaelt(kOhneSchema, klein(t.text)))
+            (block || enthaelt(kOhneSchema, klein(t.text))))
         {
+            if (block)
+                legeFunktionAn("<block:" + std::to_string(t.ort.zeile) + ">", t.ort.zeile, tok(b > a ? b - 1 : a).ort.zeile,
+                               {}, {}, ablaufVon(a, b, false));
             // eine Anweisung ausserhalb der Objekte (ein Skript, eine Abfrage in einer Zeichenkette); die
             // Namen ihres WITH gelten nur in ihr
             std::vector<std::string> eigene;
@@ -1093,6 +1250,119 @@ private:
             o.ereignis = textVon(k, on);
         sammleZugriffe(rumpf, b, o.zugriffe, eigene);
         abfragenIn(rumpf, b, o.name);
+
+        // der Rumpf (Entscheid R1): hinter AS (T-SQL, Firebird), ein BEGIN … END (SQLite, MySQL), die Anweisung
+        // hinter `FOR EACH ROW` (MySQL); `EXECUTE FUNCTION f()` (Postgres) hat keinen — er fuehrt zu f
+        std::size_t koerper = kKeiner;
+        if (on == k)
+            koerper = rumpf < b ? rumpf + 1 : kKeiner;
+        else
+            for (std::size_t j = nach; j < b; j = oeffnet(tok(j)) ? nachKlammer(j) : j + 1)
+            {
+                if (wort(j, "execute")) break;
+                if (wort(j, "begin"))
+                {
+                    koerper = j;
+                    break;
+                }
+                if (wort(j, "each") && (wort(j + 1, "row") || wort(j + 1, "statement")))
+                {
+                    std::size_t x = j + 2;
+                    if (wort(x, "follows") || wort(x, "precedes")) x += 2;
+                    if (wort(x, "when") || wort(x, "execute")) continue;  // SQLite `WHEN … BEGIN`; Postgres
+                    koerper = x;
+                    break;
+                }
+            }
+        if (koerper != kKeiner && koerper < b)
+            legeFunktionAn(o.name, o.zeile, o.bisZeile, {}, {}, ablaufVon(koerper, b, false));
+    }
+
+    /// `DO [LANGUAGE x] $$ … $$` (Postgres) bei a: ein Block, der gleich laeuft — eine Funktion `<block:Zeile>`
+    /// (Entscheid R1), was er liest, schreibt, ruft, nach Einheit::zugriffe. false = kein Rumpf in einer
+    /// Zeichenkette (dann wie jede andere Anweisung).
+    bool liesDo(std::size_t a, std::size_t b)
+    {
+        std::size_t koerper = kKeiner;
+        std::string sprache = "plpgsql";
+        for (std::size_t j = a + 1; j < b; ++j)
+        {
+            if (wort(j, "language") && j + 1 < b) sprache = klein(ohneBegrenzer(tok(j + 1).text));
+            if (koerper == kKeiner && tok(j).art == TokenArt::Zeichenkette) koerper = j;
+        }
+        if (koerper == kKeiner) return false;
+        if (sprache != "plpgsql")
+        {
+            melde(Schwere::Hinweis, tok(a), "DO block in LANGUAGE " + sprache + " is not read");
+            return true;
+        }
+        const std::string name = "<block:" + std::to_string(tok(a).ort.zeile) + ">";
+        std::vector<std::string> eigene;
+        m_routine = name;
+        AnweisungPtr ablauf;
+        liesRumpfText(tok(koerper), m_aus.einheit.zugriffe, eigene, &ablauf, true);
+        m_routine.clear();
+        if (ablauf) legeFunktionAn(name, tok(a).ort.zeile, tok(b > a ? b - 1 : a).ort.zeile, {}, {}, std::move(ablauf));
+        return true;
+    }
+
+    /// Eine Funktion fuer den Ablauf einer Routine (Entscheid R1): ihr Name kennt kein Gross/klein.
+    void legeFunktionAn(std::string name, int zeile, int bisZeile, std::vector<Parameter> parameter,
+                        std::string rueckgabe, AnweisungPtr rumpf)
+    {
+        if (!rumpf) return;
+        Funktion f;
+        f.name = std::move(name);
+        f.zeile = zeile;
+        f.bisZeile = std::max(bisZeile, zeile);
+        f.parameter = std::move(parameter);
+        f.rueckgabe = std::move(rueckgabe);
+        f.rumpf = std::move(rumpf);
+        f.namenOhneFall = true;
+        m_aus.einheit.funktionen.push_back(std::move(f));
+    }
+
+    /// Die Parameter ab k: in Klammern (`(p_id integer, OUT n int)`, `(IN x INT)`) oder, in T-SQL, ohne bis AS
+    /// (`@a int = 0 OUTPUT, @b AS varchar(10)`); k danach hinter ihnen. Je Parameter Name und Typ ohne Richtung
+    /// (IN, OUT …) und Vorgabe (wie in den anderen Sprachen); ohne Namen (`(integer, text)`, Postgres) nur der Typ.
+    std::vector<Parameter> liesParameter(std::size_t& k, std::size_t b)
+    {
+        std::vector<Parameter> aus;
+        std::vector<Bereich> teile_;
+        if (tok(k).istOp("("))
+        {
+            const std::size_t zu = nachKlammer(k);
+            teile_ = teile(k + 1, zu > k + 1 ? zu - 1 : zu);
+            k = zu;
+        }
+        else if (tok(k).text.starts_with('@'))
+        {
+            std::size_t e = k;
+            while (e < b && !(wort(e, "as") && !tok(e - 1).text.starts_with('@')) && !wort(e, "with") && !wort(e, "returns"))
+                e = oeffnet(tok(e)) ? nachKlammer(e) : e + 1;
+            teile_ = teile(k, e);
+            k = e;
+        }
+        static constexpr std::string_view kRichtung[] = {"in", "out", "inout", "variadic"};
+        static constexpr std::string_view kNachTyp[] = {"default", "output", "out", "readonly", "comment", "not", "null"};
+        for (auto [x, y] : teile_)
+        {
+            while (x < y && istName(x) && enthaelt(kRichtung, klein(tok(x).text)) && x + 1 < y) ++x;
+            Parameter p;
+            p.typHinten = true;
+            std::size_t typ = x;
+            if (y - x >= 2 && tok(x).art == TokenArt::Bezeichner)
+            {
+                p.name = ohneBegrenzer(tok(x).text);
+                typ = wort(x + 1, "as") ? x + 2 : x + 1;
+            }
+            std::size_t bis = typ;
+            while (bis < y && !tok(bis).istOp("=") && !(istName(bis) && enthaelt(kNachTyp, klein(tok(bis).text))))
+                bis = oeffnet(tok(bis)) ? nachKlammer(bis) : bis + 1;
+            p.typ = textVon(typ, bis);
+            aus.push_back(std::move(p));
+        }
+        return aus;
     }
 
     /// Der Rest einer Funktion oder Prozedur ab k: Parameter, dann der Rumpf — in `$$…$$` oder `'…'`
@@ -1100,8 +1370,9 @@ private:
     /// Routine in einer anderen Sprache (`LANGUAGE plpython3u`) bleibt mit Hinweis aussen vor.
     void liesRoutine(Datenbankobjekt& o, std::size_t k, std::size_t b, std::vector<std::string>& eigene)
     {
-        if (tok(k).istOp("(")) k = nachKlammer(k);
+        std::vector<Parameter> parameter = liesParameter(k, b);
         std::string sprache;
+        std::string rueckgabe;
         std::size_t koerper = kKeiner;
         for (std::size_t j = k; j < b; ++j)
         {
@@ -1111,6 +1382,14 @@ private:
                 sprache = klein(tok(j + 1).text);
                 if (sprache.size() >= 2 && (sprache.front() == '\'' || sprache.front() == '"'))
                     sprache = sprache.substr(1, sprache.size() - 2);
+            }
+            if (wort(j, "returns") && rueckgabe.empty())
+            {
+                std::size_t e = j + 1;
+                while (e < b && !wort(e, "as") && !wort(e, "language") && !wort(e, "begin") && !wort(e, "return") &&
+                       tok(e).art != TokenArt::Zeichenkette && !(istName(e) && enthaelt(kRumpfAnfang, klein(tok(e).text))))
+                    e = oeffnet(tok(e)) ? nachKlammer(e) : e + 1;
+                rueckgabe = textVon(j + 1, e);
             }
             const Token& t = tok(j);
             if (koerper == kKeiner && t.art == TokenArt::Zeichenkette && (t.text.starts_with('$') || wort(j - 1, "as")))
@@ -1124,17 +1403,78 @@ private:
         if (koerper != kKeiner && m_dialekt.name != "tsql" && m_dialekt.name != "mysql")
         {
             m_routine = o.name;
-            liesRumpfText(tok(koerper), o.zugriffe, eigene);
+            AnweisungPtr ablauf;
+            liesRumpfText(tok(koerper), o.zugriffe, eigene, &ablauf, sprache != "sql");
             m_routine.clear();
+            legeFunktionAn(o.name, o.zeile, o.bisZeile, std::move(parameter), std::move(rueckgabe), std::move(ablauf));
             return;
         }
         sammleZugriffe(k, b, o.zugriffe, eigene);
         abfragenIn(k, b, o.name);
+
+        // der Rumpf in den Token (Entscheid R1): hinter AS (T-SQL, Firebird, Spark `AS BEGIN`, DuckDB-Makro), sonst
+        // ab BEGIN, einer Marke oder dem ersten Wort einer Anweisung (MySQL, Spark `RETURN …`)
+        const bool tsql = m_dialekt.name == "tsql";
+        std::size_t anfang = kKeiner;
+        bool hinterAs = false;
+        for (std::size_t j = k; j < b && anfang == kKeiner; j = oeffnet(tok(j)) ? nachKlammer(j) : j + 1)
+        {
+            if (wort(j, "as") && !wort(j - 1, "execute") && !tok(j - 1).text.starts_with('@'))
+            {
+                anfang = j + 1;
+                hinterAs = true;
+            }
+            else if (!tsql && (enthaelt(kRumpfAnfang, klein(tok(j).text)) && istName(j)))
+                anfang = j;
+            else if (!tsql && tok(j).art == TokenArt::Bezeichner && tok(j + 1).istOp(":") && wort(j + 2, "begin"))
+                anfang = j;
+        }
+        if (anfang == kKeiner || anfang >= b) return;
+        const bool anweisung = tsql || !hinterAs || enthaelt(kRumpfAnfang, klein(tok(anfang).text)) ||
+                               (tok(anfang).art == TokenArt::Bezeichner && tok(anfang + 1).istOp(":"));
+        AnweisungPtr ablauf;
+        if (anweisung)
+            ablauf = ablaufVon(anfang, b, false);
+        else
+        {
+            // ein Ausdruck als Rumpf (DuckDB `CREATE MACRO m(a) AS a + 1`): sein Wert ist das Ergebnis
+            auto rueck = std::make_unique<Anweisung>();
+            rueck->art = AnweisungArt::Ruecksprung;
+            rueck->text = textVon(anfang, b);
+            rueck->zeile = tok(anfang).ort.zeile;
+            rueck->aufrufe = aufrufeIn(anfang, b);
+            rueck->aufrufeGenannt = true;
+            ablauf = std::make_unique<Anweisung>();
+            ablauf->art = AnweisungArt::Block;
+            ablauf->zeile = rueck->zeile;
+            ablauf->kinder.push_back(std::move(rueck));
+        }
+        legeFunktionAn(o.name, o.zeile, o.bisZeile, std::move(parameter), std::move(rueckgabe), std::move(ablauf));
+    }
+
+    /// Alle Zeilen einer Anweisung und ihrer Kinder um `um` weiter (ein Rumpf, der fuer sich gelesen wurde).
+    static void verschiebe(Anweisung& a, int um)
+    {
+        a.zeile += um;
+        for (Zugriff& z : a.aufrufe) z.zeile += um;
+        for (AnweisungPtr& k : a.kinder)
+            if (k) verschiebe(*k, um);
+        if (a.sonst) verschiebe(*a.sonst, um);
+    }
+
+    /// Ist der Text ab dem ersten Token SQL-Code (kein Name einer Klasse wie in Hive `AS 'com.x.Udf'`)?
+    [[nodiscard]] bool beginntMitCode() const
+    {
+        const std::size_t i = 0;
+        if (tok(i).istOp("<<")) return true;  // eine Marke (PL/pgSQL)
+        return istName(i) && enthaelt(kSqlRumpfAnfang, klein(tok(i).text)) && !tok(i + 1).istOp(".");
     }
 
     /// Der Rumpf einer Routine in einer Zeichenkette (`$$…$$`, `$f$…$f$`, `'…'`) durch einen zweiten
-    /// Leser; Zeilen und Meldungen auf die Stellen in diesem Text.
-    void liesRumpfText(const Token& koerper, std::vector<Zugriff>& zugriffe, std::vector<std::string>& eigene)
+    /// Leser; Zeilen und Meldungen auf die Stellen in diesem Text. Mit `ablauf` auch die Anweisungen
+    /// (Entscheid R1) — leer, wenn der Text kein SQL-Code ist; `plpgsql`: mit DECLARE-Teil.
+    void liesRumpfText(const Token& koerper, std::vector<Zugriff>& zugriffe, std::vector<std::string>& eigene,
+                       AnweisungPtr* ablauf = nullptr, bool plpgsql = true)
     {
         std::string_view s = koerper.text;
         std::size_t vorn = 1;
@@ -1159,6 +1499,11 @@ private:
         rumpf.m_routine = m_routine;
         rumpf.liesRumpf(innere, eigene);
         const int versatzZeile = koerper.ort.zeile - 1;
+        if (ablauf != nullptr && rumpf.beginntMitCode())
+        {
+            *ablauf = rumpf.ablaufVon(0, rumpf.m_t.size(), plpgsql);
+            verschiebe(**ablauf, versatzZeile);
+        }
         for (Abfrage& x : neben.einheit.abfragen)
         {
             verschiebe(x, versatzZeile);
@@ -1519,6 +1864,8 @@ public:
             ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {},
                                           "SQL dialect not known - read as common SQL (\"sql\" in code2diagram.json sets it)"});
         SqlLeser(text, *dialekt, optionen.platzhalter, ergebnis).liesAlles();
+        ergaenzeLogik(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);      // Bedingungen der Routinen (Entscheid R6)
+        ergaenzeKlauseln(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);   // WHERE, HAVING, ON (Entscheid W1)
         ergebnis.zeichenketten.clear();  // SQL in den Zeichenketten von SQL sucht niemand
         return ergebnis;
     }

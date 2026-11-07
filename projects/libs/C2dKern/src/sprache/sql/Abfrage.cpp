@@ -99,6 +99,86 @@ constexpr std::string_view kNeueAnweisung[] = {
 
 }  // namespace
 
+bool withMitAbfrage(const Tokenquelle& q, std::size_t j)
+{
+    const auto istName = [&](std::size_t i) {
+        const TokenArt a = q.token(i).art;
+        return a == TokenArt::Bezeichner || a == TokenArt::Schluesselwort;
+    };
+    const auto wort = [&](std::size_t i, std::string_view w) { return istName(i) && klein(q.token(i).text) == w; };
+    return istName(j + 1) && (wort(j + 2, "as") || q.token(j + 2).istOp("(") || wort(j + 1, "recursive"));
+}
+
+std::size_t anweisungsEnde(const Tokenquelle& q, std::size_t j, std::size_t b)
+{
+    const auto istName = [&](std::size_t i) {
+        const TokenArt a = q.token(i).art;
+        return a == TokenArt::Bezeichner || a == TokenArt::Schluesselwort;
+    };
+    const auto wort = [&](std::size_t i, std::string_view w) { return istName(i) && klein(q.token(i).text) == w; };
+    const bool merge = wort(j, "merge");
+    const bool update = wort(j, "update");
+    // nach WITH, INSERT, CREATE … AS wartet die Anweisung noch auf ihr SELECT; sonst beginnt eines eine neue
+    bool select = !(wort(j, "with") || wort(j, "insert") || wort(j, "create") || wort(j, "alter"));
+    bool set = false;
+    int fall = 0;
+    for (std::size_t k = j + 1; k < b;)
+    {
+        const Token& t = q.token(k);
+        if (t.art == TokenArt::Ende) return k;
+        if (t.istOp("("))
+        {
+            k = std::min(q.hinterKlammer(k), b);
+            continue;
+        }
+        if (t.istOp(";")) return k;
+        if (wort(k, "loop") && fall == 0) return k;  // `FOR r IN SELECT … LOOP`
+        if (wort(k, "case")) ++fall;
+        if (wort(k, "end") && fall > 0)
+        {
+            --fall;
+            ++k;
+            continue;
+        }
+        // ELSE und END ausserhalb von CASE … END gehoeren nie zu einer Anweisung (`IF … SELECT … ELSE …`,
+        // `BEGIN … RETURN 0 END`), auch mitten in der Zeile
+        if (fall == 0 && (wort(k, "else") || wort(k, "end")) && !q.token(k - 1).istOp(".")) return k;  // nicht `w.end`
+        const bool zeilenanfang = q.token(k - 1).ort.zeile < t.ort.zeile;
+        // eine Marke allein in ihrer Zeile (`weiter:`, das Ziel eines GOTO) beginnt eine neue Anweisung — nicht
+        // `raw:owner` (Databricks, ein Pfad in JSON) am Anfang einer Zeile einer Abfrage
+        if (fall == 0 && zeilenanfang && t.art == TokenArt::Bezeichner && q.token(k + 1).istOp(":") &&
+            q.token(k + 1).ort.zeile == t.ort.zeile && q.token(k + 2).ort.zeile > t.ort.zeile)
+            return k;
+        if (fall == 0 && zeilenanfang && istName(k) && enthaelt(kNeueAnweisung, klein(t.text)))
+        {
+            const std::string w = klein(t.text);
+            bool gehoertDazu = false;
+            if (w == "with" && !withMitAbfrage(q, k))
+                gehoertDazu = true;  // ein Hinweis am Zeilenanfang (`FROM OPENJSON(@x)` / `WITH (…)`)
+            else if (w == "select" || w == "with")
+            {
+                const bool fortgesetzt = wort(k - 1, "union") || wort(k - 1, "all") || wort(k - 1, "distinct") ||
+                                         wort(k - 1, "intersect") || wort(k - 1, "except") || wort(k - 1, "minus") ||
+                                         wort(k - 1, "as") || q.token(k - 1).istOp(",");
+                gehoertDazu = fortgesetzt || !select;
+            }
+            else if (merge && (w == "update" || w == "insert" || w == "delete" || w == "set"))
+                gehoertDazu = true;
+            else if (update && w == "set" && !set)
+                gehoertDazu = true;
+            else if (w == "fetch" && (wort(k + 1, "first") || wort(k + 1, "next")) && !wort(k + 2, "from"))
+                gehoertDazu = true;  // `OFFSET … FETCH NEXT 10 ROWS` — nicht `FETCH NEXT FROM cursor` (T-SQL)
+            else if ((w == "update" || w == "insert") && q.token(k + 1).istOp("("))
+                gehoertDazu = true;  // die Funktion UPDATE(spalte) eines Triggers (T-SQL)
+            if (!gehoertDazu) return k;
+        }
+        if (wort(k, "select")) select = true;
+        if (wort(k, "set")) set = true;
+        ++k;
+    }
+    return b;
+}
+
 std::size_t hinterStream(const Tokenquelle& q, std::size_t i)
 {
     const auto name = [&](std::size_t k) {
@@ -185,11 +265,7 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
     bereiche.clear();
     // Beginnt bei j eine Abfrage? Am Anfang, nach `;`, nach einem Wort, das einen Block oeffnet, oder am
     // Anfang einer Zeile, wenn die Zeile davor nicht fortgesetzt wird.
-    // ein WITH einer Abfrage (`WITH x AS`, `WITH x (a, b) AS`, `WITH RECURSIVE`), kein Hinweis `WITH (NOLOCK)`
-    // und kein `OPENJSON(…) WITH (…)`
-    const auto mitAbfrage = [&](std::size_t j) {
-        return istName(j + 1) && (wort(j + 2, "as") || istAuf(j + 2) || wort(j + 1, "recursive"));
-    };
+    const auto mitAbfrage = [&](std::size_t j) { return withMitAbfrage(m_q, j); };
     const auto beginnt = [&](std::size_t j) {
         if (!(wort(j, "select") || wort(j, "perform") || wort(j, "with") || wort(j, "insert") || wort(j, "update") || wort(j, "delete") ||
               wort(j, "merge") || wort(j, "create") || wort(j, "alter")))
@@ -204,60 +280,7 @@ std::vector<Abfrage> AbfrageLeser::suche(std::size_t a, std::size_t b, const std
             return true;
         return davor.ort.zeile < tok(j).ort.zeile && (davor.art != TokenArt::Operator || davor.istOp(")"));
     };
-    // Das Ende der Abfrage ab j: `;`, das Ende, oder am Anfang einer Zeile ein Wort einer neuen Anweisung
-    // (nicht in einer Klammer oder in CASE … END; SELECT und WITH nicht, solange die Anweisung noch eines
-    // erwartet; in MERGE gehoeren UPDATE, INSERT, DELETE, SET zu den Zweigen)
-    const auto ende = [&](std::size_t j) {
-        const bool merge = wort(j, "merge");
-        const bool update = wort(j, "update");
-        // nach WITH, INSERT, CREATE … AS wartet die Anweisung noch auf ihr SELECT; sonst beginnt eines eine neue
-        bool select = !(wort(j, "with") || wort(j, "insert") || wort(j, "create") || wort(j, "alter"));
-        bool set = false;
-        int fall = 0;
-        for (std::size_t k = j + 1; k < b;)
-        {
-            if (istAuf(k))
-            {
-                k = ueber(k, b);
-                continue;
-            }
-            if (tok(k).istOp(";")) return k;
-            if (wort(k, "loop") && fall == 0) return k;  // `FOR r IN SELECT … LOOP`
-            if (wort(k, "case")) ++fall;
-            if (wort(k, "end") && fall > 0)
-            {
-                --fall;
-                ++k;
-                continue;
-            }
-            const bool zeilenanfang = tok(k - 1).ort.zeile < tok(k).ort.zeile;
-            if (fall == 0 && zeilenanfang && istName(k) && enthaelt(kNeueAnweisung, klein(tok(k).text)))
-            {
-                const std::string w = klein(tok(k).text);
-                bool gehoertDazu = false;
-                if (w == "with" && !mitAbfrage(k))
-                    gehoertDazu = true;  // ein Hinweis am Zeilenanfang (`FROM OPENJSON(@x)` / `WITH (…)`)
-                else if (w == "select" || w == "with")
-                {
-                    const bool fortgesetzt = wort(k - 1, "union") || wort(k - 1, "all") || wort(k - 1, "distinct") ||
-                                             wort(k - 1, "intersect") || wort(k - 1, "except") || wort(k - 1, "minus") ||
-                                             wort(k - 1, "as") || tok(k - 1).istOp(",");
-                    gehoertDazu = fortgesetzt || !select;
-                }
-                else if (merge && (w == "update" || w == "insert" || w == "delete" || w == "set"))
-                    gehoertDazu = true;
-                else if (update && w == "set" && !set)
-                    gehoertDazu = true;
-                else if (w == "fetch" && (wort(k + 1, "first") || wort(k + 1, "next")))
-                    gehoertDazu = true;
-                if (!gehoertDazu) return k;
-            }
-            if (wort(k, "select")) select = true;
-            if (wort(k, "set")) set = true;
-            ++k;
-        }
-        return b;
-    };
+    const auto ende = [&](std::size_t j) { return anweisungsEnde(m_q, j, b); };
     for (std::size_t j = a; j < b;)
     {
         if (istAuf(j))
@@ -389,6 +412,7 @@ std::optional<Abfrage> AbfrageLeser::lies(std::size_t a, std::size_t b, const st
         {
             const std::size_t weiter = bis(wo + 1, {"returning", "option"});
             m_ab.bloecke[block].wo = zerlege(block, wo + 1, weiter);
+            m_ab.bloecke[block].woGanz = klausel(wo + 1, weiter);
         }
     }
     else if (wort(k, "delete"))
@@ -409,7 +433,11 @@ std::optional<Abfrage> AbfrageLeser::lies(std::size_t a, std::size_t b, const st
         liesQuellen(block, von + 1, wo, ",");
         m_ab.bloecke[block].auswahl = "delete";
         if (wo < b && wort(wo, "where"))
-            m_ab.bloecke[block].wo = zerlege(block, wo + 1, bis(wo + 1, {"returning", "option"}));
+        {
+            const std::size_t weiter = bis(wo + 1, {"returning", "option"});
+            m_ab.bloecke[block].wo = zerlege(block, wo + 1, weiter);
+            m_ab.bloecke[block].woGanz = klausel(wo + 1, weiter);
+        }
     }
     else if (wort(k, "merge"))
     {
@@ -484,7 +512,9 @@ std::size_t AbfrageLeser::liesBlock(std::size_t a, std::size_t b, BlockRolle rol
             j = ueber(j, b);
             continue;
         }
-        if (wort(j, "union") || wort(j, "intersect") || wort(j, "except") || wort(j, "minus"))
+        // nicht `SELECT * EXCEPT (a, b)` (Spark, BigQuery): dort laesst EXCEPT Spalten weg
+        const bool ohneSpalten = wort(j, "except") && j > k && tok(j - 1).istOp("*") && istAuf(j + 1);
+        if ((wort(j, "union") || wort(j, "intersect") || wort(j, "except") || wort(j, "minus")) && !ohneSpalten)
         {
             std::string art = gross(tok(j).text);
             std::size_t n = j + 1;
@@ -684,11 +714,13 @@ void AbfrageLeser::liesSelect(std::size_t block, std::size_t a, std::size_t b)
         {
             std::vector<Bedingungsteil> wo = zerlege(block, von, ende);
             m_ab.bloecke[block].wo = std::move(wo);
+            m_ab.bloecke[block].woGanz = klausel(von, ende);
         }
         else if (w == "having")
         {
             std::vector<Bedingungsteil> haben = zerlege(block, von, ende);
             m_ab.bloecke[block].haben = std::move(haben);
+            m_ab.bloecke[block].habenGanz = klausel(von, ende);
         }
         else if (w == "group")
         {
@@ -877,6 +909,7 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
             const std::size_t e = naechsterJoin(j + 1);
             std::vector<Bedingungsteil> teile = zerlege(block, j + 1, e);
             q.bedingung = std::move(teile);
+            q.bedingungGanz = klausel(j + 1, e);
             j = e;
         }
         else if (wort(j, "using") && istAuf(j + 1))
@@ -891,6 +924,16 @@ void AbfrageLeser::liesQuellen(std::size_t block, std::size_t a, std::size_t b, 
         // was keine Quelle beginnt (Reste wie `FOR SYSTEM_TIME …`), bis zum naechsten Join oder Komma
         if (j < b && !tok(j).istOp(",") && naechsterJoin(j) != j) j = naechsterJoin(j);
     }
+}
+
+Klausel AbfrageLeser::klausel(std::size_t a, std::size_t b) const
+{
+    Klausel k;
+    if (b <= a) return k;
+    k.text = m_q.quelltext(a, b);
+    while (!k.text.empty() && (k.text.back() == ' ' || k.text.back() == ';')) k.text.pop_back();
+    k.zeile = tok(a).ort.zeile;
+    return k;
 }
 
 std::vector<Bedingungsteil> AbfrageLeser::zerlege(std::size_t block, std::size_t a, std::size_t b)

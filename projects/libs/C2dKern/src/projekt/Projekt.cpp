@@ -366,6 +366,17 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
                     q.name = (f != nullptr ? f->vollerName() : std::string("query")) + "@" + std::to_string(q.zeile);
                     q.zugriffe.clear();  // sie traegt die Funktion (A4), die Anweisung ist kein eigener Knoten
                     zurueckIn(q.ziel, alle);
+                    // eine Bedingung als Ganzes (W1): Zeile der Quelle, Platzhalter im Text und in den Atomen
+                    const auto klausel = [&](modell::Klausel& k) {
+                        if (k.text.empty()) return;
+                        k.zeile = hostZeile(k.zeile);
+                        zurueckIn(k.text, alle);
+                        const auto atome = [&](auto& selbst, modell::Logik& l) -> void {
+                            zurueckIn(l.text, alle);
+                            for (modell::Logik& t : l.teile) selbst(selbst, t);
+                        };
+                        if (k.logik) atome(atome, *k.logik);
+                    };
                     for (modell::AbfrageBlock& b : q.bloecke)
                     {
                         b.zeile = hostZeile(b.zeile);
@@ -376,9 +387,12 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
                             x.zeile = hostZeile(x.zeile);
                             zurueckIn(x.name, alle);
                             for (modell::Bedingungsteil& t : x.bedingung) zurueckIn(t.text, alle);
+                            klausel(x.bedingungGanz);
                         }
                         for (modell::Bedingungsteil& t : b.wo) zurueckIn(t.text, alle);
                         for (modell::Bedingungsteil& t : b.haben) zurueckIn(t.text, alle);
+                        klausel(b.woGanz);
+                        klausel(b.habenGanz);
                     }
                     e.einheit.abfragen.push_back(std::move(q));
                 }
@@ -444,6 +458,21 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
         o.bisZeile = zeile(o.bisZeile);
         for (modell::Zugriff& z : o.zugriffe) z.zeile = zeile(z.zeile);
         e.einheit.objekte.push_back(std::move(o));
+    }
+    // der Ablauf ihrer Routinen und Trigger (Entscheid R1), mit den Zeilen der Quelle
+    const auto zeilenDer = [&](auto& selbst, modell::Anweisung& a) -> void {
+        a.zeile = zeile(a.zeile);
+        for (modell::Zugriff& z : a.aufrufe) z.zeile = zeile(z.zeile);
+        for (modell::AnweisungPtr& k : a.kinder)
+            if (k) selbst(selbst, *k);
+        if (a.sonst) selbst(selbst, *a.sonst);
+    };
+    for (modell::Funktion& f : s.einheit.funktionen)
+    {
+        f.zeile = zeile(f.zeile);
+        f.bisZeile = zeile(f.bisZeile);
+        if (f.rumpf) zeilenDer(zeilenDer, *f.rumpf);
+        e.einheit.funktionen.push_back(std::move(f));
     }
     for (quelle::Meldung& m : s.meldungen)
     {

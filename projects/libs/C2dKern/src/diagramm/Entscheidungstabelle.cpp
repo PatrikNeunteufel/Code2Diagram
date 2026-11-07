@@ -193,6 +193,7 @@ private:
             case AnweisungArt::Ruecksprung:
             case AnweisungArt::Wurf:
             {
+                if (a.abseits) return wege;  // laeuft nicht an ihrer Stelle (SQL CONTINUE HANDLER)
                 std::string text = a.text;
                 if (a.art == AnweisungArt::Ruecksprung) text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "return" : "return " + a.text;
                 if (a.art == AnweisungArt::Wurf) text = !a.kopf.empty() ? a.kopf : a.text.empty() ? "throw" : "throw " + a.text;

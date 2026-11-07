@@ -94,6 +94,21 @@ void haengeAn(Enden& ziel, Enden quelle)
     for (auto& ende : quelle) ziel.push_back(std::move(ende));
 }
 
+/// Die Anweisung, die gerade gebaut wird (fuer ihre Aufrufe, Anweisung::aufrufeGenannt) — gesetzt, solange es
+/// den Waechter gibt, danach wieder die davor.
+class Jetzt
+{
+public:
+    Jetzt(const Anweisung*& stelle, const Anweisung* a) : m_stelle(stelle), m_davor(stelle) { stelle = a; }
+    ~Jetzt() { m_stelle = m_davor; }
+    Jetzt(const Jetzt&) = delete;
+    Jetzt& operator=(const Jetzt&) = delete;
+
+private:
+    const Anweisung*& m_stelle;
+    const Anweisung* m_davor;
+};
+
 class FlussBauer
 {
 public:
@@ -142,7 +157,7 @@ private:
         for (const Kante& k : m_d.kanten()) hatEingang[k.nach] = true;
         for (KnotenId k = 0; k < m_d.knoten().size(); ++k)
         {
-            if (erreicht[k]) continue;
+            if (erreicht[k] || std::find(m_abseits.begin(), m_abseits.end(), k) != m_abseits.end()) continue;
             m_d.markiereUnerreichbar(k);
             if (!hatEingang[k]) m_d.ergaenzeZeile(k, kUnerreichbar, true);
         }
@@ -180,7 +195,7 @@ private:
         k.art = art;
         k.zeilen.emplace_back(text);
         k.quellZeile = zeile;
-        k.aufrufe = aufrufeIn(text);
+        k.aufrufe = m_jetzt != nullptr ? modell::aufrufeDer(*m_jetzt, text) : aufrufeIn(text);
         k.innere = innere;
         k.gruppe = rahmen();
         const KnotenId id = m_d.neuerKnoten(std::move(k));
@@ -226,11 +241,18 @@ private:
     /// Baut die Anweisung hinter die offenen Enden `eingang`; liefert, was danach offen ist.
     Enden baue(const Anweisung& a, Enden eingang)
     {
+        const Jetzt jetzt(m_jetzt, &a);
         switch (a.art)
         {
             case AnweisungArt::Einfach:
-                return {{knoten(istAufruf(a.text) ? KnotenArt::Aufruf : KnotenArt::Anweisung, a.text, a.zeile,
-                                eingang, a.innere),
+                if (a.abseits)
+                {
+                    // laeuft nicht an ihrer Stelle (SQL CONTINUE HANDLER): ein Knoten ohne Kanten, der Weg geht vorbei
+                    m_abseits.push_back(knoten(KnotenArt::Anweisung, a.text, a.zeile, {}, a.innere));
+                    return eingang;
+                }
+                return {{knoten(a.istAufruf || istAufruf(a.text) ? KnotenArt::Aufruf : KnotenArt::Anweisung, a.text,
+                                a.zeile, eingang, a.innere),
                          {}}};
 
             case AnweisungArt::Block:
@@ -278,9 +300,10 @@ private:
                 Enden aus = baue(*a.kinder[0], std::move(eingang));
                 haengeAn(aus, std::move(schleife.fortsetzung));
                 const KnotenId kopf = knoten(KnotenArt::Verzweigung, a.text, a.zeile, aus);
-                m_d.verbinde(kopf, erster, "yes");  // ein leerer Rumpf: erster == kopf
+                // `REPEAT … UNTIL c`: die Schleife endet, wenn c wahr ist
+                m_d.verbinde(kopf, erster, a.endetWennWahr ? "no" : "yes");  // ein leerer Rumpf: erster == kopf
                 Enden danach;
-                if (!immerWahr(a.text)) danach.emplace_back(kopf, "no");
+                if (!immerWahr(a.text)) danach.emplace_back(kopf, a.endetWennWahr ? "yes" : "no");
                 haengeAn(danach, std::move(schleife.abbruch));
                 return danach;
             }
@@ -611,6 +634,8 @@ private:
     };
 
     Flussdiagramm& m_d;
+    const Anweisung* m_jetzt = nullptr;  ///< die Anweisung, die gerade gebaut wird (Jetzt)
+    std::vector<KnotenId> m_abseits;     ///< Knoten ohne Kanten (Anweisung::abseits): nicht unerreichbar
     std::vector<OffenerRahmen> m_rahmen;  ///< von aussen nach innen
     std::vector<Enden*> m_abbruch;
     std::vector<Enden*> m_fortsetzung;
@@ -681,10 +706,12 @@ public:
 
     void baue(const Anweisung& a, std::vector<Block>& ziel)
     {
+        const Jetzt jetzt(m_jetzt, &a);
         switch (a.art)
         {
             case AnweisungArt::Einfach:
-                ziel.push_back(block(istAufruf(a.text) ? BlockArt::Aufruf : BlockArt::Anweisung, a.text, a.zeile));
+                ziel.push_back(block(a.istAufruf || istAufruf(a.text) ? BlockArt::Aufruf : BlockArt::Anweisung, a.text,
+                                     a.zeile));
                 ziel.back().innere = a.innere;
                 break;
             case AnweisungArt::Block:
@@ -706,7 +733,7 @@ public:
                 break;
             case AnweisungArt::TueSolange:
                 schleife(immerWahr(a.text) ? BlockArt::Endlosschleife : BlockArt::Fussschleife,
-                         immerWahr(a.text) ? std::string(kImmer) : "while (" + a.text + ")", a, ziel);
+                         immerWahr(a.text) ? std::string(kImmer) : kopfVon(a, "while (" + a.text + ")"), a, ziel);
                 break;
             case AnweisungArt::Fuer:
             {
@@ -742,10 +769,11 @@ public:
                 ziel.push_back(block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "throw" : "throw " + a.text), a.zeile));
                 break;
             case AnweisungArt::Abbruch:
-                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "break" : "break " + a.text, a.zeile));
+                ziel.push_back(block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "break" : "break " + a.text), a.zeile));
                 break;
             case AnweisungArt::Fortsetzung:
-                ziel.push_back(block(BlockArt::Aussprung, a.text.empty() ? "continue" : "continue " + a.text, a.zeile));
+                ziel.push_back(
+                    block(BlockArt::Aussprung, kopfVon(a, a.text.empty() ? "continue" : "continue " + a.text), a.zeile));
                 break;
             case AnweisungArt::Sprung:
                 ziel.push_back(block(BlockArt::Aussprung, "goto " + a.text, a.zeile));
@@ -814,11 +842,11 @@ private:
     static constexpr std::string_view kImmer = "forever";
     static constexpr std::string_view kOhneBreak = "else (no break)";
 
-    static Block block(BlockArt art, std::string text, int zeile)
+    Block block(BlockArt art, std::string text, int zeile) const
     {
         Block b;
         b.art = art;
-        b.aufrufe = aufrufeIn(text);
+        b.aufrufe = m_jetzt != nullptr ? modell::aufrufeDer(*m_jetzt, text) : aufrufeIn(text);
         b.text = std::move(text);
         b.quellZeile = zeile;
         return b;
@@ -929,6 +957,7 @@ private:
     }
 
     Struktogramm& m_d;
+    const Anweisung* m_jetzt = nullptr;  ///< die Anweisung, die gerade gebaut wird (Jetzt)
 };
 
 /// Unerreichbar wie im Ablauf: ein Block, dessen Zeile dort nur tote Knoten tragen.

@@ -179,7 +179,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             ->setEnabled(!m_quelle->toPlainText().isEmpty());
         const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
         menue->addAction(QStringLiteral("Truth table of line %1").arg(zeile), this, [this, zeile] { zeigeWahrheitstabelle(zeile); })
-            ->setEnabled(hatWahrheitstabelle(datei, zeile));
+            ->setEnabled(hatWahrheitstabelle(datei, zeile) || hatAbfrageTabelle(datei, zeile));
         menue->addAction(QStringLiteral("Mapping table of line %1").arg(zeile), this, [this, zeile] { zeigeZuordnung(zeile); })
             ->setEnabled(hatZuordnung(datei, zeile));
         menue->addAction(QStringLiteral("#if configuration of line %1").arg(zeile), this, [this, zeile] { zeigeKonfiguration(zeile); })
@@ -416,6 +416,14 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     };
 
     m_vorschau->beiTabelle = [this](c2d::diagramm::KnotenId knoten) {
+        if (istAbfrage())
+        {
+            // ein Knoten des Abfragediagramms: die erste seiner Bedingungen mit Tabelle (W6)
+            if (knoten >= m_abfrageDiagramm.knoten.size() || m_abfrageDiagramm.knoten[knoten].tabellen.empty()) return;
+            geheZuAbfrageTabelle(m_datei, static_cast<std::size_t>(m_abfrage.toULongLong()),
+                                 m_abfrageDiagramm.knoten[knoten].tabellen.front(), knoten);
+            return;
+        }
         const std::vector<int> zeilen = tabellenZeilen(knoten);
         if (!zeilen.empty()) geheZuTabelle(dateiVon(knoten), zeilen.front(), knoten);
     };
@@ -1709,7 +1717,14 @@ bool Hauptfenster::waehleEintrag(const QString& name)
         const QString rest = name.mid(QString::fromLatin1(kWahrheitstabelle).size());
         const qsizetype at = rest.lastIndexOf(QLatin1Char('@'));
         const int zeile = at > 0 ? rest.mid(at + 1).toInt() : 0;
-        if (zeile <= 0 || !hatWahrheitstabelle(m_datei, zeile)) return false;
+        if (zeile <= 0) return false;
+        // eine Bedingung einer Abfrage (`truth:<Abfrage>@<Zeile>`, Entscheid W6)
+        if (const std::optional<c2d::diagramm::Wahrheitstabelle> t = abfrageTabelle(m_datei, rest.left(at), zeile))
+        {
+            m_auswahl->addItem(QStringLiteral("Truth table: %1 %2 line %3").arg(rest.left(at), ausStd(t->klausel)).arg(zeile), name);
+            return waehle(m_auswahl, name);
+        }
+        if (!hatWahrheitstabelle(m_datei, zeile)) return false;
         const std::size_t f = funktionZurZeile(m_datei, zeile);
         if (f == kKeine || ausStd(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f].vollerName()) != rest.left(at))
             return false;
@@ -2149,6 +2164,19 @@ void Hauptfenster::abfrageMenue(c2d::diagramm::KnotenId knoten)
         menue.addAction(QStringLiteral("Data dependencies from %1").arg(name), this, [this, name] {
             if (!zeigeAbhaengigkeiten(name)) statusBar()->showMessage(QStringLiteral("%1: not in this file").arg(name), 4000);
         });
+    // je Bedingung mit Tabelle (W6): am Ergebnis WHERE und HAVING, an einer Quelle ihr ON
+    const std::size_t abfrage = static_cast<std::size_t>(m_abfrage.toULongLong());
+    for (const int zeile : k.tabellen)
+    {
+        const std::optional<c2d::diagramm::Wahrheitstabelle> t =
+            m_datei < m_projekt.dateien.size() && abfrage < m_projekt.dateien[m_datei].ergebnis.einheit.abfragen.size()
+                ? abfrageTabelle(m_datei, ausStd(m_projekt.dateien[m_datei].ergebnis.einheit.abfragen[abfrage].name), zeile)
+                : std::nullopt;
+        const QString klausel = k.art == Art::Ergebnis || k.art == Art::Menge ? (t ? ausStd(t->klausel) : QString())
+                                                                               : QStringLiteral("ON");
+        menue.addAction(QStringLiteral("Truth table (%1, line %2)").arg(klausel).arg(zeile), this,
+                        [this, abfrage, zeile, knoten] { geheZuAbfrageTabelle(m_datei, abfrage, zeile, knoten); });
+    }
     menue.addAction(QStringLiteral("Show in the source"), this, [this, knoten] { zeigeStelle(knoten); })->setEnabled(k.zeile > 0);
     menue.exec(QCursor::pos());
 }
@@ -2206,7 +2234,36 @@ void Hauptfenster::folgeAbhaengigkeit(c2d::diagramm::KnotenId knoten)
         geheZuAbfrage(s.datei, s.index, knoten);  // eine Anweisung auf oberster Ebene: ihr Abfragediagramm
         return;
     }
-    zeigeZeile(s.datei, k.zeile);  // eine View, ein Trigger, eine Routine: ihre Stelle (einen Ablauf haben sie noch nicht)
+    // eine Routine, ein Trigger: ihr Ablauf (Entscheid R1); eine View: ihre Stelle
+    if (const std::optional<c2d::projekt::Fundstelle> f = ablaufDesObjekts(s))
+    {
+        gehe(*f, knoten);
+        return;
+    }
+    zeigeZeile(s.datei, k.zeile);
+}
+
+std::optional<c2d::projekt::Fundstelle> Hauptfenster::ablaufDesObjekts(const c2d::projekt::Datenstelle& s) const
+{
+    using Art = c2d::projekt::Datenstelle::Art;
+    if (s.art != Art::Objekt || s.datei >= m_projekt.dateien.size()) return std::nullopt;
+    const c2d::modell::Einheit& e = m_projekt.dateien[s.datei].ergebnis.einheit;
+    if (s.index >= e.objekte.size()) return std::nullopt;
+    const c2d::modell::Datenbankobjekt& o = e.objekte[s.index];
+    if (o.art == c2d::modell::ObjektArt::View) return std::nullopt;
+    // die Funktion, die der Leser aus seinem Rumpf machte: dieselbe Stelle, derselbe Name
+    for (std::size_t f = 0; f < e.funktionen.size(); ++f)
+        if (e.funktionen[f].rumpf && e.funktionen[f].namenOhneFall && e.funktionen[f].zeile == o.zeile &&
+            e.funktionen[f].name == o.name)
+            return c2d::projekt::Fundstelle{s.datei, f};
+    // ein Trigger ohne Rumpf (`EXECUTE FUNCTION f()`): die Funktion, die er ausfuehrt, wenn sie eindeutig ist
+    if (o.art != c2d::modell::ObjektArt::Trigger) return std::nullopt;
+    for (const c2d::modell::Zugriff& z : o.zugriffe)
+        if (z.art == c2d::modell::ZugriffArt::Ruft)
+            if (const std::vector<c2d::projekt::Fundstelle> ziele = c2d::projekt::kandidaten(m_projekt, s.datei, z.ziel);
+                ziele.size() == 1)
+                return ziele.front();
+    return std::nullopt;
 }
 
 void Hauptfenster::geheZuAbhaengigkeiten(std::size_t datei, const QString& objekt, c2d::diagramm::KnotenId von)
@@ -2245,6 +2302,9 @@ void Hauptfenster::abhaengigkeitenMenue(c2d::diagramm::KnotenId knoten)
                 s.datei == m_datei ? QString() : QStringLiteral(" in %1").arg(ausStd(m_projekt.dateien[s.datei].pfad));
             if (s.art == Art::Funktion)
                 menue.addAction(QStringLiteral("Show the flow of %1()%2").arg(name, wo), this, [this, knoten] { folgeAbhaengigkeit(knoten); });
+            if (const std::optional<c2d::projekt::Fundstelle> f = ablaufDesObjekts(s))
+                menue.addAction(QStringLiteral("Show the flow of %1()").arg(ausStd(c2d::projekt::funktion(m_projekt, *f).vollerName())),
+                                this, [this, knoten] { folgeAbhaengigkeit(knoten); });
             if (s.art == Art::Tabelle)
                 menue.addAction(QStringLiteral("Show %1 in Data types%2").arg(name, wo), this, [this, knoten] { folgeAbhaengigkeit(knoten); });
             menue.addAction(QStringLiteral("Data dependencies from %1%2").arg(name, wo), this,
@@ -2681,9 +2741,16 @@ std::vector<int> Hauptfenster::tabellenZeilen(c2d::diagramm::KnotenId knoten) co
     std::vector<int> zeilen{k.quellZeile};
     zeilen.insert(zeilen.end(), k.weitereZeilen.begin(), k.weitereZeilen.end());
     for (const int z : zeilen)
-        if (z > 0 && (hatWahrheitstabelle(datei, z) || hatZuordnung(datei, z)) && std::find(aus.begin(), aus.end(), z) == aus.end())
+        if (z > 0 && (hatWahrheitstabelle(datei, z) || hatZuordnung(datei, z) || hatAbfrage(datei, z)) &&
+            std::find(aus.begin(), aus.end(), z) == aus.end())
             aus.push_back(z);
     return aus;
+}
+
+bool Hauptfenster::hatAbfrage(std::size_t datei, int zeile) const
+{
+    return datei < m_projekt.dateien.size() && zeile > 0 &&
+           c2d::diagramm::abfrageZurZeile(m_projekt.dateien[datei].ergebnis.einheit.abfragen, zeile) != kKeine;
 }
 
 QString Hauptfenster::tabellenHinweis(c2d::diagramm::KnotenId knoten) const
@@ -2691,8 +2758,10 @@ QString Hauptfenster::tabellenHinweis(c2d::diagramm::KnotenId knoten) const
     const std::vector<int> zeilen = tabellenZeilen(knoten);
     if (zeilen.empty()) return {};
     // ein Klick zeigt die erste (wie geheZuTabelle); die weiteren stehen im Kontextmenue
-    const QString art = hatWahrheitstabelle(dateiVon(knoten), zeilen.front()) ? QStringLiteral("Truth table")
-                                                                              : QStringLiteral("Mapping table");
+    const std::size_t datei = dateiVon(knoten);
+    const QString art = hatWahrheitstabelle(datei, zeilen.front()) ? QStringLiteral("Truth table")
+                        : hatZuordnung(datei, zeilen.front())      ? QStringLiteral("Mapping table")
+                                                                   : QStringLiteral("Query diagram");
     return zeilen.size() == 1 ? art + QStringLiteral(" - click to show it")
                               : art + QStringLiteral(" of line %1 - click to show it; the others in the context menu")
                                           .arg(zeilen.front());
@@ -2909,7 +2978,11 @@ QString Hauptfenster::nameInDirektive(int zeile, int spalte) const
 
 bool Hauptfenster::geheZuTabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von)
 {
-    return hatWahrheitstabelle(datei, zeile) ? geheZuWahrheitstabelle(datei, zeile, von) : geheZuZuordnung(datei, zeile, von);
+    if (hatWahrheitstabelle(datei, zeile)) return geheZuWahrheitstabelle(datei, zeile, von);
+    if (hatZuordnung(datei, zeile)) return geheZuZuordnung(datei, zeile, von);
+    if (!hatAbfrage(datei, zeile)) return false;
+    geheZuAbfrage(datei, c2d::diagramm::abfrageZurZeile(m_projekt.dateien[datei].ergebnis.einheit.abfragen, zeile), von);
+    return istAbfrage();
 }
 
 bool Hauptfenster::zeigeZuordnung(int zeile)
@@ -2923,9 +2996,61 @@ bool Hauptfenster::zeigeZuordnung(int zeile)
 bool Hauptfenster::zeigeWahrheitstabelle(int zeile)
 {
     const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
-    if (geheZuWahrheitstabelle(datei, zeile, kKeine)) return true;
+    if (geheZuWahrheitstabelle(datei, zeile, kKeine) || geheZuAbfrageTabelle(datei, kKeine, zeile, kKeine)) return true;
     statusBar()->showMessage(QStringLiteral("Line %1 has no condition with two or more parts").arg(zeile), 4000);
     return false;
+}
+
+bool Hauptfenster::hatAbfrageTabelle(std::size_t datei, int zeile) const
+{
+    if (datei >= m_projekt.dateien.size() || zeile <= 0) return false;
+    for (const c2d::modell::Abfrage& q : m_projekt.dateien[datei].ergebnis.einheit.abfragen)
+    {
+        const std::vector<int> z = c2d::diagramm::zeilenMitWahrheitstabelle(q);
+        if (std::find(z.begin(), z.end(), zeile) != z.end()) return true;
+    }
+    return false;
+}
+
+std::optional<c2d::diagramm::Wahrheitstabelle> Hauptfenster::abfrageTabelle(std::size_t datei, const QString& abfrage,
+                                                                            int zeile) const
+{
+    if (datei >= m_projekt.dateien.size()) return std::nullopt;
+    const c2d::diagramm::DatenquellenSuche suche = c2d::projekt::datenquellenIn(m_projekt, datei);
+    for (const c2d::modell::Abfrage& q : m_projekt.dateien[datei].ergebnis.einheit.abfragen)
+    {
+        if (!abfrage.isEmpty() && ausStd(q.name) != abfrage) continue;
+        const std::vector<int> z = c2d::diagramm::zeilenMitWahrheitstabelle(q);
+        if (std::find(z.begin(), z.end(), zeile) == z.end()) continue;
+        // in einer Zeile WHERE vor HAVING vor ON (ein Klick auf das Ergebnis zeigt WHERE, Entscheid W6)
+        std::vector<c2d::diagramm::Wahrheitstabelle> alle = c2d::diagramm::wahrheitstabellenVon(q, suche);
+        for (const char* k : {"WHERE", "HAVING", "ON"})
+            for (c2d::diagramm::Wahrheitstabelle& t : alle)
+                if (t.quellZeile == zeile && t.klausel == k) return std::move(t);
+    }
+    return std::nullopt;
+}
+
+bool Hauptfenster::geheZuAbfrageTabelle(std::size_t datei, std::size_t abfrage, int zeile, c2d::diagramm::KnotenId von)
+{
+    if (datei >= m_projekt.dateien.size()) return false;
+    const std::vector<c2d::modell::Abfrage>& abfragen = m_projekt.dateien[datei].ergebnis.einheit.abfragen;
+    // ohne Abfrage: die erste, deren Bedingung in dieser Zeile steht
+    for (std::size_t i = 0; i < abfragen.size() && abfrage == kKeine; ++i)
+    {
+        const std::vector<int> z = c2d::diagramm::zeilenMitWahrheitstabelle(abfragen[i]);
+        if (std::find(z.begin(), z.end(), zeile) != z.end()) abfrage = i;
+    }
+    if (abfrage >= abfragen.size() || !abfrageTabelle(datei, ausStd(abfragen[abfrage].name), zeile)) return false;
+    const QString name = QString::fromLatin1(kWahrheitstabelle) + ausStd(abfragen[abfrage].name) + QStringLiteral("@%1").arg(zeile);
+    if (datei == m_datei && name == m_gezeigt) return true;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (datei != m_datei) zeigeDatei(datei);
+    const bool da = waehleEintrag(name);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+    return da;
 }
 
 bool Hauptfenster::waehleAnsicht(const QString& name)
@@ -3192,9 +3317,13 @@ void Hauptfenster::baueNeu()
     {
         const qsizetype at = m_gezeigt.lastIndexOf(QLatin1Char('@'));
         const int zeile = m_gezeigt.mid(at + 1).toInt();
-        if (const std::size_t f = funktionZurZeile(m_datei, zeile); f != kKeine)
-            if (auto t = wahrheitstabelleVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
-                m_tabellen.push_back(std::move(*t));
+        const QString vorn = m_gezeigt.mid(QString::fromLatin1(kWahrheitstabelle).size(),
+                                           at - static_cast<qsizetype>(QString::fromLatin1(kWahrheitstabelle).size()));
+        if (auto t = abfrageTabelle(m_datei, vorn, zeile))
+            m_tabellen.push_back(std::move(*t));  // eine Bedingung einer Abfrage (W6)
+        else if (const std::size_t f = funktionZurZeile(m_datei, zeile); f != kKeine)
+            if (auto u = wahrheitstabelleVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
+                m_tabellen.push_back(std::move(*u));
         m_richtung->setEnabled(false);
     }
     // ein anderer Aufrufgraph beginnt zugeklappt
@@ -3425,7 +3554,14 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
         // ein Knoten des Ablaufs mit SQL: das Diagramm seiner Abfrage (Entscheid Q5)
         if (von < m_projekt.dateien.size() && k.quellZeile > 0)
             if (const std::size_t q = abfrageZurZeile(m_projekt.dateien[von].ergebnis.einheit.abfragen, k.quellZeile); q != kKeine)
+            {
                 menue.addAction(QStringLiteral("Query diagram"), this, [this, von, q, knoten] { geheZuAbfrage(von, q, knoten); });
+                // die Bedingungen dieser Abfrage mit Tabelle (W6); das Symbol am Knoten bleibt das der Abfrage
+                for (const Wahrheitstabelle& t : wahrheitstabellenVon(m_projekt.dateien[von].ergebnis.einheit.abfragen[q],
+                                                                      c2d::projekt::datenquellenIn(m_projekt, von)))
+                    menue.addAction(QStringLiteral("Truth table (%1, line %2)").arg(ausStd(t.klausel)).arg(t.quellZeile), this,
+                                    [this, von, q, zeile = t.quellZeile, knoten] { geheZuAbfrageTabelle(von, q, zeile, knoten); });
+            }
         if (konfigurationsZeile(knoten))
         {
             // wie die Radioknoepfe im Feld Configuration: die Namen im Feld Defines setzen
@@ -3495,12 +3631,14 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                 }
             }
         }
-        // die Bedingungen des Knotens mit Wahrheitstabelle
+        // die Bedingungen des Knotens mit Wahrheitstabelle, die switch mit Zuordnung (eine Abfrage steht schon oben)
         for (const int zeile : tabellenZeilen(knoten))
-            menue.addAction((hatWahrheitstabelle(dateiVon(knoten), zeile) ? QStringLiteral("Truth table (line %1)")
-                                                                          : QStringLiteral("Mapping table (line %1)"))
-                                .arg(zeile),
+        {
+            const bool wahr = hatWahrheitstabelle(dateiVon(knoten), zeile);
+            if (!wahr && !hatZuordnung(dateiVon(knoten), zeile)) continue;
+            menue.addAction((wahr ? QStringLiteral("Truth table (line %1)") : QStringLiteral("Mapping table (line %1)")).arg(zeile),
                             this, [this, knoten, zeile] { geheZuTabelle(dateiVon(knoten), zeile, knoten); });
+        }
         // die Typen, die der Knoten nennt
         for (const c2d::projekt::TypVerweis& t : typVerweiseVon(knoten))
         {
@@ -3731,6 +3869,16 @@ bool Hauptfenster::zeigeStelle(std::size_t kasten, std::size_t eintrag)
     if (eintrag < k.eintraege.size()) return zeigeZeile(m_datei, k.eintraege[eintrag].zeile);
     eintrag -= k.eintraege.size();
     return eintrag < k.methoden.size() && zeigeZeile(m_datei, k.methoden[eintrag].zeile);
+}
+
+bool Hauptfenster::doppelklickeAbhaengigkeit(const QString& name)
+{
+    if (!istAbhaengigkeiten()) return false;
+    const qsizetype k = aufrufgraphKnoten().indexOf(name);
+    if (k < 0) return false;
+    const QString vorher = m_gezeigt;
+    folgeAbhaengigkeit(static_cast<c2d::diagramm::KnotenId>(k));
+    return m_gezeigt != vorher;
 }
 
 bool Hauptfenster::klicke(const QString& name)

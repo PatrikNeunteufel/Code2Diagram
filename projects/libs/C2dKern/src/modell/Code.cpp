@@ -100,7 +100,7 @@ bool istNamenZeichen(char c)
 void sammle(const Anweisung& a, std::vector<std::string>& aus)
 {
     const auto dazu = [&](std::string_view text) {
-        for (std::string& name : aufrufeIn(text))
+        for (std::string& name : aufrufeDer(a, text))
             if (std::find(aus.begin(), aus.end(), name) == aus.end()) aus.push_back(std::move(name));
     };
     if (a.art != AnweisungArt::Fall && a.art != AnweisungArt::Marke && a.art != AnweisungArt::Sprung &&
@@ -219,6 +219,15 @@ std::vector<std::string> bezeichnerIn(std::string_view text)
     return aus;
 }
 
+std::vector<std::string> aufrufeDer(const Anweisung& a, std::string_view text)
+{
+    if (!a.aufrufeGenannt) return aufrufeIn(text);
+    std::vector<std::string> aus;
+    for (const Zugriff& z : a.aufrufe)
+        if (std::find(aus.begin(), aus.end(), z.ziel) == aus.end()) aus.push_back(z.ziel);
+    return aus;
+}
+
 std::vector<std::string> aufrufeVon(const Funktion& funktion)
 {
     std::vector<std::string> aus;
@@ -232,15 +241,22 @@ namespace
 /// Wie sammle(), mit der Bedingung, unter der eine Anweisung steht.
 void sammleStellen(const Anweisung& a, const std::string& bedingung, bool gilt, std::vector<Aufrufstelle>& aus)
 {
-    const auto dazu = [&](std::string_view text) {
-        for (std::string& name : aufrufeIn(text))
-        {
-            const bool schon = std::any_of(aus.begin(), aus.end(), [&](const Aufrufstelle& s) {
-                return s.name == name && s.bedingung == bedingung && s.gilt == gilt;
-            });
-            if (!schon) aus.push_back({std::move(name), a.zeile, bedingung, gilt});
-        }
+    const auto neu = [&](std::string name, bool nurImProjekt) {
+        const bool schon = std::any_of(aus.begin(), aus.end(), [&](const Aufrufstelle& s) {
+            return s.name == name && s.bedingung == bedingung && s.gilt == gilt;
+        });
+        if (!schon) aus.push_back({std::move(name), a.zeile, bedingung, gilt, nurImProjekt});
     };
+    const auto dazu = [&](std::string_view text) {
+        for (std::string& name : aufrufeIn(text)) neu(std::move(name), false);
+    };
+    if (a.aufrufeGenannt)  // die Namen nennt der Leser, je Anweisung einmal (nicht je Teil des Texts)
+    {
+        for (const Zugriff& z : a.aufrufe) neu(z.ziel, z.imAusdruck);
+        for (const AnweisungPtr& k : a.kinder) sammleStellen(*k, bedingung, gilt, aus);
+        if (a.sonst) sammleStellen(*a.sonst, bedingung, gilt, aus);
+        return;
+    }
     switch (a.art)
     {
         case AnweisungArt::Varianten:
@@ -281,8 +297,37 @@ std::vector<Aufrufstelle> aufrufstellenVon(const Funktion& funktion)
     return aus;
 }
 
+namespace
+{
+
+std::string klein(std::string_view s)
+{
+    std::string aus(s);
+    for (char& c : aus) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+    return aus;
+}
+
+/// Der letzte Teil eines Namens mit Schema (`public.f` -> `f`).
+std::string_view letzterTeil(std::string_view s)
+{
+    const std::size_t punkt = s.find_last_of('.');
+    return punkt == std::string_view::npos ? s : s.substr(punkt + 1);
+}
+
+}  // namespace
+
 bool Funktion::heisst(std::string_view aufruf) const
 {
+    if (namenOhneFall)
+    {
+        // SQL: ohne Gross/klein; fehlt einer Seite das Schema, zaehlt der letzte Teil (wie in *Data dependencies*)
+        const std::string a = klein(aufruf);
+        const std::string n = klein(name);
+        if (a == n) return true;
+        const bool schemaA = a.find('.') != std::string::npos;
+        const bool schemaN = n.find('.') != std::string::npos;
+        return (!schemaA || !schemaN) && letzterTeil(a) == letzterTeil(n);
+    }
     if (aufruf.find("::") == std::string_view::npos) return name == aufruf;
     const std::string voll = vollerName();
     if (voll == aufruf) return true;

@@ -90,17 +90,20 @@ public:
         {
             const Wahrheitstabelle& t = tabellen[ti];
             if (ti > 0) aus += '\n';
-            aus += zeile({t.funktion + "(): line " + std::to_string(t.quellZeile), t.bedingung});
+            aus += zeile({ueberschrift(t), t.bedingung});
             std::vector<std::string> kopf{"#"};
-            for (std::size_t i = 0; i < t.atome.size(); ++i) kopf.push_back(atomKennung(i) + ": " + t.atome[i].text);
+            for (std::size_t i = 0; i < t.atome.size(); ++i)
+                kopf.push_back(atomKennung(i) + ": " + t.atome[i].text + (t.atome[i].kannNull ? " (null)" : ""));
             kopf.emplace_back("Result");
+            if (t.dreiwertig) kopf.push_back(t.bleibt);
             kopf.emplace_back("MC/DC");
             aus += zeile(kopf);
             for (const Wahrheitstabelle::Zeile& z : t.zeilen)
             {
                 std::vector<std::string> r{std::to_string(z.nummer)};
-                for (const Wert w : z.werte) r.emplace_back(w == Wert::Wahr ? "T" : w == Wert::Falsch ? "F" : "-");
-                r.emplace_back(z.ergebnis ? "T" : "F");
+                for (const Wert w : z.werte) r.push_back(wertText(w, true));
+                r.emplace_back(t.dreiwertig ? wertText(z.wert, true) : z.ergebnis ? "T" : "F");
+                if (t.dreiwertig) r.emplace_back(z.ergebnis ? "yes" : "no");
                 std::string paare;
                 for (std::size_t i = 0; i < t.paare.size(); ++i)
                     if (t.paare[i].first == z.nummer || t.paare[i].second == z.nummer)

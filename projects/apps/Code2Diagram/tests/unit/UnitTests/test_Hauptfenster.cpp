@@ -1059,6 +1059,48 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramm() == "deps");
     }
 
+    TEST_CASE("Ablauf von SQL-Routinen: Doppelklick in Data dependencies, Trigger ohne Rumpf, Symbol der Abfrage")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("CREATE TABLE artikel (id INTEGER PRIMARY KEY, bestand INTEGER);\n"
+                      "CREATE PROCEDURE auffuellen() BEGIN\n"
+                      "  UPDATE artikel SET bestand = bestand + 1;\n"
+                      "  SELECT count(*) FROM artikel;\n"
+                      "END;\n"
+                      "CREATE TRIGGER merke AFTER UPDATE ON artikel BEGIN SELECT 1; END;\n",
+                      "s.sql");
+        CHECK(fenster.diagramme().contains("auffuellen"));
+        REQUIRE(fenster.zeigeAbhaengigkeiten());
+        REQUIRE(fenster.doppelklickeAbhaengigkeit("auffuellen"));
+        CHECK(fenster.diagramm() == "auffuellen");
+        // die Zeile mit dem SELECT hat eine Abfrage: das Symbol, ein Klick darauf zeigt sie (Entscheid R4)
+        CHECK(fenster.tabellenSymbole().contains(QStringLiteral("Query diagram - click to show it")));
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "deps");
+        REQUIRE(fenster.doppelklickeAbhaengigkeit("merke"));
+        CHECK(fenster.diagramm() == "merke");
+        CHECK_FALSE(fenster.doppelklickeAbhaengigkeit("auffuellen"));  // nicht in Data dependencies
+    }
+
+    TEST_CASE("Wahrheitstabelle von WHERE: Symbol am Ergebnis der Abfrage, aus dem Quelltext, Back, Formate")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("CREATE TABLE kunde (id integer PRIMARY KEY, land text, aktiv boolean NOT NULL);\n"
+                      "SELECT id FROM kunde k\n"
+                      "WHERE NOT (k.land = 'AT') AND k.aktiv;\n",
+                      "s.sql");
+        REQUIRE(fenster.zeigeAbfrage());
+        CHECK(fenster.tabellenSymbole() == QStringList{QStringLiteral("Truth table - click to show it")});
+        // im Quelltext die Zeile der Bedingung
+        REQUIRE(fenster.zeigeWahrheitstabelle(3));
+        CHECK(fenster.diagramm() == "truth:query@2@3");
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("query@2 WHERE: line 3"));
+        CHECK(fenster.diagrammText().contains(";Row kept;"));
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "queries");
+    }
+
     // die Schule aus beispiele/sql/schule.sql, gekuerzt
     constexpr const char* kSchule =
         "CREATE TABLE lehrer (lehrer_id INTEGER PRIMARY KEY, name VARCHAR(60) NOT NULL);\n"

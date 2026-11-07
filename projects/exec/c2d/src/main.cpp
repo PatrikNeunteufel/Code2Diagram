@@ -68,7 +68,9 @@
 //   --struktogramm mit --funktion: das Struktogramm (Nassi-Shneiderman) statt des Ablaufs; svg und
 //                  drawio, Mermaid und DOT koennen es nicht (Meldung, Rueckgabe 1)
 //   --wahrheitstabelle  mit --funktion: die Wahrheitstabelle (samt MC/DC) der Bedingung in dieser
-//                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv
+//                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv. Mit --abfrage
+//                  die Tabellen ihrer Bedingungen (dreiwertig, wo NULL moeglich), auf Wunsch nur
+//                  `where`, `having` oder `on`; --liste nennt sie "truth"
 //   --entscheidungstabelle  mit --funktion: die Entscheidungstabelle (DIN 66241) der Funktion;
 //                  svg, drawio, csv
 //   --zuordnung    mit --funktion: die Zuordnungstabelle des switch in dieser Zeile (ohne Zeile: alle
@@ -217,6 +219,18 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
         std::cout << "query     " << q.name << " (" << q.bloecke.size() << " blocks, " << quellen << " sources"
                   << (q.ziel.empty() ? std::string() : ", " + q.schreibt + " " + q.ziel) << ")\n";
     }
+    // die Bedingungen der Abfragen mit Wahrheitstabelle (Entscheid W1): Atome, davon NULL-faehig, Zeilen
+    {
+        const c2d::diagramm::DatenquellenSuche suche = c2d::projekt::datenquellenIn(p, i);
+        for (const c2d::modell::Abfrage& q : einheit.abfragen)
+            for (const c2d::diagramm::Wahrheitstabelle& t : c2d::diagramm::wahrheitstabellenVon(q, suche))
+            {
+                const auto nullbar = std::count_if(t.atome.begin(), t.atome.end(), [](const auto& a) { return a.kannNull; });
+                std::cout << "truth     " << q.name << ' ' << t.klausel << " line " << t.quellZeile << " (" << t.atome.size()
+                          << " conditions, " << nullbar << " may be NULL, " << t.zeilen.size() << " rows"
+                          << (t.gekuerzt ? ", shortened" : "") << ")\n";
+            }
+    }
     // ein Datenfluss (Spark Schicht 1): je Funktion oder Zelle mit einem
     for (const std::string& f : c2d::projekt::datenfluesseIn(p, i))
     {
@@ -347,6 +361,7 @@ int main(int argc, char* argv[])
     std::string objekt;  // --abhaengigkeiten <objekt>
     bool abfrage = false;
     std::string abfrageName;  // --abfrage <name>|<zeile>
+    std::string klauselWahl;  // --abfrage … --wahrheitstabelle where|having|on
     bool datenfluss = false;
     std::string flussName;  // --datenfluss <funktion>
     bool plan = false;
@@ -385,8 +400,11 @@ int main(int argc, char* argv[])
         else if (a == "--wahrheitstabelle")
         {
             wahrheitstabelle = true;
-            // die Zeile darf folgen
+            // die Zeile darf folgen; mit --abfrage die Bedingung: where, having, on (Entscheid W6)
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') tabellenZeile = std::atoi(argv[++i]);
+            else if (i + 1 < argc && (std::string_view(argv[i + 1]) == "where" || std::string_view(argv[i + 1]) == "having" ||
+                                      std::string_view(argv[i + 1]) == "on"))
+                klauselWahl = argv[++i];
         }
         else if (a == "--datei") datei = wert();
         else if (a == "--funktion") funktion = wert();
@@ -786,6 +804,26 @@ int main(int argc, char* argv[])
             std::cerr << "c2d: no query" << (abfrageName.empty() ? std::string() : " '" + abfrageName + "'") << " in "
                       << vorn(p.dateien[d].pfad) << (abfragen.empty() ? std::string() : " - see --liste (query)") << '\n';
             return 1;
+        }
+        if (wahrheitstabelle)
+        {
+            // die Wahrheitstabellen ihrer Bedingungen (Entscheide W1-W6), auf Wunsch nur WHERE, HAVING oder ON
+            std::vector<c2d::diagramm::Wahrheitstabelle> tabellen =
+                c2d::diagramm::wahrheitstabellenVon(abfragen[welche], c2d::projekt::datenquellenIn(p, d));
+            if (!klauselWahl.empty())
+            {
+                std::string gross = klauselWahl;
+                for (char& c : gross) c = static_cast<char>(c - 'a' + 'A');
+                std::erase_if(tabellen, [&](const c2d::diagramm::Wahrheitstabelle& t) { return t.klausel != gross; });
+            }
+            if (tabellen.empty())
+            {
+                std::cerr << "c2d: no " << (klauselWahl.empty() ? std::string("condition") : klauselWahl)
+                          << " with two or more parts in " << abfragen[welche].name << '\n';
+                return 1;
+            }
+            return schreibe(c2d::ausgabe::Diagrammart::Wahrheitstabelle,
+                            std::span<const c2d::diagramm::Wahrheitstabelle>(tabellen));
         }
         return schreibe(c2d::ausgabe::Diagrammart::Abfrage, c2d::projekt::abfrageIn(p, d, welche));
     }

@@ -43,17 +43,6 @@ std::size_t zeichen(const std::string& text)
     return n;
 }
 
-std::string wert(Wert w)
-{
-    switch (w)
-    {
-        case Wert::Wahr: return "T";
-        case Wert::Falsch: return "F";
-        case Wert::Egal: return "\xE2\x80\x93";  // Halbgeviertstrich: nicht ausgewertet
-    }
-    return {};
-}
-
 }  // namespace
 
 TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const AnordnungOptionen& o)
@@ -70,7 +59,7 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
             a.breite = std::max(a.breite, kRand + weite(zeichen(s)) + kRand);
             y += o.zeilenHoehe + 2;
         };
-        text(t.funktion + "(): line " + std::to_string(t.quellZeile), true);
+        text(ueberschrift(t), true);
         text(gekuerzt(t.bedingung, o.maxZeilenLaenge == 0 ? 0 : 2 * o.maxZeilenLaenge), false);
         y += 4;
 
@@ -84,12 +73,18 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
             for (std::size_t i = 0; i < t.atome.size(); ++i)
             {
                 const Wahrheitstabelle::Atom& atom = t.atome[i];
-                kopf.push_back({atomKennung(i) + (atom.mitAufruf ? " (call)" : ""), gekuerzt(atom.text, kAtomZeichen)});
-                ganz.push_back(atom.text);
+                kopf.push_back({atomKennung(i) + (atom.mitAufruf ? " (call)" : "") + (atom.kannNull ? " (null)" : ""),
+                                gekuerzt(atom.text, kAtomZeichen)});
+                ganz.push_back(atom.text + (atom.kannNull ? " - may be NULL: true, false or unknown" : ""));
             }
             kopf.push_back({"Result"});
-            kopf.push_back({"MC/DC"});
             ganz.emplace_back();
+            if (t.dreiwertig)
+            {
+                kopf.push_back({t.bleibt});
+                ganz.emplace_back("only where the result is true (T)");
+            }
+            kopf.push_back({"MC/DC"});
             ganz.emplace_back();
 
             // je Zeile: welche Atome ihr Paar in ihr haben
@@ -104,8 +99,9 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
             for (const Wahrheitstabelle::Zeile& z : t.zeilen)
             {
                 std::vector<std::string> r{std::to_string(z.nummer)};
-                for (const Wert w : z.werte) r.push_back(wert(w));
-                r.push_back(z.ergebnis ? "T" : "F");
+                for (const Wert w : z.werte) r.push_back(wertText(w));
+                r.push_back(t.dreiwertig ? wertText(z.wert) : z.ergebnis ? "T" : "F");
+                if (t.dreiwertig) r.push_back(z.ergebnis ? "yes" : "no");
                 r.push_back(paareIn(z.nummer));
                 zeilen.push_back(std::move(r));
             }

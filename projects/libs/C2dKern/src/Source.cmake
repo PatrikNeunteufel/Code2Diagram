@@ -43,6 +43,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/sprache/csharp/Sprachen.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/kotlin/Kotlin.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/sql/Abfrage.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/sql/Rumpf.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/sql/Sql.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/plan/Plan.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/eventlog/EventLog.cpp"
@@ -121,6 +122,7 @@ set(_local_headers
     "${CMAKE_CURRENT_LIST_DIR}/sprache/cfamilie/CFamilie.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/ecma/Ecma.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/sprache/csharp/CSharp.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/sprache/sql/Rumpf.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/ausgabe/Text.hpp"
 )
 

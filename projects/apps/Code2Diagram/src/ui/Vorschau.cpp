@@ -239,10 +239,10 @@ public:
             case AufrufKnotenArt::Tabelle:
                 tipp = QStringLiteral("Click: show in the source. Double-click: show it in Data types. Right-click: more.");
                 break;
-            case AufrufKnotenArt::View:
+            case AufrufKnotenArt::View: tipp = QStringLiteral("Click: show in the source. Right-click: more."); break;
             case AufrufKnotenArt::Trigger:
             case AufrufKnotenArt::Routine:
-                tipp = QStringLiteral("Click: show in the source. Right-click: more.");
+                tipp = QStringLiteral("Click: show in the source. Double-click: show its flow. Right-click: more.");
                 break;
         }
         stueck->setToolTip(tipp);
@@ -1268,6 +1268,16 @@ void Vorschau::zeige(const Abfragediagramm& diagramm, bool nachRechts)
         z.szene().addRect(schild->sceneBoundingRect().adjusted(-2, 0, 2, 0), Qt::NoPen, z.grund())->setZValue(4);
     }
     for (std::size_t i = 0; i < a.knoten.size(); ++i) z.abfrageKnoten(i, diagramm.knoten[i], alsRect(a.knoten[i]), optionen.zeilenHoehe);
+    // eine Bedingung mit Wahrheitstabelle: am Ergebnis WHERE/HAVING, an einer Quelle ihr ON (Entscheid W6)
+    for (std::size_t i = 0; i < a.knoten.size(); ++i)
+    {
+        const std::vector<int>& t = diagramm.knoten[i].tabellen;
+        if (t.empty()) continue;
+        z.tabellenSymbol(i, alsRect(a.knoten[i]),
+                         t.size() == 1 ? QStringLiteral("Truth table - click to show it")
+                                       : QStringLiteral("Truth table of line %1 - click to show it; the others in the context menu")
+                                             .arg(t.front()));
+    }
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);

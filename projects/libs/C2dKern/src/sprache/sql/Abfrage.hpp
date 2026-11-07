@@ -33,6 +33,17 @@ public:
     [[nodiscard]] virtual std::size_t hinterKlammer(std::size_t i) const = 0;
 };
 
+/// Ist das WITH bei j das einer Abfrage (`WITH x AS`, `WITH x (a, b) AS`, `WITH RECURSIVE`) — kein Hinweis
+/// `WITH (NOLOCK)` und kein `OPENJSON(…) WITH (…)`?
+[[nodiscard]] bool withMitAbfrage(const Tokenquelle& q, std::size_t j);
+
+/// Wo die Anweisung endet, die bei j beginnt, auch ohne `;` (T-SQL): am `;`, an b, an `LOOP` (`FOR r IN SELECT
+/// … LOOP`), an ELSE oder END ausserhalb von CASE … END (auch mitten in der Zeile), oder am Anfang einer Zeile an
+/// einem Wort einer neuen Anweisung — SELECT und WITH nicht, solange die Anweisung noch eines erwartet (WITH,
+/// INSERT, CREATE … AS) oder sie fortsetzt (UNION, `,` …); in MERGE gehoeren UPDATE, INSERT, DELETE, SET zu den
+/// Zweigen, in UPDATE das erste SET; `UPDATE(` ist eine Funktion. Klammern werden ganz uebersprungen.
+[[nodiscard]] std::size_t anweisungsEnde(const Tokenquelle& q, std::size_t j, std::size_t b);
+
 /// Steht bei i in einer FROM-Liste das Wort STREAM von Spark/Databricks (`STREAM read_files(…)`, `STREAM(live.x)`,
 /// `STREAM live.x`): die Stelle des Namens dahinter, sonst i. STREAM gilt als Wort, wenn `(` folgt oder ein Name
 /// mit `(` oder `.` dahinter — `FROM stream s` bleibt eine Tabelle `stream` mit Alias.
@@ -75,6 +86,8 @@ private:
     void liesSelect(std::size_t block, std::size_t a, std::size_t b);
     /// Die Quellen von FROM in [a, b); `verbindung` gilt fuer die erste.
     void liesQuellen(std::size_t block, std::size_t a, std::size_t b, std::string verbindung);
+    /// [a, b) als Ganzes (Text der Quelle, Zeile; die Logik setzt der Leser danach, Entscheid W1).
+    [[nodiscard]] modell::Klausel klausel(std::size_t a, std::size_t b) const;
     /// [a, b) an den aeussersten AND zerlegt; Unterabfragen werden Bloecke von `block`.
     std::vector<modell::Bedingungsteil> zerlege(std::size_t block, std::size_t a, std::size_t b);
     /// Der Text von [a, b), jede Abfrage in Klammern darin als `(…)` und ein Block von `block`

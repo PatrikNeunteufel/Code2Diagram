@@ -967,6 +967,23 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       - csv sagt `Query is not available in csv`.
       - Dunkles Thema lesbar.
 
+- [ ] **AC-W1 Wahrheitstabelle von WHERE:** `beispiele/sql/schule.sql` oder eine eigene Datei mit
+      `CREATE TABLE kunde (id integer PRIMARY KEY, land text, aktiv boolean NOT NULL)` und `SELECT … WHERE NOT (k.land =
+      'AT') AND k.aktiv`. Im Query diagram trägt das Ergebnis das Tabellensymbol (Tooltip `Truth table - click to show it`),
+      eine Quelle mit `ON … AND/OR …` ebenso; Rechtsklick *Truth table (WHERE, line n)* / *(ON, line n)*.
+      `aktion: abfrage_zeigen`
+- [ ] **AC-W2 Dreiwertig:** Klick auf das Symbol: Titel `query@n WHERE: line m`; Spalte `A (null)` mit F/T/U, `k.aktiv`
+      nur F/T; Spalten *Result* (T/F/U) und *Row kept* (yes/no); Zeile mit `U` bei `NOT (…)`: Result U, Row kept no; unter
+      der Tabelle der Hinweis `if it is NULL, the row is not kept where false would keep it`; kein `–` in den Zellen. Back
+      zurück zum Query diagram. Format csv: `Row kept`, `U`; svg, drawio; mermaid und dot sagen ab.
+      `aktion: wahrheitstabelle_zeigen zeile=3` `aktion: format_waehlen name=csv`
+- [ ] **AC-W3 ON und äußerer Join:** `LEFT JOIN auftrag a ON a.kunde_id = k.id AND a.summe > 0 WHERE a.kunde_id = 7 AND …`:
+      in der Tabelle des ON ist `a.kunde_id = k.id` zweiwertig (Spalte heisst *Joined*), im WHERE `a.kunde_id = 7` mit
+      `(null)` (die aufgefüllte Seite). Eine Spalte, die das Schema nicht kennt: `(null)` und Hinweis `not in the schema`.
+- [ ] **AC-W4 Aus dem Quelltext und dem Ablauf:** Rechtsklick auf die Zeile des WHERE *Truth table of line n*; in
+      `beispiele/sql/routinen/tsql` im Ablauf `dbo.PruefeBestand` am Knoten mit `DECLARE c CURSOR FOR SELECT …` bleibt das
+      Symbol das der Abfrage, das Kontextmenü bietet *Query diagram* und, wo es eine gibt, *Truth table (WHERE, line n)*.
+
 ## AD. Notebooks
 
 - [ ] **AD0 Vorbereiten:** File > Open source file… `beispiele/notebooks/lager.ipynb`, Vorschau. Der Dateifilter
@@ -1079,3 +1096,42 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `Run timeline is not available in dot`; dunkles Thema lesbar; Top-down/Left-right ändert nichts.
 - [ ] **AG6 Großer Lauf:** `beispiele/spark/fremd/eventlogs-netz/spark-log-parser/app-20170708141026-0013` (falls geladen):
       25 Jobs als Treppe, 32 Executoren mit je einer Bahn, Stage 2 gestrichelt über 24 Executoren bis zum Ende.
+
+## AH. Ablauf von SQL-Routinen (Entscheide R1–R6)
+
+- [ ] **AH0 Vorbereiten:** File > Open folder… `beispiele/sql/routinen/tsql` (Projektdatei `"sql": "tsql"`), `lager.sql`,
+      Vorschau. Diagram bietet `dbo.Nachbestellen`, `dbo.PruefeBestand`, `dbo.BestandGeaendert` neben den Einträgen für
+      Tabellen, Abhängigkeiten und Abfragen. Statuszeile: `read as SQL: 3 function(s), 2 data type(s)`, keine Meldung.
+      `aktion: ordner_oeffnen pfad=beispiele/sql/routinen/tsql` `aktion: datei_waehlen pfad=lager.sql`
+      `aktion: ansicht_waehlen name=preview`
+- [ ] **AH1 T-SQL:** `dbo.PruefeBestand`: Raute `BEGIN TRY`, ohne Beschriftung in den Rumpf, `BEGIN CATCH` in den Fang;
+      Raute `@@FETCH_STATUS = 0` mit `yes` in den Rumpf und zurück; `EXEC dbo.Nachbestellen …` mit doppelten Seiten (ein
+      Aufruf), Doppelklick darauf führt zu `dbo.Nachbestellen`, Back zurück. `RAISERROR (… 16, 1, @id)` führt ins Ende (im
+      TRY ab Schwere 11 ein Wurf); `THROW` ebenso. Im Knoten mit `DECLARE c CURSOR FOR SELECT …` und an der Raute
+      `@bestand < @mindest AND NOT EXISTS (SELECT …)` das kleine Tabellensymbol, Tooltip `Query diagram - click to show
+      it`; ein Klick zeigt die Abfrage, Back zurück.
+      `aktion: diagramm_waehlen name=dbo.PruefeBestand` `aktion: springen name=dbo.Nachbestellen` `aktion: zurueck`
+- [ ] **AH2 Trigger mit Rumpf:** `dbo.BestandGeaendert`: Raute `UPDATE(Bestand)`, `yes` zu `PRINT 'Bestand geaendert'`.
+      `aktion: diagramm_waehlen name=dbo.BestandGeaendert`
+- [ ] **AH3 Data dependencies:** `Data dependencies (n)`: Doppelklick auf `dbo.PruefeBestand` zeigt seinen Ablauf, Back
+      zurück; Rechtsklick bietet *Show the flow of dbo.PruefeBestand()*; Tooltip der Routine nennt den Doppelklick.
+      `aktion: abhaengigkeiten_zeigen`
+- [ ] **AH4 MySQL:** Ordner `beispiele/sql/routinen/mysql`. `zaehle_fehlende`: oben rechts allein, ohne Kanten, der
+      Kasten `on NOT FOUND: SET fertig = 1 (continue handler)` (nicht grau, nicht `(unreachable)`); Statuszeile nennt den
+      Hinweis zum CONTINUE HANDLER. Raute `true` (LOOP) ohne `no`; `LEAVE lesen` führt zu `CLOSE c`. `fehlmenge`: Raute
+      `DECLARE HANDLER`, Kante `EXIT HANDLER FOR NOT FOUND` zu `RETURN NULL`. `warte_auf`: Raute `versuche >= 10` — `no`
+      zurück zu `SET versuche = …`, `yes` hinaus; Raute `fehlmenge(p_id)` mit `0` (hinaus, LEAVE), `1, 2`, `default`.
+      `aktion: ordner_oeffnen pfad=beispiele/sql/routinen/mysql` `aktion: diagramm_waehlen name=zaehle_fehlende`
+- [ ] **AH5 PL/pgSQL:** Ordner `beispiele/sql/routinen/postgres`. `nachbestellen`: `DECLARE v_bestand integer` / `v_neu
+      integer`, Raute `BEGIN`, Kante `EXCEPTION WHEN foreign_key_violation`; `RAISE EXCEPTION …` ins Ende, `RAISE NOTICE …`
+      läuft weiter zu `RETURN NULL`. `nachbestellen_alle`: Raute `r IN SELECT …` mit `each`/`done`; `CASE` ohne ELSE: Raute
+      `n > 50`, `no` zu `CASE NOT FOUND (no ELSE)` ins Ende. Darstellung Nassi-Shneiderman: `artikel_schleife: FOR r IN …`,
+      Aussprünge `CONTINUE` und `EXIT artikel_schleife` (nicht `continue`/`break`). `<block:67>` (der DO-Block) mit
+      seinem IF. Data dependencies: Doppelklick auf den Trigger `artikel_nach_update` (ohne Rumpf) zeigt
+      `artikel_geaendert`.
+      `aktion: ordner_oeffnen pfad=beispiele/sql/routinen/postgres` `aktion: diagramm_waehlen name=nachbestellen_alle`
+      `aktion: darstellung_waehlen name=nassi-shneiderman`
+- [ ] **AH6 Tabellen:** `dbo.PruefeBestand` als Decision table: die Raute mit `NOT EXISTS (SELECT …)` als Bedingung mit
+      Aufruf; im T-SQL-Beispiel Wahrheitstabelle der Raute `@bestand < @mindest AND NOT EXISTS (…)`: zwei Atome, das
+      zweite markiert. Format svg, mermaid, dot, drawio für den Ablauf; dunkles Thema lesbar.
+      `aktion: darstellung_waehlen name=decision-table` `aktion: format_waehlen name=mermaid`

@@ -40,6 +40,21 @@ struct Ausdrucksregeln
     std::span<const std::string_view> zuweisungen;
     /// `*p = …`, `p->x = …` schreiben durch einen Zeiger; `&name` nimmt eine Adresse (C-Familie).
     bool zeiger = false;
+
+    // --- SQL (Entscheid R6) ---------------------------------------------------------------------
+    /// Was eine Anweisung schreibt und ruft (`schreibt`, `ruft`, `ziel`, `wert`), nennt der Leser: eine Zuweisung
+    /// steht nur am Anfang einer Anweisung (`SET x = …`, `x := …`, `SELECT @x = …`), sonst vergleicht `=`. Eine
+    /// Wahrheitstabelle bekommt dann bei einer Anweisung nur ihr `wert`.
+    bool wirkungVomLeser = false;
+    /// Namen kennen kein Gross/klein: `bedingungNamen` stehen klein da (wie `schreibt` vom Leser).
+    bool namenOhneFall = false;
+    /// `BETWEEN a AND b`: das AND gehoert zum BETWEEN und verbindet nichts.
+    bool zwischenUnd = false;
+    /// `CASE … END` zaehlt wie eine Klammer: ein AND darin trennt nicht, der Ausdruck ist ein Atom.
+    bool fallBloecke = false;
+    /// Eine Unterabfrage (`(SELECT …)`, `EXISTS (…)`) liest die Datenbank: ein Atom mit ihr ruft (mitAufruf), eine
+    /// Bedingung mit ihr gilt nie als entschieden (bedingungRuft).
+    bool unterabfrageRuft = false;
 };
 
 /// Die Logik eines Ausdrucks. Ein Atom ist, was zwischen den logischen Operatoren steht;

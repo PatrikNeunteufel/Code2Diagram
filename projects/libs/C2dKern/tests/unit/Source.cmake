@@ -38,6 +38,8 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Kotlin.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Sql.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_SqlEingebettet.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_SqlAblauf.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_SqlWahrheitstabelle.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_ErNotation.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Abfrage.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Notebook.cpp"

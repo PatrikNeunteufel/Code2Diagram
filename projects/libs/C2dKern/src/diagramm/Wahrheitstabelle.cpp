@@ -272,4 +272,216 @@ std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funk
     return std::nullopt;
 }
 
+namespace
+{
+
+/// SQL: gleicher Text ist dasselbe Atom — ohne Leerraum, ohne Gross/klein ausserhalb von Zeichenketten (W2).
+std::string schluesselSql(const std::string& text)
+{
+    std::string aus;
+    bool inZeichenkette = false;
+    for (const char c : text)
+    {
+        if (c == '\'') inZeichenkette = !inZeichenkette;
+        if (!inZeichenkette && (c == ' ' || c == '\t' || c == '\n' || c == '\r')) continue;
+        aus += !inZeichenkette && c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    return aus;
+}
+
+void sammleSql(const Logik& l, std::vector<const Logik*>& atome, std::map<std::string, std::size_t>& index)
+{
+    if (l.art == Logik::Art::Atom && index.emplace(schluesselSql(l.text), atome.size()).second) atome.push_back(&l);
+    for (const Logik& teil : l.teile) sammleSql(teil, atome, index);
+}
+
+/// Kleene: und = das kleinste (falsch < unbekannt < wahr), oder = das groesste, nicht tauscht wahr und falsch.
+Wert kleene(const Logik& l, const std::vector<Wert>& belegung, const std::map<std::string, std::size_t>& index)
+{
+    switch (l.art)
+    {
+        case Logik::Art::Atom: return belegung[index.at(schluesselSql(l.text))];
+        case Logik::Art::Nicht:
+        {
+            const Wert w = kleene(l.teile[0], belegung, index);
+            return w == Wert::Wahr ? Wert::Falsch : w == Wert::Falsch ? Wert::Wahr : Wert::Unbekannt;
+        }
+        case Logik::Art::Und:
+        case Logik::Art::Oder:
+        {
+            const bool und = l.art == Logik::Art::Und;
+            Wert aus = und ? Wert::Wahr : Wert::Falsch;
+            for (const Logik& t : l.teile)
+            {
+                const Wert w = kleene(t, belegung, index);
+                if (w == (und ? Wert::Falsch : Wert::Wahr)) return w;
+                if (w == Wert::Unbekannt) aus = Wert::Unbekannt;
+            }
+            return aus;
+        }
+    }
+    return Wert::Unbekannt;
+}
+
+std::string kennungen(const std::vector<std::size_t>& atome)
+{
+    std::string aus;
+    for (const std::size_t i : atome) aus += (aus.empty() ? "" : ", ") + atomKennung(i);
+    return aus;
+}
+
+}  // namespace
+
+Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_view text, std::string_view abfrage,
+                                        std::string_view klausel, int zeile,
+                                        const std::function<NullFaehig(const modell::Logik&)>& nullFaehig)
+{
+    Wahrheitstabelle t;
+    t.funktion = std::string(abfrage);
+    t.bedingung = std::string(text);
+    t.quellZeile = zeile;
+    t.klausel = std::string(klausel);
+    t.dreiwertig = true;
+    t.bleibt = klausel == "ON" ? "Joined" : "Row kept";
+    std::vector<const Logik*> atome;
+    std::map<std::string, std::size_t> index;
+    sammleSql(logik, atome, index);
+    const std::size_t n = atome.size();
+    std::vector<std::size_t> unbekannt;
+    std::vector<std::size_t> mitAufruf;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const NullFaehig nf = nullFaehig(*atome[i]);
+        t.atome.push_back({atome[i]->text, atome[i]->mitAufruf, nf != NullFaehig::Nie});
+        if (nf == NullFaehig::Unbekannt) unbekannt.push_back(i);
+        if (atome[i]->mitAufruf) mitAufruf.push_back(i);
+    }
+    if (n > kHoechstensAtome)
+    {
+        t.gekuerzt = true;
+        t.hinweise.push_back(std::to_string(n) + " conditions - too many for a truth table");
+        return t;
+    }
+    const std::string ohne = klausel == "ON" ? "not joined" : "not kept";
+
+    // jede Kombination (Atom 1 links, falsch vor wahr vor unbekannt); wird es zu viel, nur wahr und falsch
+    std::size_t gesamt = 1;
+    for (const Wahrheitstabelle::Atom& a : t.atome) gesamt *= a.kannNull ? 3 : 2;
+    const bool mitUnbekannt = gesamt <= kHoechstensSqlZeilen;
+    if (!mitUnbekannt)
+    {
+        gesamt = std::size_t{1} << n;
+        t.hinweise.push_back("too many combinations with NULL - only true and false are shown");
+    }
+    std::vector<std::size_t> stelle(n, 1);  // je Atom der Abstand zweier Werte in der Nummer (gemischte Basis)
+    for (std::size_t i = n; i-- > 1;) stelle[i - 1] = stelle[i] * (mitUnbekannt && t.atome[i].kannNull ? 3 : 2);
+    std::vector<Wahrheitstabelle::Zeile> alle(gesamt);
+    std::vector<Wert> belegung(n);
+    for (std::size_t z = 0; z < gesamt; ++z)
+    {
+        std::size_t rest = z;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const std::size_t w = rest / stelle[i];
+            rest %= stelle[i];
+            belegung[i] = w == 0 ? Wert::Falsch : w == 1 ? Wert::Wahr : Wert::Unbekannt;
+        }
+        Wahrheitstabelle::Zeile& r = alle[z];
+        r.nummer = z + 1;
+        r.werte = belegung;
+        r.wert = kleene(logik, belegung, index);
+        r.ergebnis = r.wert == Wert::Wahr;
+    }
+
+    // MC/DC (W4) ueber *Zeile bleibt*, Paare nur aus Zeilen ohne unbekannt: je Belegung aus wahr/falsch ihre Zeile
+    const std::size_t zweiwertig = std::size_t{1} << n;
+    std::vector<std::size_t> zeileDer(zweiwertig);
+    for (std::size_t b = 0; b < zweiwertig; ++b)
+    {
+        std::size_t z = 0;
+        for (std::size_t i = 0; i < n; ++i)
+            if (((b >> (n - 1 - i)) & 1U) != 0) z += stelle[i];
+        zeileDer[b] = z;
+    }
+    std::vector<std::vector<Paar>> paare(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const std::size_t bit = std::size_t{1} << (n - 1 - i);
+        for (std::size_t b = 0; b < zweiwertig; ++b)
+            if ((b & bit) == 0 && alle[zeileDer[b]].ergebnis != alle[zeileDer[b | bit]].ergebnis)
+                paare[i].emplace_back(b, b | bit);
+        if (paare[i].empty())
+            t.hinweise.push_back(atomKennung(i) + " (" + t.atome[i].text +
+                                 "): no MC/DC pair - changing it alone never changes the result");
+    }
+    Suche suche(paare, zweiwertig);
+    t.kleinste = suche.los();
+    if (!t.kleinste) t.hinweise.push_back("MC/DC rows: a small set, not proven to be the smallest");
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (paare[i].empty())
+        {
+            t.paare.emplace_back(0, 0);
+            continue;
+        }
+        const Paar p = suche.beste()[i];
+        const std::size_t a = zeileDer[p.first];
+        const std::size_t b = zeileDer[p.second];
+        t.paare.emplace_back(a + 1, b + 1);
+        alle[a].mcdc = true;
+        alle[b].mcdc = true;
+    }
+
+    // je Atom, bei dem NULL anders ausgeht als falsch (W4): unter NOT, in einem OR mit NOT …
+    if (mitUnbekannt)
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            if (!t.atome[i].kannNull) continue;
+            std::vector<std::size_t> wo;
+            for (std::size_t z = 0; z < gesamt && wo.size() < 3; ++z)
+                if (alle[z].werte[i] == Wert::Unbekannt && !alle[z].ergebnis && alle[z - 2 * stelle[i]].ergebnis)
+                    wo.push_back(z + 1);
+            if (wo.empty()) continue;
+            std::string zeilen;
+            for (const std::size_t w : wo) zeilen += (zeilen.empty() ? "" : ", ") + std::to_string(w);
+            t.hinweise.push_back(atomKennung(i) + " (" + t.atome[i].text + "): if it is NULL, the row is " + ohne +
+                                 " where false would " + (klausel == "ON" ? "join" : "keep") + " it (row " + zeilen + ")");
+        }
+    if (!unbekannt.empty())
+        t.hinweise.push_back(kennungen(unbekannt) + ": a column not in the schema or a variable - taken as possibly NULL");
+    if (!mitAufruf.empty())
+        t.hinweise.push_back("the database may evaluate the conditions in any order and skip some - " + kennungen(mitAufruf) +
+                             (mitAufruf.size() == 1 ? " calls a function or asks a subquery"
+                                                    : " call a function or ask a subquery"));
+
+    if (gesamt <= kVolleSqlTabelle)
+        t.zeilen = std::move(alle);
+    else
+    {
+        t.gekuerzt = true;
+        for (Wahrheitstabelle::Zeile& z : alle)
+            if (z.mcdc) t.zeilen.push_back(std::move(z));
+        t.hinweise.push_back(std::to_string(n) + " conditions: only the MC/DC rows of " + std::to_string(gesamt));
+    }
+    return t;
+}
+
+std::string ueberschrift(const Wahrheitstabelle& t)
+{
+    if (t.klausel.empty()) return t.funktion + "(): line " + std::to_string(t.quellZeile);
+    return t.funktion + " " + t.klausel + ": line " + std::to_string(t.quellZeile);
+}
+
+std::string wertText(Wert w, bool csv)
+{
+    switch (w)
+    {
+        case Wert::Wahr: return "T";
+        case Wert::Falsch: return "F";
+        case Wert::Unbekannt: return "U";
+        case Wert::Egal: return csv ? "-" : "\xE2\x80\x93";  // Halbgeviertstrich: nicht ausgewertet
+    }
+    return {};
+}
+
 }  // namespace c2d::diagramm

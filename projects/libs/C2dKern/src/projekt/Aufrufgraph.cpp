@@ -55,7 +55,10 @@ public:
             auto ruf = std::find_if(aus.begin(), aus.end(), [&](const Ruf& r) { return r.name == s.name; });
             if (ruf == aus.end())
             {
-                aus.push_back({s.name, kandidaten(m_p, f.datei, s.name), {}});
+                std::vector<Fundstelle> ziele = kandidaten(m_p, f.datei, s.name);
+                // eine Funktion im Ausdruck (SQL), die keine Routine des Projekts ist: eingebaut, kein Aufruf
+                if (ziele.empty() && s.nurImProjekt) continue;
+                aus.push_back({s.name, std::move(ziele), {}});
                 ruf = aus.end() - 1;
             }
             ruf->stellen.push_back(std::move(s));

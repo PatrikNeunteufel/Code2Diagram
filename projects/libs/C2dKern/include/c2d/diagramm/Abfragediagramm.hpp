@@ -12,6 +12,7 @@
 #pragma once
 
 #include "c2d/diagramm/Flussdiagramm.hpp"  // kKeine
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/modell/Code.hpp"
 
 #include <cstddef>
@@ -45,6 +46,9 @@ struct AbfrageKnoten
     std::size_t gruppe = kKeine;      ///< der innerste Rahmen
     std::string name;                 ///< Tabelle, View, Name des WITH (fuer Doppelklick); sonst leer
     int zeile = 0;                    ///< im Quelltext; 0 = keine
+    /// Die Zeilen ihrer Bedingungen mit Wahrheitstabelle (Entscheid W6): am Ergebnis WHERE, dann HAVING; an einer
+    /// Quelle ihr ON. Leer = keine.
+    std::vector<int> tabellen;
 };
 
 enum class AbfrageKantenArt
@@ -92,5 +96,20 @@ using DatenquellenSuche = std::function<Datenquelle(std::string_view name)>;
 
 /// Die Abfrage, die in dieser Zeile beginnt, sonst die, in der sie liegt; kKeine = keine.
 [[nodiscard]] std::size_t abfrageZurZeile(const std::vector<modell::Abfrage>& abfragen, int zeile);
+
+/// Kann die Spalte `s` in Block `block` NULL sein (Entscheid W3)? Nie: eine Spalte mit NOT NULL einer Tabelle des
+/// Schemas — ausser ihre Quelle ist die aufgefuellte Seite eines aeusseren Joins (LEFT, RIGHT, FULL, OUTER APPLY) und
+/// die Bedingung steht nicht im ON dieses Joins (`imOn`: die Quelle, deren ON es ist; kKeine = WHERE/HAVING). Kann:
+/// eine Spalte ohne NOT NULL. Unbekannt: Quelle oder Spalte kennt das Schema nicht (WITH, Unterabfrage, Funktion).
+[[nodiscard]] NullFaehig nullFaehigkeit(const modell::Abfrage& abfrage, std::size_t block, const modell::Spaltenbezug& s,
+                                        const DatenquellenSuche& suche, std::size_t imOn = kKeine);
+
+/// Alle Wahrheitstabellen einer Abfrage (Entscheid W1): je Block WHERE, HAVING, je Quelle ON, mit mindestens zwei
+/// Atomen; in der Reihenfolge der Bloecke.
+[[nodiscard]] std::vector<Wahrheitstabelle> wahrheitstabellenVon(const modell::Abfrage& abfrage,
+                                                                 const DatenquellenSuche& suche = {});
+
+/// Die Zeilen der Bedingungen einer Abfrage mit Tabelle — ohne sie auszurechnen.
+[[nodiscard]] std::vector<int> zeilenMitWahrheitstabelle(const modell::Abfrage& abfrage);
 
 }  // namespace c2d::diagramm

@@ -265,6 +265,9 @@ public:
     /// ein Typ (der Kopf seines Kastens) oder `Typ::glied` (ein Feld oder eine Methode).
     /// false = nichts dieses Namens, oder es hat keine Stelle.
     bool klicke(const QString& name);
+    /// Wie ein Doppelklick auf den Knoten dieses Namens in *Data dependencies* (wie aufrufgraphKnoten() ihn nennt).
+    /// false = kein solcher Knoten, oder er fuehrt nirgendwohin.
+    bool doppelklickeAbhaengigkeit(const QString& name);
     /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`, in einem Notebook dazu
     /// ` (cell n, line m)`; leer = keine.
     [[nodiscard]] QString gezeigteStelle() const;
@@ -411,9 +414,23 @@ private:
     [[nodiscard]] std::optional<std::pair<std::size_t, int>> schaltstelle(c2d::diagramm::KnotenId knoten) const;
     /// Zur Zuordnung des switch in der Zeile; `von` wie bei gehe(). false = dort keine.
     bool geheZuZuordnung(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
-    /// Zur Tabelle einer Zeile: ihre Wahrheitstabelle, sonst ihre Zuordnung.
+    /// Der Ablauf eines Objekts in *Data dependencies* (Entscheid R1): die Funktion aus dem Rumpf einer Routine oder
+    /// eines Triggers, bei einem Trigger ohne Rumpf die Funktion, die er ausfuehrt (wenn eindeutig); nullopt = keiner.
+    [[nodiscard]] std::optional<c2d::projekt::Fundstelle> ablaufDesObjekts(const c2d::projekt::Datenstelle& s) const;
+    /// Steht in dieser Zeile eine Bedingung einer Abfrage mit Wahrheitstabelle (WHERE, HAVING, ON — Entscheid W1)?
+    [[nodiscard]] bool hatAbfrageTabelle(std::size_t datei, int zeile) const;
+    /// Die Tabelle der Bedingung einer Abfrage (`abfrage`: ihr Name, leer = jede) in dieser Zeile — WHERE vor HAVING
+    /// vor ON; nullopt = keine.
+    [[nodiscard]] std::optional<c2d::diagramm::Wahrheitstabelle> abfrageTabelle(std::size_t datei, const QString& abfrage,
+                                                                                int zeile) const;
+    /// Zur Tabelle der Bedingung in dieser Zeile der Abfrage (kKeine: der ersten mit ihr); `von` wie bei gehe().
+    bool geheZuAbfrageTabelle(std::size_t datei, std::size_t abfrage, int zeile, c2d::diagramm::KnotenId von);
+    /// Steht in dieser Zeile eine Abfrage (Entscheid R4: ein Knoten mit ihr traegt das Symbol)?
+    [[nodiscard]] bool hatAbfrage(std::size_t datei, int zeile) const;
+    /// Zur Tabelle einer Zeile: ihre Wahrheitstabelle, sonst ihre Zuordnung, sonst das Diagramm ihrer Abfrage.
     bool geheZuTabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
-    /// Die Zeilen eines Knotens (beim Buendeln mehrere), in denen eine Tabelle steht (Wahrheit, Zuordnung).
+    /// Die Zeilen eines Knotens (beim Buendeln mehrere), in denen eine Tabelle steht (Wahrheit, Zuordnung) oder eine
+    /// Abfrage.
     [[nodiscard]] std::vector<int> tabellenZeilen(c2d::diagramm::KnotenId knoten) const;
     /// Der Tooltip des Tabellensymbols am Knoten: welche Tabelle ein Klick zeigt; leer = keine.
     [[nodiscard]] QString tabellenHinweis(c2d::diagramm::KnotenId knoten) const;

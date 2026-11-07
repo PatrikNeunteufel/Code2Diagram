@@ -50,9 +50,18 @@ struct Token
     bool abstandDavor = false;  ///< Leerraum, Zeilenwechsel oder Kommentar davor
 
     [[nodiscard]] bool istOp(std::string_view t) const { return art == TokenArt::Operator && text == t; }
+    /// Ist es das Schluesselwort `t` (klein, wie in der Tabelle)? Ohne Ruecksicht auf Gross/klein: in einer
+    /// Sprache, die darauf achtet, ist nur die Schreibweise der Tabelle ein Schluesselwort; in SQL
+    /// (Sprachtabelle::schluesselwoerterOhneFall) ist `AND` dasselbe wie `and`.
     [[nodiscard]] bool istWort(std::string_view t) const
     {
-        return art == TokenArt::Schluesselwort && text == t;
+        if (art != TokenArt::Schluesselwort || text.size() != t.size()) return false;
+        for (std::size_t i = 0; i < t.size(); ++i)
+        {
+            const char c = text[i] >= 'A' && text[i] <= 'Z' ? static_cast<char>(text[i] - 'A' + 'a') : text[i];
+            if (c != t[i]) return false;
+        }
+        return true;
     }
 };
 
@@ -128,6 +137,8 @@ struct Sprachtabelle
     /// `$$…$$` und `$marke$…$marke$` (Postgres, DuckDB): eine Zeichenkette ohne Escape, ueber
     /// Zeilen — der Rumpf einer Funktion; `$1` ist ein Name (ein Parameter).
     bool dollarZeichenketten = false;
+    /// Ein zweiter Zeilenkommentar neben zeilenKommentar (MySQL: `#` wie `--`); leer = keiner.
+    std::string_view zweiterZeilenKommentar{};
 };
 
 struct LexerOptionen

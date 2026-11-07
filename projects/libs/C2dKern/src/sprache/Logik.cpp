@@ -56,6 +56,22 @@ bool istWahl(const Token& t, const Ausdrucksregeln& regeln)
     return false;
 }
 
+/// Beginnt bei i (einer oeffnenden Klammer) eine Unterabfrage — `(SELECT …)`, `(WITH …)`?
+bool unterabfrage(const std::vector<Token>& t, std::size_t i, const Ausdrucksregeln& regeln)
+{
+    return regeln.unterabfrageRuft && i + 1 < t.size() && t[i].istOp("(") &&
+           (t[i + 1].istWort("select") || t[i + 1].istWort("with"));
+}
+
+/// Aendert das Token die Tiefe? +1 bei `(`, `[`, `{` (mit fallBloecke auch `CASE`), -1 bei der schliessenden
+/// (auch `END`), sonst 0.
+int tiefeVon(const Token& t, const Ausdrucksregeln& regeln)
+{
+    if (oeffnet(t) || (regeln.fallBloecke && t.istWort("case"))) return 1;
+    if (schliesst(t) || (regeln.fallBloecke && t.istWort("end"))) return -1;
+    return 0;
+}
+
 /// Wo die Token eines Ausdrucks enden: am Token `Ende` (oder einem Zeilenende).
 std::size_t endeVon(const std::vector<Token>& t)
 {
@@ -97,8 +113,9 @@ private:
             n.teile.push_back(nicht(von + 1, bis));
             return n;
         }
-        // eine Klammer um alles: ihr Inhalt
-        if (bis - von >= 2 && m_t[von].istOp("(") && passend(von) == bis - 1) return oder(von + 1, bis - 1);
+        // eine Klammer um alles: ihr Inhalt (nicht die einer Unterabfrage)
+        if (bis - von >= 2 && m_t[von].istOp("(") && passend(von) == bis - 1 && !unterabfrage(m_t, von, m_regeln))
+            return oder(von + 1, bis - 1);
         return atom(von, bis);
     }
 
@@ -111,9 +128,10 @@ private:
         const Token& letztes = m_t[bis - 1];
         const std::size_t ende = static_cast<std::size_t>(letztes.text.data() - m_text.data()) + letztes.text.size();
         a.text = std::string(m_text.substr(anfang, ende - anfang));
-        // ein Aufruf: ein Name vor `(` (nicht sizeof)
+        // ein Aufruf: ein Name vor `(` (nicht sizeof); in SQL auch eine Unterabfrage (sie liest die Datenbank)
         for (std::size_t i = von; i + 1 < bis; ++i)
-            if (m_t[i].art == TokenArt::Bezeichner && m_t[i + 1].istOp("(")) a.mitAufruf = true;
+            if ((m_t[i].art == TokenArt::Bezeichner && m_t[i + 1].istOp("(")) || unterabfrage(m_t, i, m_regeln))
+                a.mitAufruf = true;
         return a;
     }
 
@@ -123,8 +141,9 @@ private:
         int tiefe = 0;
         for (std::size_t i = auf; i < m_t.size(); ++i)
         {
-            if (oeffnet(m_t[i])) ++tiefe;
-            if (schliesst(m_t[i]) && --tiefe == 0) return i;
+            const int d = tiefeVon(m_t[i], m_regeln);
+            tiefe += d;
+            if (d < 0 && tiefe == 0) return i;
         }
         return m_t.size();
     }
@@ -138,8 +157,7 @@ private:
         for (std::size_t i = von; i < bis; ++i)
         {
             const Token& t = m_t[i];
-            if (oeffnet(t)) ++tiefe;
-            else if (schliesst(t)) --tiefe;
+            if (const int d = tiefeVon(t, m_regeln); d != 0) tiefe += d;
             else if (tiefe == 0 && t.art == TokenArt::Operator && !t.istOp(".") && !t.istOp("->") && !t.istOp("::") &&
                      !istNicht(t))
                 return false;
@@ -154,12 +172,14 @@ private:
     {
         std::vector<std::size_t> aus;
         int tiefe = 0;
+        bool zwischen = false;  // ein BETWEEN wartet auf sein AND
         for (std::size_t i = von; i < bis; ++i)
         {
             const Token& t = m_t[i];
-            if (oeffnet(t)) ++tiefe;
-            else if (schliesst(t)) --tiefe;
+            if (const int d = tiefeVon(t, m_regeln); d != 0) tiefe += d;
             else if (tiefe == 0 && (istWahl(t, m_regeln) || t.istWort("lambda"))) return {};
+            else if (tiefe == 0 && m_regeln.zwischenUnd && t.istWort("between")) zwischen = true;
+            else if (tiefe == 0 && zwischen && istUnd(t)) zwischen = false;
             else if (tiefe == 0 && ist(t)) aus.push_back(i);
         }
         return aus;
@@ -272,23 +292,29 @@ std::string_view kandidat(std::string_view text, const lexer::Sprachtabelle& tab
     return v.logisch ? v.rechts : std::string_view();
 }
 
-/// Ruft der Ausdruck eine Funktion — ein Name vor `(`?
-bool ruft(std::string_view text, const lexer::Sprachtabelle& tabelle)
+/// Ruft der Ausdruck eine Funktion — ein Name vor `(`, in SQL auch eine Unterabfrage?
+bool ruft(std::string_view text, const lexer::Sprachtabelle& tabelle, const Ausdrucksregeln& regeln)
 {
     std::vector<quelle::Meldung> stumm;
     const std::vector<Token> t = lexer::zerlege(text, tabelle, stumm);
     for (std::size_t i = 0; i + 1 < t.size(); ++i)
-        if (t[i].art == TokenArt::Bezeichner && t[i + 1].istOp("(")) return true;
+        if ((t[i].art == TokenArt::Bezeichner && t[i + 1].istOp("(")) || unterabfrage(t, i, regeln)) return true;
     return false;
 }
 
-/// Die Namen eines Ausdrucks (jeder einmal, in der Reihenfolge des Texts).
-std::vector<std::string> namenIn(std::string_view text, const lexer::Sprachtabelle& tabelle)
+/// Die Namen eines Ausdrucks (jeder einmal, in der Reihenfolge des Texts); mit namenOhneFall klein.
+std::vector<std::string> namenIn(std::string_view text, const lexer::Sprachtabelle& tabelle, const Ausdrucksregeln& regeln)
 {
     std::vector<quelle::Meldung> stumm;
     std::vector<std::string> aus;
     for (const Token& t : lexer::zerlege(text, tabelle, stumm))
-        if (t.art == TokenArt::Bezeichner && std::find(aus.begin(), aus.end(), t.text) == aus.end()) aus.emplace_back(t.text);
+    {
+        if (t.art != TokenArt::Bezeichner) continue;
+        std::string name(t.text);
+        if (regeln.namenOhneFall)
+            for (char& c : name) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+        if (std::find(aus.begin(), aus.end(), name) == aus.end()) aus.push_back(std::move(name));
+    }
     return aus;
 }
 
@@ -365,21 +391,21 @@ void wirkung(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle, const Au
 void ergaenze(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle, const Ausdrucksregeln& regeln)
 {
     using modell::AnweisungArt;
-    if (a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung || a.art == AnweisungArt::Wurf ||
-        a.art == AnweisungArt::Mit)
-        wirkung(a, tabelle, regeln);
+    const bool wirkt = a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung ||
+                       a.art == AnweisungArt::Wurf || a.art == AnweisungArt::Mit;
+    if (wirkt && !regeln.wirkungVomLeser) wirkung(a, tabelle, regeln);
     if (a.art == AnweisungArt::Wenn || a.art == AnweisungArt::Solange || a.art == AnweisungArt::TueSolange ||
         a.art == AnweisungArt::Fuer || a.art == AnweisungArt::Auswahl)
-        a.bedingungNamen = namenIn(a.text, tabelle);
-    if (a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung)
+        a.bedingungNamen = namenIn(a.text, tabelle, regeln);
+    if ((a.art == AnweisungArt::Einfach || a.art == AnweisungArt::Ruecksprung) && !regeln.wirkungVomLeser)
     {
         a.frage = std::string(vermiss(a.text, tabelle, regeln).frage);
-        a.bedingungRuft = !a.frage.empty() && ruft(a.frage, tabelle);
-        if (!a.frage.empty()) a.bedingungNamen = namenIn(a.frage, tabelle);
+        a.bedingungRuft = !a.frage.empty() && ruft(a.frage, tabelle, regeln);
+        if (!a.frage.empty()) a.bedingungNamen = namenIn(a.frage, tabelle, regeln);
     }
     if (a.art == AnweisungArt::Wenn || a.art == AnweisungArt::Solange || a.art == AnweisungArt::TueSolange ||
         a.art == AnweisungArt::Fuer)
-        a.bedingungRuft = ruft(a.text, tabelle);
+        a.bedingungRuft = ruft(a.text, tabelle, regeln);
     std::string_view ausdruck;
     switch (a.art)
     {
@@ -388,7 +414,12 @@ void ergaenze(modell::Anweisung& a, const lexer::Sprachtabelle& tabelle, const A
         case AnweisungArt::TueSolange:
         case AnweisungArt::Fuer: ausdruck = a.text; break;
         case AnweisungArt::Einfach:
-        case AnweisungArt::Ruecksprung: ausdruck = kandidat(a.text, tabelle, regeln); break;
+            // vom Leser: der Wert einer Zuweisung (`SET x = a AND b`); `=` vergleicht sonst
+            ausdruck = regeln.wirkungVomLeser ? std::string_view(a.wert) : kandidat(a.text, tabelle, regeln);
+            break;
+        case AnweisungArt::Ruecksprung:
+            ausdruck = regeln.wirkungVomLeser ? std::string_view(a.text) : kandidat(a.text, tabelle, regeln);
+            break;
         default: break;
     }
     while (!ausdruck.empty() && (ausdruck.back() == ' ' || ausdruck.back() == ';')) ausdruck.remove_suffix(1);

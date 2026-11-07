@@ -517,9 +517,9 @@ std::vector<Token> zerlege(std::string_view text, const Sprachtabelle& sprache,
 
         const quelle::Position ort{i, zeile, spalte};
 
-        if (beginnt(sprache.zeilenKommentar) || beginnt(sprache.blockKommentarAuf))
+        if (beginnt(sprache.zeilenKommentar) || beginnt(sprache.zweiterZeilenKommentar) || beginnt(sprache.blockKommentarAuf))
         {
-            if (beginnt(sprache.zeilenKommentar))
+            if (beginnt(sprache.zeilenKommentar) || beginnt(sprache.zweiterZeilenKommentar))
             {
                 while (i < text.size() && text[i] != '\n') vor(1);
             }
