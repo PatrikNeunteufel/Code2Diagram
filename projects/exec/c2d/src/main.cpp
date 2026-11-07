@@ -102,6 +102,7 @@
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Datenfluss.hpp"
+#include "c2d/projekt/Lauf.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Schaltstellen.hpp"
 #include "c2d/projekt/Typen.hpp"
@@ -265,6 +266,32 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
                   << (fehlgeschlagen > 0 ? ", " + std::to_string(fehlgeschlagen) + " failed" : "")
                   << (offen > 0 ? ", " + std::to_string(offen) + " without an end" : "") << (l.ende == 0 ? ", not finished" : "")
                   << ")\n";
+    }
+    // der Code des Laufs (L5): je Aktion, wo sie steht
+    if (!einheit.laeufe.empty())
+    {
+        const c2d::projekt::Laufverbindung v = c2d::projekt::verbindeLauf(p, i);
+        for (const c2d::projekt::LaufAktion& a : v.aktionen)
+        {
+            std::string jobs;
+            for (const int j : a.jobs) jobs += (jobs.empty() ? "" : ",") + std::to_string(j);
+            std::cout << "action    " << a.methode << " ("
+                      << (a.ausfuehrung >= 0 ? "execution " + std::to_string(a.ausfuehrung) + ", " : std::string()) << "jobs "
+                      << (jobs.empty() ? "-" : jobs) << ") ";
+            if (a.stellen.empty())
+                std::cout << "not in the code\n";
+            else if (a.stellen.size() > 1)
+                std::cout << a.stellen.size() << " places\n";
+            else
+                std::cout << "-> " << p.dateien[a.stellen.front().datei].pfad << ':' << a.stellen.front().zeile
+                          << (a.nachName ? " (by name)" : "") << '\n';
+        }
+        for (const c2d::projekt::LaufStageStelle& s : v.stages)
+            std::cout << "stage     " << s.stage << " -> "
+                      << (s.stellen.size() == 1 ? p.dateien[s.stellen.front().datei].pfad + ":" + std::to_string(s.stellen.front().zeile)
+                                                : std::to_string(s.stellen.size()) + " places")
+                      << '\n';
+        for (const std::string& h : v.hinweise) std::cout << "runnote   " << h << '\n';
     }
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)

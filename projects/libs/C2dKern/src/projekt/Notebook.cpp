@@ -107,6 +107,40 @@ const json::Wert* feld(const json::Wert* w, std::string_view name)
 }
 
 /// Eine Zeichenkette — oder eine Liste von Zeichenketten aneinander (`source` einer Zelle).
+/// Wie ipykernel eine Zelle nennt (`compiler.py`, `get_file_name`): murmur2 (x86, 32 Bit) ueber die Bytes ihres
+/// Texts in UTF-8, Seed 0xC70F6907 — der Event-Log nennt sie so (`…\ipykernel_<pid>\<hash>.py:<zeile>`, L5-2).
+std::uint32_t ipykernelHash(std::string_view text)
+{
+    constexpr std::uint32_t m = 0x5BD1E995u;
+    const auto byte = [&](std::size_t i) { return static_cast<std::uint32_t>(static_cast<unsigned char>(text[i])); };
+    const std::size_t laenge = text.size();
+    std::uint32_t h = 0xC70F6907u ^ static_cast<std::uint32_t>(laenge);
+    const std::size_t rund = laenge & ~static_cast<std::size_t>(3);
+    for (std::size_t i = 0; i < rund; i += 4)
+    {
+        std::uint32_t k = byte(i) | (byte(i + 1) << 8) | (byte(i + 2) << 16) | (byte(i + 3) << 24);
+        k *= m;
+        k ^= k >> 24;
+        k *= m;
+        h *= m;
+        h ^= k;
+    }
+    const std::size_t rest = laenge & 3;
+    std::uint32_t k = 0;
+    if (rest == 3) k = byte(rund + 2) << 16;
+    if (rest >= 2) k |= byte(rund + 1) << 8;
+    if (rest >= 1)
+    {
+        k |= byte(rund);
+        h ^= k;
+        h *= m;
+    }
+    h ^= h >> 13;
+    h *= m;
+    h ^= h >> 15;
+    return h;
+}
+
 std::string textVon(const json::Wert* w)
 {
     if (w == nullptr) return {};
@@ -273,6 +307,7 @@ std::optional<Notebook> ausIpynb(std::string_view text, Meldung& fehler)
 
         Zelle z;
         z.art = art == "code" ? Zelle::Art::Code : art == "markdown" ? Zelle::Art::Markdown : Zelle::Art::Roh;
+        if (z.art == Zelle::Art::Code) z.kernHash = ipykernelHash(quelle);
         if (i > 0) schreibe("", "");
         const std::string kopf = k + " %% [" + std::to_string(nummer) + "]" +
                                  (z.art == Zelle::Art::Markdown ? " markdown" : z.art == Zelle::Art::Roh ? " raw" : "");

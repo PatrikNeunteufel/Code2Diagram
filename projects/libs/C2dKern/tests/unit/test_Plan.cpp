@@ -226,6 +226,64 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint))
 Subquery:2 Hosting operator id = 3 Hosting Expression = cs_sold_date_sk#4 IN dynamicpruning#9
 )PLAN";
 
+// Eigener Lauf (plaene_aufnehmen.py, Spark 4.3): formatted nach dem Ausfuehren mit AQE, gekuerzt. Hinter der Nummer
+// der Stufen steht noch etwas; Statistics() dort ist kein cost.
+constexpr std::string_view kAqeFormattedEndgueltig = R"PLAN(== Physical Plan ==
+AdaptiveSparkPlan (8)
++- == Final Plan ==
+   ResultQueryStage (5)
+   +- * HashAggregate (4)
+      +- AQEShuffleRead (3), coalesced
+         +- ShuffleQueryStage (2), Statistics(sizeInBytes=192.0 B, rowCount=6)
+            +- Exchange (1)
++- == Initial Plan ==
+   HashAggregate (7)
+   +- Exchange (6)
+
+
+(1) Exchange
+Input [2]: [land#66, sum#86]
+Arguments: hashpartitioning(land#66, 8), ENSURE_REQUIREMENTS, [plan_id=519]
+
+(2) ShuffleQueryStage
+Output [2]: [land#66, sum#86]
+Arguments: 1
+
+(3) AQEShuffleRead
+Input [2]: [land#66, sum#86]
+Arguments: coalesced
+
+(4) HashAggregate [codegen id : 3]
+Input [2]: [land#66, sum#86]
+
+(5) ResultQueryStage
+Output [2]: [land#66, summe#84]
+
+(6) Exchange
+Input [2]: [land#66, sum#86]
+
+(7) HashAggregate
+Input [2]: [land#66, sum#86]
+
+(8) AdaptiveSparkPlan
+Output [2]: [land#66, summe#84]
+Arguments: isFinalPlan=true
+)PLAN";
+
+// Eigener Lauf, simple ohne AQE: ReusedSubquery nennt die Unterabfrage im Text.
+constexpr std::string_view kWiederverwendetEinfach = R"PLAN(== Physical Plan ==
+*(1) Filter (isnotnull(betrag#16) AND (betrag#16 > ReusedSubquery Subquery scalar-subquery#31, [id=#301]))
+:  +- ReusedSubquery Subquery scalar-subquery#31, [id=#301]
++- *(1) ColumnarToRow
+   +- FileScan parquet [kunde#14L,betrag#16] Batched: true, DataFilters: [isnotnull(betrag#16)], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/daten/bestellungen], PartitionFilters: [], PushedFilters: [IsNotNull(betrag)], ReadSchema: struct<kunde:bigint,betrag:double>
+         +- Subquery scalar-subquery#31, [id=#301]
+            +- *(2) HashAggregate(keys=[], functions=[avg(betrag#37)])
+               +- Exchange SinglePartition, ENSURE_REQUIREMENTS, [plan_id=297]
+                  +- *(1) HashAggregate(keys=[], functions=[partial_avg(betrag#37)])
+                     +- *(1) ColumnarToRow
+                        +- FileScan parquet [betrag#37] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/daten/bestellungen], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<betrag:double>
+)PLAN";
+
 modell::Plan einPlan(std::string_view text)
 {
     std::vector<quelle::Meldung> meldungen;
@@ -421,6 +479,40 @@ TEST_SUITE("Spark-Plan")
         CHECK(d.titel.find("adaptive, final") != std::string::npos);
         CHECK(hatZeile(d.knoten[knoten(d, "Exchange")], "partitions: 200"));
         CHECK(hatZeile(d.knoten[knoten(d, "AdaptiveSparkPlan")], "final plan: yes"));
+    }
+
+    TEST_CASE("AQE nach dem Ausfuehren, formatted: Nummer vor `, Statistics(…)`/`, coalesced`, kein cost")
+    {
+        std::vector<quelle::Meldung> meldungen;
+        const std::vector<modell::Plan> plaene = sprache::liesPlaene(kAqeFormattedEndgueltig, meldungen);
+        REQUIRE(plaene.size() == 1);
+        const modell::Plan& p = plaene[0];
+        CHECK(p.modus == "formatted");
+        CHECK(p.endgueltig);
+        CHECK(meldungen.empty());  // vorher: (2), (3) not in the tree, und der Hinweis zu cost
+        const modell::Planbaum& b = p.baeume[0];
+        REQUIRE(b.operatoren.size() == 6);
+        CHECK(b.operatoren[4].name == "ShuffleQueryStage");
+        CHECK(b.operatoren[4].nummer == 2);
+        CHECK(b.operatoren[4].argumente == "Statistics(sizeInBytes=192.0 B, rowCount=6)");
+        CHECK(b.operatoren[3].nummer == 3);
+        CHECK(b.operatoren[3].argumente == "coalesced");
+        CHECK(b.operatoren[3].angaben.size() == 2);
+    }
+
+    TEST_CASE("simple: ReusedSubquery findet seine Unterabfrage ueber den Text; codegen gibt einen Hinweis")
+    {
+        const Plandiagramm d = diagramm::planVon(einPlan(kWiederverwendetEinfach));
+        CHECK(d.hinweise.empty());  // vorher: the plan does not say what it reuses
+        CHECK(zahl(d, PlanKantenArt::Wiederverwendung) == 1);
+
+        constexpr std::string_view kCodegen = "Found 1 WholeStageCodegen subtrees.\n== Subtree 1 / 1 (maxMethodCodeSize:274) ==\n"
+                                              "*(1) Filter isnotnull(ort#17L)\n+- *(1) ColumnarToRow\n\nGenerated code:\n/* 001 */ public Object generate(Object[] references) {\n";
+        CHECK(sprache::plantext(kCodegen));
+        const sprache::Ergebnis e = sprache::sparkPlan().lies(kCodegen, "x_codegen.txt", {});
+        CHECK(e.einheit.plaene.empty());
+        REQUIRE(e.meldungen.size() == 1);
+        CHECK(e.meldungen[0].text.find("codegen") != std::string::npos);
     }
 
     TEST_CASE("der eingerueckte Baum: WholeStageCodegen als Rahmen, InputAdapter faellt weg, Wiederverwendung")

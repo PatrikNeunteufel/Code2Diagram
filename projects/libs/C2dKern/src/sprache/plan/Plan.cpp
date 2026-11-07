@@ -170,15 +170,19 @@ struct Baumzeile
         op.codegen = -1;
         s.remove_prefix(1);
     }
-    // `(43)` hinten: die Nummer in formatted
-    if (s.ends_with(')'))
+    // `(43)` hinten: die Nummer in formatted; im endgueltigen Plan von AQE folgt ihr noch etwas
+    // (`ShuffleQueryStage (13), Statistics(…)`, `AQEShuffleRead (14), coalesced`) — das sind Argumente
+    std::string nachNummer;
+    for (std::size_t auf = s.find(" ("); auf != std::string_view::npos; auf = s.find(" (", auf + 2))
     {
-        const std::size_t auf = s.rfind(" (");
-        if (auf != std::string_view::npos && ziffern(s.substr(auf + 2, s.size() - auf - 3)))
-        {
-            op.nummer = std::stoi(std::string(s.substr(auf + 2, s.size() - auf - 3)));
-            s = stutze(s.substr(0, auf));
-        }
+        const std::size_t zu = s.find(')', auf + 2);
+        if (zu == std::string_view::npos || !ziffern(s.substr(auf + 2, zu - auf - 2))) continue;
+        const std::string_view danach = s.substr(zu + 1);
+        if (!danach.empty() && !danach.starts_with(", ")) continue;
+        op.nummer = std::stoi(std::string(s.substr(auf + 2, zu - auf - 2)));
+        if (!danach.empty()) nachNummer = std::string(stutze(danach.substr(2)));
+        s = stutze(s.substr(0, auf));
+        break;
     }
     // ` #3` hinten: die Kennung im eingerueckten Baum
     if (const std::size_t raute = s.rfind(" #"); raute != std::string_view::npos && ziffern(s.substr(raute + 2)))
@@ -190,6 +194,7 @@ struct Baumzeile
     while (j < s.size() && nameZeichen(s[j])) ++j;
     op.name = std::string(s.substr(0, j));
     op.argumente = std::string(stutze(s.substr(j)));
+    if (!nachNummer.empty()) op.argumente += (op.argumente.empty() ? "" : " ") + nachNummer;
     return op;
 }
 
@@ -227,6 +232,13 @@ struct Baumzeile
     return {std::string(schluessel), std::string(stutze(wert))};
 }
 
+/// Der Anfang der Ausgabe von explain(mode="codegen"): `Found 3 WholeStageCodegen subtrees.`
+[[nodiscard]] bool istCodegen(std::string_view zeile)
+{
+    const std::string_view t = stutze(zeile);
+    return t.starts_with("Found ") && t.find("WholeStageCodegen subtree") != std::string_view::npos;
+}
+
 [[nodiscard]] bool istWurzel(std::string_view zeile)
 {
     std::string_view s = stutze(zeile);
@@ -260,8 +272,7 @@ public:
         m_i = 0;
         while (m_i < m_zeilen.size())
         {
-            const std::string_view t = stutze(m_zeilen[m_i].text);
-            if (t.starts_with("Found ") && t.find("WholeStageCodegen subtree") != std::string_view::npos)
+            if (istCodegen(m_zeilen[m_i].text))
                 melde(m_zeilen[m_i], Schwere::Hinweis, "explain(mode=\"codegen\") is not shown - the generated code is not a plan");
             if (kopfVon(m_zeilen[m_i].text) >= 0)
             {
@@ -340,8 +351,11 @@ private:
                 melde(kopf, Schwere::Hinweis, "no plan under '" + b.art + "'");
                 continue;
             }
-            for (const modell::PlanOperator& op : b.operatoren)
-                if (op.argumente.find("Statistics(") != std::string::npos) statistik = true;
+            // die Statistik von cost steht an den logischen Plaenen; im physischen tragen sie auch die Stufen
+            // eines endgueltigen Plans von AQE (`ShuffleQueryStage …, Statistics(…)`) — das ist kein cost
+            if (k != 3)
+                for (const modell::PlanOperator& op : b.operatoren)
+                    if (op.argumente.find("Statistics(") != std::string::npos) statistik = true;
             if (k == 3 && std::any_of(b.operatoren.begin(), b.operatoren.end(), [](const modell::PlanOperator& op) { return op.nummer > 0; }))
             {
                 formatted = true;
@@ -565,7 +579,7 @@ public:
         PlanLeser leser(text, ergebnis.meldungen);
         std::vector<modell::Plan> plaene = leser.mitKopf();
         if (plaene.empty()) plaene = leser.eingerueckt();
-        if (plaene.empty())
+        if (plaene.empty() && ergebnis.meldungen.empty())
             ergebnis.meldungen.push_back({Schwere::Hinweis, {}, "no Spark plan in the file (== Physical Plan ==)"});
         for (modell::Plan& p : plaene)
             p.name = plaene.size() == 1 ? std::string(einheitName) : std::string(einheitName) + "@" + std::to_string(p.zeile);
@@ -585,7 +599,9 @@ const Sprache& sparkPlan()
 bool plantext(std::string_view text)
 {
     const std::vector<Zeile> zeilen = zeilenVon(text);
-    if (std::any_of(zeilen.begin(), zeilen.end(), [](const Zeile& z) { return kopfVon(z.text) >= 0; })) return true;
+    // auch die Ausgabe von explain(mode="codegen"): gelesen, damit ihr Hinweis erscheint (Entscheid P2-3)
+    if (std::any_of(zeilen.begin(), zeilen.end(), [](const Zeile& z) { return kopfVon(z.text) >= 0 || istCodegen(z.text); }))
+        return true;
     return istEingerueckt(zeilen);
 }
 

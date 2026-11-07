@@ -163,6 +163,7 @@ struct Roh
     std::string plan;
     std::size_t bereich = 0;
     int job = 0;
+    std::string methode;  ///< Aktion, Shuffle: der Name der Methode (`collect`, `parquet`, `reduceByKey`)
     bool weg = false;  ///< in einen anderen zusammengefasst
 };
 
@@ -703,6 +704,7 @@ private:
         std::vector<std::string> zeilen = w.teile;
         zeilen.push_back(gliedText(g));
         const std::size_t a = aktion(std::string(w.strom ? "writeStream" : "write"), zeilen);
+        k[a].methode = g.name;
         fluss(w.knoten, a);
         const std::string ziel = erstesArgument(g);
         if (g.name == "saveAsTable" || g.name == "insertInto" || g.name == "toTable")
@@ -770,6 +772,7 @@ private:
         if (in(kAktion, n) || (w.rdd && in(kAktionRdd, n)))
         {
             const std::size_t a = aktion(gliedText(g), {});
+            k[a].methode = n;
             fluss(w.knoten, a);
             zieleAus(g, a);
             if (n == "saveAsTextFile" || n == "saveAsPickleFile")
@@ -779,6 +782,7 @@ private:
         if (in(kBreit, n))
         {
             const std::size_t s = neu(DatenflussKnotenArt::Shuffle, gliedText(g), {}, w.rdd);
+            k[s].methode = n;
             fluss(w.knoten, s);
             if (in(kZweiEingaenge, n)) fluss(zweiterEingang(ci, gi, verbraucht), s);
             k[s].expliziteTeile = (n == "repartition" || n == "repartitionByRange" || n == "partitionBy") ||
@@ -1179,6 +1183,7 @@ Datenflussdiagramm datenflussVon(std::span<const DatenflussBereich> bereiche, bo
         n.abfrage = r.abfrage;
         n.tabelle = r.tabelle;
         n.plan = r.plan;
+        n.methode = r.methode;
         n.gruppe = inStage(i) ? rahmenDerStage(i) : bereichsRahmen[r.bereich];
         if (r.art == DatenflussKnotenArt::Aktion) ++d.jobs;
         neu[i] = d.knoten.size();

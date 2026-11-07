@@ -1318,6 +1318,77 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("Run timeline is not available in dot"));
     }
 
+    TEST_CASE("Run timeline und Code (L5, L6): Klick auf einen Job zeigt die Codezeile, Doppelklick seinen Plan, aus dem Datenfluss zum Job")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QString py = QDir::toNativeSeparators(QDir(ordner.path()).filePath(QStringLiteral("lager.py")));
+        {
+            QFile f(py);
+            REQUIRE(f.open(QIODevice::WriteOnly));
+            f.write("from pyspark.sql import SparkSession\n"              // 1
+                    "spark = SparkSession.builder.getOrCreate()\n"        // 2
+                    "df = spark.range(10)\n"                              // 3
+                    "erste = df.take(1)\n"                                // 4
+                    "df.show()\n"                                         // 5
+                    "rest = df.take(2)\n");                               // 6
+        }
+        // wie Spark 4.3 schreibt: take mit Stelle, show (showString) ohne; je Ausfuehrung ein Plan
+        QString pfadJson = py;
+        pfadJson.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+        const auto ausfuehrung = [&](int id, const QString& beschreibung, int job) {
+            return QStringLiteral(
+                       R"({"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":%1,"rootExecutionId":%1,"description":"%2","physicalPlanDescription":"== Physical Plan ==\n*(1) Range (0, 10, step=1, splits=2)\n","time":%3})"
+                       "\n"
+                       R"({"Event":"SparkListenerJobStart","Job ID":%4,"Submission Time":%3,"Stage IDs":[%4],"Properties":{"spark.sql.execution.id":"%1"}})"
+                       "\n"
+                       R"({"Event":"SparkListenerStageCompleted","Stage Info":{"Stage ID":%4,"Stage Attempt ID":0,"Stage Name":"x at NativeMethodAccessorImpl.java:0","Number of Tasks":1,"Submission Time":%3,"Completion Time":%5}})"
+                       "\n"
+                       R"({"Event":"SparkListenerJobEnd","Job ID":%4,"Completion Time":%5,"Job Result":{"Result":"JobSucceeded"}})"
+                       "\n")
+                .arg(id)
+                .arg(beschreibung)
+                .arg(1000 + 100 * id)
+                .arg(job)
+                .arg(1050 + 100 * id);
+        };
+        {
+            QFile f(QDir(ordner.path()).filePath(QStringLiteral("local-5")));
+            REQUIRE(f.open(QIODevice::WriteOnly));
+            f.write(R"({"Event":"SparkListenerLogStart","Spark Version":"4.3.0"})" "\n");
+            f.write(R"({"Event":"SparkListenerApplicationStart","App Name":"lager","App ID":"local-5","Timestamp":900})" "\n");
+            f.write(ausfuehrung(0, QStringLiteral("take at ") + pfadJson + QStringLiteral(":4"), 0).toUtf8());
+            f.write(ausfuehrung(1, QStringLiteral("showString at NativeMethodAccessorImpl.java:0"), 1).toUtf8());
+            f.write(ausfuehrung(2, QStringLiteral("take at ") + pfadJson + QStringLiteral(":6"), 2).toUtf8());
+            f.write(R"({"Event":"SparkListenerApplicationEnd","Timestamp":2000})" "\n");
+        }
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        REQUIRE(fenster.waehleDatei(QStringLiteral("local-5")));
+        CHECK(fenster.plaene() == QStringList{"local-5@execution 0", "local-5@execution 1", "local-5@execution 2"});
+        REQUIRE(fenster.zeigeLauf());
+        CHECK(fenster.laufBalken().contains("Job 1"));
+        // Klick auf Job 1 (show, ueber den Namen zwischen den beiden take): die Zeile in lager.py
+        REQUIRE(fenster.klicke(QStringLiteral("Job 1")));
+        CHECK(fenster.gezeigteStelle() == "lager.py:5");
+        // Doppelklick: sein Plan (L6), Back zurueck
+        REQUIRE(fenster.doppelklicke(QStringLiteral("Job 1")));
+        CHECK(fenster.diagramm() == "plan");
+        CHECK(fenster.planKnoten() == QStringList{"Range"});
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "run");
+        // aus dem Datenfluss: der Knoten der Aktion fuehrt zu ihrem Job
+        REQUIRE(fenster.waehleDatei(QStringLiteral("lager.py")));
+        REQUIRE(fenster.zeigeDatenfluss());
+        const QStringList knoten = fenster.datenflussKnoten();
+        const auto show = std::find_if(knoten.begin(), knoten.end(), [](const QString& k) { return k.endsWith(QStringLiteral("show()")); });
+        REQUIRE(show != knoten.end());
+        REQUIRE(fenster.doppelklicke(*show));
+        CHECK(fenster.diagramm() == "run");
+        CHECK(fenster.datei() == "local-5");
+        CHECK(fenster.markiert() == "Job 1");
+    }
+
     TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")
     {
         using namespace c2d::diagramm;

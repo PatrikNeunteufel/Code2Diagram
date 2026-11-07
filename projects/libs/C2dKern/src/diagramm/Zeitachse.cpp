@@ -133,9 +133,33 @@ Zeitachse zeitachseVon(const Lauf& lauf)
     std::sort(jobs.begin(), jobs.end(), [](const modell::LaufJob* a, const modell::LaufJob* b) {
         return a->start != b->start ? a->start < b->start : a->id < b->id;
     });
-    const auto stageBalken = [&](const LaufStage& s, std::size_t bahn) {
+    // je SQL-Ausfuehrung ihr Plan (L6)
+    std::map<std::string, const modell::LaufAusfuehrung*> ausfuehrungVon;
+    for (const modell::LaufAusfuehrung& x : lauf.ausfuehrungen) ausfuehrungVon[std::to_string(x.id)] = &x;
+    const auto ausfuehrungDes = [&](const modell::LaufJob* j) -> const modell::LaufAusfuehrung* {
+        if (j == nullptr || j->sql.empty()) return nullptr;
+        const auto it = ausfuehrungVon.find(j->sql);
+        return it == ausfuehrungVon.end() ? nullptr : it->second;
+    };
+    const auto mitAusfuehrung = [&](ZeitBalken& b, const modell::LaufJob* j) {
+        if (j == nullptr) return;
+        b.job = j->id;
+        if (const modell::LaufAusfuehrung* x = ausfuehrungDes(j))
+        {
+            b.ausfuehrung = x->id;
+            b.plan = x->plan;
+            b.angaben.push_back("SQL execution " + std::to_string(x->id) + ": " + x->beschreibung);
+            if (!x->fehler.empty()) b.angaben.push_back("execution failed: " + x->fehler);
+            if (!x->plan.empty()) b.angaben.push_back("plan: " + x->plan + " (double-click)");
+        }
+        else if (!j->sql.empty())
+            b.angaben.push_back("SQL execution: " + j->sql);
+        if (!j->aufruf.empty()) b.angaben.push_back("call site: " + j->aufruf);
+    };
+    const auto stageBalken = [&](const LaufStage& s, std::size_t bahn, const modell::LaufJob* job) {
         ZeitBalken b;
         b.art = ZeitBalkenArt::Stage;
+        b.stage = s.id;
         b.bahn = bahn;
         b.von = s.eingereicht;
         b.bis = s.beendet > 0 ? s.beendet : letzte;
@@ -158,10 +182,11 @@ Zeitachse zeitachseVon(const Lauf& lauf)
         if (m.offen > 0) b.angaben.push_back("tasks without an end: " + std::to_string(m.offen));
         if (!s.fehler.empty()) b.angaben.push_back("failure: " + s.fehler.substr(0, s.fehler.find('\n')));
         for (const std::string& a : s.aufrufe) b.angaben.push_back("rdd: " + a);
+        mitAusfuehrung(b, job);
         return b;
     };
     // Stages in Zeilen legen: eine Stage auf die erste Zeile des Jobs, auf der sie keine andere ueberdeckt
-    const auto lege = [&](std::vector<const LaufStage*> liste, std::size_t erste, std::size_t& zeilen) {
+    const auto lege = [&](std::vector<const LaufStage*> liste, std::size_t erste, std::size_t& zeilen, const modell::LaufJob* job) {
         std::sort(liste.begin(), liste.end(), [](const LaufStage* a, const LaufStage* b) { return a->eingereicht < b->eingereicht; });
         std::vector<long long> frei;  // je Zeile: frei ab
         for (const LaufStage* s : liste)
@@ -171,7 +196,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
             if (r == frei.size()) frei.push_back(0);
             frei[r] = s->beendet > 0 ? s->beendet : letzte;
             while (erste + r >= z.bahnen.size()) z.bahnen.push_back({ZeitBahnArt::Job, "", "", 0, 0, ""});
-            z.balken.push_back(stageBalken(*s, erste + r));
+            z.balken.push_back(stageBalken(*s, erste + r, job));
         }
         zeilen = std::max<std::size_t>(1, frei.size());
     };
@@ -194,7 +219,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
         std::string ids;
         for (const int s : j->stages) ids += (ids.empty() ? "" : ", ") + std::to_string(s);
         b.angaben.push_back("stages: " + ids);
-        if (!j->sql.empty()) b.angaben.push_back("SQL execution: " + j->sql);
+        mitAusfuehrung(b, j);
         z.balken.push_back(std::move(b));
         // seine Stages, die liefen (eingereicht) — eine uebersprungene steht nur in der Liste
         std::vector<const LaufStage*> liste;
@@ -203,7 +228,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
                 gezeigt.insert({s.id, s.versuch}).second)
                 liste.push_back(&s);
         std::size_t zeilen = 0;
-        lege(liste, erste, zeilen);
+        lege(liste, erste, zeilen, j);
         if (j->ende == 0) z.hinweise.push_back("Job " + std::to_string(j->id) + " has no end in the log");
     }
     {
@@ -215,7 +240,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
             const std::size_t erste = z.bahnen.size();
             z.bahnen.push_back({ZeitBahnArt::Job, "no job", "", 0, 0, ""});
             std::size_t zeilen = 0;
-            lege(ohneJob, erste, zeilen);
+            lege(ohneJob, erste, zeilen, nullptr);
         }
     }
     for (const LaufStage& s : lauf.stages)
@@ -320,6 +345,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
             b.farbe = farbeVon[t->stage];
             b.zeile = t->zeile;
             b.titel = std::to_string(t->id);
+            b.stage = t->stage;
             b.angaben.push_back("task " + std::to_string(t->id) + (t->versuch > 0 ? " attempt " + std::to_string(t->versuch) : "") +
                                 ", stage " + std::to_string(t->stage) + (t->spekulativ ? " (speculative)" : ""));
             b.angaben.push_back("executor " + t->executor + ", duration " + ms(bis - t->start) +
@@ -358,6 +384,7 @@ Zeitachse zeitachseVon(const Lauf& lauf)
             const std::size_t n = b.angaben.size() - 1;
             b.angaben.resize(1);
             b.titel = std::to_string(n) + " tasks";
+            b.stage = schluessel.second;
             b.angaben[0] = std::to_string(n) + " tasks of stage " + std::to_string(schluessel.second) + " on this core, " +
                            ms(b.bis - b.von);
             z.balken.push_back(std::move(b));

@@ -4,7 +4,9 @@
  *
  * Gelesen werden die Ereignisse, die einen Lauf beschreiben: `SparkListenerLogStart` (Version),
  * `ApplicationStart`/`End`, `EnvironmentUpdate` (`spark.master`, `spark.task.cpus`), `ExecutorAdded`/`Removed`,
- * `JobStart`/`End`, `StageSubmitted`/`Completed`, `TaskStart`/`End`. Andere (BlockManager, UnpersistRDD, SQL …)
+ * `JobStart`/`End`, `StageSubmitted`/`Completed`, `TaskStart`/`End`, die SQL-Ausfuehrungen (`SQLExecutionStart`/`End`,
+ * unter AQE `SQLAdaptiveExecutionUpdate`: je Ausfuehrung die letzte Fassung ihres Plans, gelesen wie ein Plan aus
+ * `explain()`, L6) und `callSite.short` eines Jobs (L5). Andere (BlockManager, UnpersistRDD …)
  * zaehlen nicht als Fehler. Eine Zeile, die kein JSON ist, gibt eine Meldung mit ihrer Zeile; das Uebrige wird
  * gelesen. Was ein Lauf bedeutet (Bahnen, Farben), weiss erst die Ableitung (diagramm/Zeitachse.cpp).
  */
@@ -88,7 +90,13 @@ long long zeitpunkt(const json::Wert& e)
 class LogLeser
 {
 public:
-    LogLeser(std::string_view text, std::vector<Meldung>& meldungen) : m_text(text), m_meldungen(meldungen) {}
+    LogLeser(std::string_view text, std::string_view name, std::vector<Meldung>& meldungen)
+        : m_text(text), m_name(name), m_meldungen(meldungen)
+    {
+    }
+
+    /// Die Plaene der SQL-Ausfuehrungen, nach lies().
+    std::vector<modell::Plan> plaene() { return std::move(m_plaene); }
 
     modell::Lauf lies()
     {
@@ -113,12 +121,13 @@ public:
                         m_meldungen.push_back({Schwere::Warnung, {a, nummer, 1}, "event " + std::to_string(nummer) + ": " + fehler.text});
                 }
                 else
-                    ereignis(w, nummer);
+                    ereignis(w, nummer, a);
             }
             a = e + 1;
         }
         if (ungueltig > 5)
             m_meldungen.push_back({Schwere::Warnung, {}, std::to_string(ungueltig) + " lines are not valid JSON"});
+        lesePlaene();
         if (m_lauf.ende == 0)
             m_meldungen.push_back({Schwere::Hinweis, {}, "no ApplicationEnd - the run did not finish or the log is cut"});
         std::stable_sort(m_lauf.tasks.begin(), m_lauf.tasks.end(),
@@ -208,6 +217,52 @@ private:
         return m_lauf.executoren.back();
     }
 
+    modell::LaufAusfuehrung& ausfuehrung(int id, int zeile)
+    {
+        for (modell::LaufAusfuehrung& x : m_lauf.ausfuehrungen)
+            if (x.id == id) return x;
+        modell::LaufAusfuehrung x;
+        x.id = id;
+        x.zeile = zeile;
+        m_lauf.ausfuehrungen.push_back(std::move(x));
+        return m_lauf.ausfuehrungen.back();
+    }
+
+    /// Der Text des Plans einer Ausfuehrung, die spaetere Fassung ersetzt die fruehere.
+    void planText(int id, const json::Wert& e, int zeile, std::size_t versatz)
+    {
+        const std::string t = text(feld(&e, "physicalPlanDescription"));
+        if (t.empty()) return;
+        PlanText& p = m_planTexte[id];
+        p.text = t;
+        p.zeile = zeile;
+        p.versatz = versatz;
+    }
+
+    /// Je Ausfuehrung ihr Plan (L6), gelesen wie ein Plan aus `explain()`; Meldungen stehen an seinem Ereignis.
+    void lesePlaene()
+    {
+        for (modell::LaufAusfuehrung& x : m_lauf.ausfuehrungen)
+        {
+            const auto it = m_planTexte.find(x.id);
+            if (it == m_planTexte.end()) continue;
+            std::vector<Meldung> meldungen;
+            std::vector<modell::Plan> plaene = liesPlaene(it->second.text, meldungen);
+            for (Meldung& m : meldungen)
+            {
+                m.text = "execution " + std::to_string(x.id) + ": " + m.text;
+                m.ort = {it->second.versatz, it->second.zeile, 1};
+                m_meldungen.push_back(std::move(m));
+            }
+            if (plaene.empty()) continue;
+            modell::Plan p = std::move(plaene.front());
+            p.name = std::string(m_name) + "@execution " + std::to_string(x.id);
+            p.aufruf = it->second.zeile;
+            x.plan = p.name;
+            m_plaene.push_back(std::move(p));
+        }
+    }
+
     modell::LaufJob& job(int id, int zeile)
     {
         for (modell::LaufJob& j : m_lauf.jobs)
@@ -241,7 +296,7 @@ private:
         return 0;
     }
 
-    void ereignis(const json::Wert& e, int zeile)
+    void ereignis(const json::Wert& e, int zeile, std::size_t versatz)
     {
         const std::string art = text(feld(&e, "Event"));
         m_lauf.letzte = std::max(m_lauf.letzte, zeitpunkt(e));
@@ -296,6 +351,25 @@ private:
             if (const json::Wert* s = feld(&e, "Stage IDs"); s != nullptr && s->art == json::Art::Liste)
                 for (const json::Wert& x : s->elemente) j.stages.push_back(static_cast<int>(zahl(&x)));
             j.sql = text(feld(feld(&e, "Properties"), "spark.sql.execution.id"));
+            j.aufruf = text(feld(feld(&e, "Properties"), "callSite.short"));
+        }
+        else if (art.ends_with("SparkListenerSQLExecutionStart"))
+        {
+            modell::LaufAusfuehrung& x = ausfuehrung(static_cast<int>(zahl(feld(&e, "executionId"))), zeile);
+            x.beschreibung = text(feld(&e, "description"));
+            if (const json::Wert* w = feld(&e, "rootExecutionId"); w != nullptr && w->art == json::Art::Zahl)
+                x.wurzel = static_cast<int>(zahl(w));
+            x.start = zahl(feld(&e, "time"));
+            planText(x.id, e, zeile, versatz);
+        }
+        else if (art.ends_with("SparkListenerSQLAdaptiveExecutionUpdate"))
+            // unter AQE: jede neue Fassung des Plans; die letzte gilt (L6)
+            planText(static_cast<int>(zahl(feld(&e, "executionId"))), e, zeile, versatz);
+        else if (art.ends_with("SparkListenerSQLExecutionEnd"))
+        {
+            modell::LaufAusfuehrung& x = ausfuehrung(static_cast<int>(zahl(feld(&e, "executionId"))), zeile);
+            x.ende = zahl(feld(&e, "time"));
+            if (const std::string f = text(feld(&e, "errorMessage")); !f.empty()) x.fehler = f.substr(0, f.find('\n'));
         }
         else if (art == "SparkListenerJobEnd")
         {
@@ -349,9 +423,19 @@ private:
         }
     }
 
+    struct PlanText
+    {
+        std::string text;
+        int zeile = 0;
+        std::size_t versatz = 0;
+    };
+
     std::string_view m_text;
+    std::string_view m_name;
     std::vector<Meldung>& m_meldungen;
     modell::Lauf m_lauf;
+    std::map<int, PlanText> m_planTexte;  ///< je Ausfuehrung die letzte Fassung
+    std::vector<modell::Plan> m_plaene;
     std::map<std::pair<long long, int>, std::size_t> m_taskIndex;
     std::map<std::pair<int, int>, std::size_t> m_stageIndex;
     std::set<std::pair<int, int>> m_eingereicht;  ///< Stages mit StageSubmitted oder -Completed
@@ -375,8 +459,10 @@ public:
         }
         if (einheitName.ends_with(".inprogress"))
             ergebnis.meldungen.push_back({Schwere::Hinweis, {}, "run not finished (.inprogress)"});
-        modell::Lauf lauf = LogLeser(text, ergebnis.meldungen).lies();
+        LogLeser leser(text, einheitName, ergebnis.meldungen);
+        modell::Lauf lauf = leser.lies();
         if (lauf.name.empty()) lauf.name = std::string(einheitName);
+        ergebnis.einheit.plaene = leser.plaene();
         ergebnis.einheit.laeufe.push_back(std::move(lauf));
         return ergebnis;
     }

@@ -716,7 +716,24 @@ struct LaufJob
     std::vector<int> stages;
     std::string ergebnis;   ///< `JobSucceeded`, `JobFailed`; leer = kein Ende
     std::string sql;        ///< `spark.sql.execution.id`; leer = keine
+    std::string aufruf;     ///< `callSite.short`: `collect at C:\…\x.py:7`; leer = der Log nennt keine
     int zeile = 0;
+};
+
+/// Eine SQL-Ausfuehrung (`SparkListenerSQLExecutionStart` … `End`): eine Aktion eines DataFrame mit ihren Jobs (L5-3)
+/// und ihrem Plan (L6).
+struct LaufAusfuehrung
+{
+    int id = 0;                ///< `executionId`, wie in LaufJob::sql
+    /// `rootExecutionId`: eine Ausfuehrung in einer anderen (Spark 3.4+) traegt deren Nummer; -1 = keine Angabe.
+    int wurzel = -1;
+    std::string beschreibung;  ///< `description`: `collect at C:\…\x.py:90`, `count at NativeMethodAccessorImpl.java:0`
+    long long start = 0;
+    long long ende = 0;        ///< 0 = kein Ende im Log
+    std::string fehler;        ///< `errorMessage`; leer = keiner
+    /// Ihr Plan (modell::Plan::name in Einheit::plaene): `<log>@execution <n>`; leer = keiner.
+    std::string plan;
+    int zeile = 0;             ///< im Log: der Start
 };
 
 struct Lauf
@@ -732,6 +749,7 @@ struct Lauf
     std::vector<LaufJob> jobs;
     std::vector<LaufStage> stages;         ///< je Stage und Versuch
     std::vector<LaufTask> tasks;           ///< je Task und Versuch, in der Reihenfolge des Starts
+    std::vector<LaufAusfuehrung> ausfuehrungen;  ///< in der Reihenfolge ihres Starts
     long long letzte = 0;                  ///< der letzte Zeitstempel im Log
 };
 
@@ -757,7 +775,8 @@ struct Einheit
     std::vector<Fallausdruck> faelle;
     /// Spark: die Plaene aus `explain()` — einer Plan-Datei oder der Ausgaben eines Notebooks.
     std::vector<Plan> plaene;
-    /// Spark: der Lauf eines Event-Logs (hoechstens einer je Datei).
+    /// Spark: der Lauf eines Event-Logs (hoechstens einer je Datei). Die Plaene seiner SQL-Ausfuehrungen stehen in
+    /// `plaene` (L6).
     std::vector<Lauf> laeufe;
 };
 

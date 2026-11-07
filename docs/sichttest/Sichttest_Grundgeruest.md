@@ -1107,6 +1107,26 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `Run timeline is not available in dot`; dunkles Thema lesbar; Top-down/Left-right ändert nichts.
 - [ ] **AG6 Großer Lauf:** `beispiele/spark/fremd/eventlogs-netz/spark-log-parser/app-20170708141026-0013` (falls geladen):
       25 Jobs als Treppe, 32 Executoren mit je einer Bahn, Stage 2 gestrichelt über 24 Executoren bis zum Ende.
+- [ ] **AG7 Lauf und Code vorbereiten (L5, L6):** einen eigenen Lauf aufnehmen: `python beispiele/spark/eventlogs_aufnehmen.py
+      <skript.py> <notebook.ipynb>` mit einem Skript, das `collect`, `count`, `show`, `take` nacheinander ruft, und einem
+      Notebook mit `collect` in zwei Zellen. Die Logs aus `beispiele/spark/fremd/eventlogs/` neben Skript und Notebook in
+      einen Ordner legen, File > Open folder….
+      `aktion: ordner_oeffnen pfad=<ordner>` `aktion: datei_waehlen pfad=<log>`
+- [ ] **AG8 Plaene aus dem Log (L6):** Diagram bietet `Physical plan (n)` mit `<log>@execution 0` …; ein Plan unter AQE
+      zeigt `final plan: yes`. Tooltip eines Jobs: `SQL execution n: count at NativeMethodAccessorImpl.java:0`,
+      `plan: <log>@execution n (double-click)`. Doppelklick auf den Job zeigt den Plan, Back zurück; Rechtsklick
+      *Physical plan …*. Ein Klick auf einen Operator zeigt das Ereignis im Log (Statuszeile `in the plan of the SQL event`).
+      `aktion: lauf_zeigen` `aktion: doppelklicken name=Job 1`
+- [ ] **AG9 Lauf → Code (L5):** Tooltip eines Jobs mit Stelle `code: skript.py:7 (click)`; ein Klick auf ihn zeigt diese
+      Zeile von `skript.py` im Quelltext (Statuszeile `Job 0: skript.py, line 7`); ebenso ein `count` ohne Stelle, der
+      zwischen zwei `collect`/`take` liegt. Rechtsklick bietet *Show in the code (…)* und *Show the event in the log*.
+      Im Notebook trifft der Klick die Zeile in der richtigen Zelle (die Zelle schwach hinterlegt). Ein Lauf nur mit
+      `show()`: unter der Zeitachse `no Python location in the log (count, show, write carry none)`.
+      `aktion: klicken name=Job 0`
+- [ ] **AG10 Code → Lauf (L5):** im Datenfluss des Skripts Doppelklick auf `Job 2: count()`: die Zeitachse des Logs, der
+      Job markiert; auf `reduceByKey(…)` (ein RDD-Schritt) die Stage; Rechtsklick *Job n in the run <log>*. Ein Knoten mit
+      Plan und Lauf gibt ein Menü.
+      `aktion: datei_waehlen pfad=<skript.py>` `aktion: datenfluss_zeigen` `aktion: doppelklicken name=Job 2: count()`
 
 ## AH. Ablauf von SQL-Routinen (Entscheide R1–R6)
 

@@ -310,6 +310,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.gezeigteStelle());
                      });
 
+    anbindung.aktion(QStringLiteral("doppelklicken"),
+                     QStringLiteral("Like a double-click in the data flow or the run timeline: follows the node or bar"),
+                     QStringLiteral("name=<a node of the data flow | a bar of the run timeline (Job 1, Stage 2: …)>"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (name.isEmpty()) return st::ungueltig(QStringLiteral("name is missing"));
+                         if (!fenster.doppelklicke(name))
+                             return st::fehler(QStringLiteral("'%1' leads nowhere in %2").arg(name, fenster.diagramm()));
+                         return st::ok(fenster.diagramm() + QStringLiteral(" in ") + fenster.datei());
+                     });
+
     anbindung.aktion(QStringLiteral("im_diagramm_zeigen"),
                      QStringLiteral("Like right-click in the source, Show in diagram: the node (or type) of a line"),
                      QStringLiteral("zeile=<line in the file shown in the source>"),

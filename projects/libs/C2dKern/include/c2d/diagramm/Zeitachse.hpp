@@ -64,6 +64,10 @@ struct ZeitBalken
     /// Nur Task: die Werte als Zahlen und Woerter (csv, Entscheid L7) — Zeiten in ms ab dem Anfang, Bytes als Zahl.
     std::vector<std::pair<std::string, std::string>> spalten;
     int zeile = 0;                ///< im Log
+    int job = -1;                 ///< Job und Stage: die Nummer des Jobs (L5); -1 = keiner
+    int stage = -1;               ///< Stage und Task: die Nummer der Stage; -1 = keine
+    int ausfuehrung = -1;         ///< Job und Stage: die SQL-Ausfuehrung des Jobs; -1 = keine
+    std::string plan;             ///< Job und Stage: der Plan dieser Ausfuehrung (modell::Plan::name, L6); leer = keiner
 };
 
 struct Zeitachse

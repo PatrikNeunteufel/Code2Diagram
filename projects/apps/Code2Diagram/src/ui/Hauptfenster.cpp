@@ -461,7 +461,12 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             folgeDatenfluss(knoten);
             return;
         }
-        if (istPlan() || istLauf()) return;  // fuehrt nirgends hin (L5 kommt mit den Logs); die Zeile zeigte der Klick
+        if (istLauf())
+        {
+            folgeLauf(knoten);
+            return;
+        }
+        if (istPlan()) return;  // fuehrt nirgends hin; die Zeile zeigte der Klick
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -505,15 +510,23 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         {
             if (knoten >= m_zeitachse.balken.size()) return;
             QMenu menue(this);
-            menue.addAction(QStringLiteral("Show the event in the log"), this, [this, knoten] { zeigeStelle(knoten); });
+            menue.addAction(QStringLiteral("Show the event in the log"), this, [this, knoten] { zeigeLogZeile(knoten); });
+            const c2d::diagramm::ZeitBalken& b = m_zeitachse.balken[knoten];
+            for (const c2d::projekt::Codestelle& c : c2d::projekt::codestellenVon(m_laufCode, b.job, b.stage))
+                menue.addAction(QStringLiteral("Show in the code (%1, line %2)").arg(ausStd(m_projekt.dateien[c.datei].pfad)).arg(c.zeile),
+                                this, [this, c] { zeigeZeile(c.datei, c.zeile); });
+            if (const std::string& plan = m_zeitachse.balken[knoten].plan; !plan.empty())
+                menue.addAction(QStringLiteral("Physical plan %1").arg(ausStd(plan)), this,
+                                [this, plan = ausStd(plan), knoten] { geheZuPlan(m_datei, plan, knoten); });
             menue.exec(QCursor::pos());
         }
         else if (istPlan())
         {
             if (knoten >= m_planDiagramm.knoten.size()) return;
             QMenu menue(this);
-            menue.addAction(m_planDiagramm.aufruf > 0 ? QStringLiteral("Show the explain() in the source")
-                                                      : QStringLiteral("Show in the plan file"),
+            menue.addAction(imLog()                      ? QStringLiteral("Show the event in the log")
+                            : m_planDiagramm.aufruf > 0 ? QStringLiteral("Show the explain() in the source")
+                                                        : QStringLiteral("Show in the plan file"),
                             this, [this, knoten] { zeigeStelle(knoten); });
             menue.exec(QCursor::pos());
         }
@@ -1949,19 +1962,22 @@ void Hauptfenster::folgeDatenfluss(c2d::diagramm::KnotenId knoten)
         if (const auto [d, i] = abfrageVon(k.abfrage); d != kKeine) geheZuAbfrage(d, i, knoten);
         return;
     }
-    // der Plan aus seinem explain() (P2-2); nennt er dazu eine Funktion: das Menue
-    if (!k.plan.empty() && k.ziele.empty())
-    {
-        geheZuPlan(m_datei, ausStd(k.plan), knoten);
-        return;
-    }
-    if (k.ziele.empty()) return;
-    if (k.ziele.size() > 1 || !k.plan.empty())
+    // der Plan aus seinem explain() (P2-2), eine Funktion, ein Lauf (L5: «action» → Job, die Zeile einer
+    // RDD-Aufrufstelle → Stage) — eines: dorthin, mehrere: das Menue
+    const std::vector<c2d::projekt::LaufTreffer> laeufe = laeufeDesKnotens(k);
+    const std::size_t ziele = k.ziele.size() + (k.plan.empty() ? 0 : 1) + laeufe.size();
+    if (ziele == 0) return;
+    if (ziele > 1)
     {
         datenflussMenue(knoten);
         return;
     }
-    folgeZiel(k, k.ziele.front(), knoten);
+    if (!k.plan.empty())
+        geheZuPlan(m_datei, ausStd(k.plan), knoten);
+    else if (!laeufe.empty())
+        geheZuLauf(laeufe.front().log, laeufe.front().jobs, laeufe.front().stage, knoten);
+    else
+        folgeZiel(k, k.ziele.front(), knoten);
 }
 
 void Hauptfenster::folgeZiel(const c2d::diagramm::DatenflussKnoten& k, const std::string& ziel, c2d::diagramm::KnotenId knoten)
@@ -2001,6 +2017,20 @@ void Hauptfenster::datenflussMenue(c2d::diagramm::KnotenId knoten)
     if (!k.plan.empty())
         menue.addAction(QStringLiteral("Physical plan %1").arg(ausStd(k.plan)), this,
                         [this, plan = ausStd(k.plan), knoten] { geheZuPlan(m_datei, plan, knoten); });
+    for (const c2d::projekt::LaufTreffer& t : laeufeDesKnotens(k))
+    {
+        QString was;
+        if (t.stage >= 0)
+            was = QStringLiteral("Stage %1").arg(t.stage);
+        else
+        {
+            QStringList jobs;
+            for (const int j : t.jobs) jobs << QString::number(j);
+            was = (t.jobs.size() == 1 ? QStringLiteral("Job ") : QStringLiteral("Jobs ")) + jobs.join(QStringLiteral(", "));
+        }
+        menue.addAction(QStringLiteral("%1 in the run %2").arg(was, letzterName(ausStd(m_projekt.dateien[t.log].pfad))), this,
+                        [this, t, knoten] { geheZuLauf(t.log, t.jobs, t.stage, knoten); });
+    }
     if (k.zeile > 0) menue.addAction(QStringLiteral("Show in the source"), this, [this, knoten] { zeigeStelle(knoten); });
     if (!menue.isEmpty()) menue.exec(QCursor::pos());
 }
@@ -2078,12 +2108,66 @@ bool Hauptfenster::istLauf() const
     return m_gezeigt == QLatin1String(kLauf);
 }
 
+bool Hauptfenster::zeigeLogZeile(c2d::diagramm::KnotenId knoten)
+{
+    return knoten < m_zeitachse.balken.size() && m_zeitachse.balken[knoten].zeile > 0 &&
+           zeigeZeile(m_datei, m_zeitachse.balken[knoten].zeile);
+}
+
+bool Hauptfenster::imLog() const
+{
+    return m_datei < m_projekt.dateien.size() && m_projekt.dateien[m_datei].sprache == &c2d::sprache::sparkEventLog();
+}
+
 void Hauptfenster::leiteLaufAb()
 {
     m_zeitachse = {};
     if (!istLauf() || m_datei >= m_projekt.dateien.size()) return;
     const std::vector<c2d::modell::Lauf>& laeufe = m_projekt.dateien[m_datei].ergebnis.einheit.laeufe;
-    if (!laeufe.empty()) m_zeitachse = c2d::diagramm::zeitachseVon(laeufe.front());
+    if (laeufe.empty()) return;
+    m_zeitachse = c2d::diagramm::zeitachseVon(laeufe.front());
+    // wo der Lauf im Code steht (L5); die Hinweise stehen unter der Zeitachse
+    m_laufCode = c2d::projekt::verbindeLauf(m_projekt, m_datei);
+    m_zeitachse.hinweise.insert(m_zeitachse.hinweise.end(), m_laufCode.hinweise.begin(), m_laufCode.hinweise.end());
+    for (c2d::diagramm::ZeitBalken& b : m_zeitachse.balken)
+    {
+        if (b.art != c2d::diagramm::ZeitBalkenArt::Job && b.art != c2d::diagramm::ZeitBalkenArt::Stage) continue;
+        for (const c2d::projekt::Codestelle& c : c2d::projekt::codestellenVon(m_laufCode, b.job, b.stage))
+            b.angaben.push_back("code: " + m_projekt.dateien[c.datei].pfad + ":" + std::to_string(c.zeile) + " (click)");
+    }
+}
+
+void Hauptfenster::geheZuLauf(std::size_t log, const std::vector<int>& jobs, int stage, c2d::diagramm::KnotenId von)
+{
+    if (log >= m_projekt.dateien.size()) return;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (log != m_datei) zeigeDatei(log);
+    if (!istLauf()) waehleEintrag(QString::fromLatin1(kLauf));
+    m_ohneVerlauf = false;
+    if (!istLauf()) return;
+    for (std::size_t i = 0; i < m_zeitachse.balken.size(); ++i)
+    {
+        const c2d::diagramm::ZeitBalken& b = m_zeitachse.balken[i];
+        const bool passt = stage >= 0 ? b.art == c2d::diagramm::ZeitBalkenArt::Stage && b.stage == stage
+                                      : b.art == c2d::diagramm::ZeitBalkenArt::Job && !jobs.empty() && b.job == jobs.front();
+        if (passt)
+        {
+            m_vorschau->markiere(i);
+            break;
+        }
+    }
+    zeigeLage();
+}
+
+std::vector<c2d::projekt::LaufTreffer> Hauptfenster::laeufeDesKnotens(const c2d::diagramm::DatenflussKnoten& k) const
+{
+    if (k.zeile <= 0) return {};
+    std::vector<c2d::projekt::LaufTreffer> aus = c2d::projekt::laeufeAn(m_projekt, m_datei, k.zeile);
+    // eine Aktion fuehrt zu ihrem Job, ein anderer Knoten zu der Stage auf seiner Zeile
+    const bool aktion = k.art == c2d::diagramm::DatenflussKnotenArt::Aktion;
+    std::erase_if(aus, [&](const c2d::projekt::LaufTreffer& t) { return aktion ? t.stage >= 0 : t.stage < 0; });
+    return aus;
 }
 
 bool Hauptfenster::zeigeLauf()
@@ -3875,8 +3959,27 @@ bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
         return knoten < m_datenfluss.knoten.size() && m_datenfluss.knoten[knoten].zeile > 0 &&
                zeigeZeile(m_datei, m_datenfluss.knoten[knoten].zeile);
     if (istLauf())
-        return knoten < m_zeitachse.balken.size() && m_zeitachse.balken[knoten].zeile > 0 &&
-               zeigeZeile(m_datei, m_zeitachse.balken[knoten].zeile);
+    {
+        if (knoten >= m_zeitachse.balken.size()) return false;
+        // ein Job, eine Stage mit genau einer Stelle im Code: diese Zeile (L5); sonst das Ereignis im Log
+        const c2d::diagramm::ZeitBalken& b = m_zeitachse.balken[knoten];
+        if (b.art == c2d::diagramm::ZeitBalkenArt::Job || b.art == c2d::diagramm::ZeitBalkenArt::Stage)
+        {
+            const std::vector<c2d::projekt::Codestelle> code = c2d::projekt::codestellenVon(m_laufCode, b.job, b.stage);
+            if (code.size() == 1 && zeigeZeile(code.front().datei, code.front().zeile))
+            {
+                statusBar()->showMessage(QStringLiteral("%1: %2, line %3")
+                                             .arg(ausStd(b.titel), ausStd(m_projekt.dateien[code.front().datei].pfad))
+                                             .arg(code.front().zeile),
+                                         6000);
+                return true;
+            }
+            if (code.size() > 1)
+                statusBar()->showMessage(QStringLiteral("%1: %2 places in the code - right-click to choose").arg(ausStd(b.titel)).arg(code.size()),
+                                         6000);
+        }
+        return zeigeLogZeile(knoten);
+    }
     if (istPlan())
     {
         // in einer Plan-Datei die Zeile des Operators; aus der Ausgabe einer Zelle ihr explain(), die Zeile der
@@ -3885,8 +3988,9 @@ bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
         const int zeile = m_planDiagramm.knoten[knoten].zeile;
         if (m_planDiagramm.aufruf == 0) return zeile > 0 && zeigeZeile(m_datei, zeile);
         const bool gezeigt = zeigeZeile(m_datei, m_planDiagramm.aufruf);
-        statusBar()->showMessage(QStringLiteral("%1: in the output of the cell, line %2")
-                                     .arg(ausStd(m_planDiagramm.knoten[knoten].titel))
+        statusBar()->showMessage(QStringLiteral("%1: %2, line %3")
+                                     .arg(ausStd(m_planDiagramm.knoten[knoten].titel),
+                                          imLog() ? QStringLiteral("in the plan of the SQL event") : QStringLiteral("in the output of the cell"))
                                      .arg(zeile),
                                  6000);
         return gezeigt;
@@ -3935,6 +4039,34 @@ bool Hauptfenster::zeigeStelle(std::size_t kasten, std::size_t eintrag)
     if (eintrag < k.eintraege.size()) return zeigeZeile(m_datei, k.eintraege[eintrag].zeile);
     eintrag -= k.eintraege.size();
     return eintrag < k.methoden.size() && zeigeZeile(m_datei, k.methoden[eintrag].zeile);
+}
+
+void Hauptfenster::folgeLauf(c2d::diagramm::KnotenId knoten)
+{
+    // Job und Stage: der Plan ihrer SQL-Ausfuehrung (L6)
+    if (knoten < m_zeitachse.balken.size() && !m_zeitachse.balken[knoten].plan.empty())
+        geheZuPlan(m_datei, ausStd(m_zeitachse.balken[knoten].plan), knoten);
+}
+
+bool Hauptfenster::doppelklicke(const QString& name)
+{
+    const QString vorher = m_gezeigt;
+    const std::size_t datei = m_datei;
+    if (istDatenfluss())
+    {
+        const qsizetype k = datenflussKnoten().indexOf(name);
+        if (k < 0) return false;
+        folgeDatenfluss(static_cast<c2d::diagramm::KnotenId>(k));
+    }
+    else if (istLauf())
+    {
+        const qsizetype k = laufBalken().indexOf(name);
+        if (k < 0) return false;
+        folgeLauf(static_cast<c2d::diagramm::KnotenId>(k));
+    }
+    else
+        return false;
+    return m_gezeigt != vorher || m_datei != datei;
 }
 
 bool Hauptfenster::doppelklickeAbhaengigkeit(const QString& name)

@@ -445,6 +445,12 @@ Tabelle in `diagramm/Datenfluss.cpp`:
 - **Unvollständiges:** ohne Ende gestrichelt bis zum letzten Zeitstempel, `not completed`; ein Fehlschlag dick mit ✗
   und Grund; ein entfernter Executor mit Marke. Über 20 000 Tasks je Bahn und Stage ein Balken mit der Zahl.
 - **Formate:** SVG, draw.io, Mermaid `gantt`, csv (je Task eine Zeile); DOT sagt ab. Klick → das Ereignis im Log.
+- **Pläne (L6):** je SQL-Ausführung ihr Plan aus `physicalPlanDescription` (unter AQE die letzte Fassung), als
+  *Physical plan* `<log>@execution <n>`; Doppelklick auf Job oder Stage zeigt ihn.
+- **Code (L5, `projekt/Lauf.*`):** wo der Log eine Python-Stelle nennt (`collect`, `take`, RDD), gehört der Job zu
+  dieser Zeile — über den Pfad im Projekt, sonst den Dateinamen, im Notebook über den Hash des Zelltexts
+  (ipykernel); `count`, `show`, `write` ohne Stelle über ihren Namen, wenn sie zwischen zwei Aktionen mit Stelle die
+  einzigen ihres Namens sind. Ein Klick auf den Job zeigt die Codezeile; im Datenfluss führt die Aktion zum Job.
   Beispiel `beispiele/spark/local-1700000000000` (von Hand gesetzt); eigene Logs schreibt
   `beispiele/spark/eventlogs_aufnehmen.py`.
 
@@ -966,8 +972,8 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
-- **Run timeline:** noch ohne Verbindung zum Datenfluss (L5) und ohne die Pläne aus den SQL-Ereignissen (L6) — beides
-  wartet auf echte PySpark-Logs; komprimierte Logs werden nicht gelesen; der Kern eines Tasks steht nicht im Log, die
+- **Run timeline:** eine Aktion ohne Python-Stelle im Log, die nicht eindeutig zwischen zwei mit Stelle liegt, bleibt
+  ohne Code (Hinweis); Logs aus Databricks sind nicht geprüft; komprimierte Logs werden nicht gelesen; der Kern eines Tasks steht nicht im Log, die
   Bahn ist gerechnet (der Platz, der zuerst frei wurde).
 - **Physical plan:** kein Operator ist einem Knoten des Datenflusses zugeordnet (P2-2); die Stages sind aus den
   Exchanges gezählt, nicht Sparks Nummern; welche Unterabfrage eine wiederverwendete meint, steht bei maskierten

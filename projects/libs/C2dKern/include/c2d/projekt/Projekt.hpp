@@ -34,7 +34,9 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -74,6 +76,9 @@ struct Zelle
     std::string sprache;
     bool gelesen = true;  ///< false: in einer Sprache, die das Projekt nicht kennt (Hinweis)
     std::string titel;    ///< Databricks `DBTITLE`; leer = keiner
+    /// Code-Zelle eines `.ipynb`: der Hash ihres Texts, wie ipykernel sie im Event-Log nennt
+    /// (`…\ipykernel_<pid>\<hash>.py`, Entscheid L5-2); leer = keiner (Databricks, Markdown).
+    std::optional<std::uint32_t> kernHash;
 };
 
 struct Datei

@@ -580,6 +580,33 @@ private:
         }
     }
 
+    /// Im Baum von simple steht die Kennung im Text: `ReusedSubquery Subquery scalar-subquery#31, [id=#301]` meint die
+    /// Unterabfrage mit genau diesem Text, `ReusedExchange […], Exchange …, [plan_id=12]` den Exchange mit
+    /// `[plan_id=12]`. Gibt den Knoten (kKeine = keiner oder mehrere).
+    [[nodiscard]] std::size_t wiederverwendetImText(std::size_t i) const
+    {
+        const PlanOperator& op = m_baum.operatoren[i];
+        std::string kennung;
+        if (op.name == "ReusedSubquery")
+            kennung = op.argumente;
+        else if (const std::size_t auf = op.argumente.rfind("[plan_id="); auf != std::string::npos)
+            kennung = op.argumente.substr(auf, op.argumente.find(']', auf) - auf + 1);
+        if (kennung.empty()) return kKeine;
+        std::size_t ziel = kKeine;
+        for (std::size_t j = 0; j < m_baum.operatoren.size(); ++j)
+        {
+            const PlanOperator& o = m_baum.operatoren[j];
+            if (j == i || artVon(o) == PlanKnotenArt::Wiederverwendet || m_knotenVon[j] == kKeine) continue;
+            const bool passt = op.name == "ReusedSubquery"
+                                   ? artVon(o) == PlanKnotenArt::Unterabfrage && o.name + " " + o.argumente == kennung
+                                   : o.name.ends_with("Exchange") && o.argumente.find(kennung) != std::string::npos;
+            if (!passt) continue;
+            if (ziel != kKeine) return kKeine;
+            ziel = m_knotenVon[j];
+        }
+        return ziel;
+    }
+
     /// ReusedExchange und ReusedSubquery: eine Kante von dem, den sie wiederverwenden — formatted ueber die Nummer
     /// (`Reuses operator id: 49`), der eingerueckte Baum ueber die Kennung `#3`.
     void verbindeWiederverwendete()
@@ -589,6 +616,12 @@ private:
         {
             const PlanOperator& op = m_baum.operatoren[i];
             if (artVon(op) != PlanKnotenArt::Wiederverwendet || m_knotenVon[i] == kKeine) continue;
+            if (op.verweis.empty() && !eingerueckt)
+                if (const std::size_t z = wiederverwendetImText(i); z != kKeine)
+                {
+                    m_d.kanten.push_back({z, m_knotenVon[i], PlanKantenArt::Wiederverwendung, "reuses"});
+                    continue;
+                }
             if (op.verweis.empty())
             {
                 m_d.hinweise.push_back(op.name + " (line " + std::to_string(op.zeile) + "): the plan does not say what it reuses");

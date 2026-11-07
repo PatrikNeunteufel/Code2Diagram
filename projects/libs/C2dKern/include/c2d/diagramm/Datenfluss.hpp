@@ -47,6 +47,8 @@ struct DatenflussKnoten
     std::string abfrage;              ///< nur Sql: der Name der modell::Abfrage (Doppelklick)
     std::string tabelle;              ///< nur Quelle `table`: der Name der Tabelle (Doppelklick)
     std::string plan;                 ///< der Plan aus seinem `explain()` (modell::Plan::name, Doppelklick); leer = keiner
+    /// Aktion und Shuffle: der Name der Methode, wie ihn ein Event-Log nennt (`collect`, `parquet`, `reduceByKey`; L5).
+    std::string methode;
 };
 
 /// «session», «source», «shuffle», «action», «sql», «call»; leer bei Schritte.

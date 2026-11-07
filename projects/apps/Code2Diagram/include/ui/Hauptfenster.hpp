@@ -53,6 +53,7 @@
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Datenfluss.hpp"
+#include "c2d/projekt/Lauf.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Typen.hpp"
 
@@ -268,6 +269,9 @@ public:
     /// Wie ein Doppelklick auf den Knoten dieses Namens in *Data dependencies* (wie aufrufgraphKnoten() ihn nennt).
     /// false = kein solcher Knoten, oder er fuehrt nirgendwohin.
     bool doppelklickeAbhaengigkeit(const QString& name);
+    /// Wie ein Doppelklick im Datenfluss (der Name wie datenflussKnoten() ihn nennt) oder in der Zeitachse (wie
+    /// laufBalken()). false = kein solcher, oder er fuehrt nirgendwohin.
+    bool doppelklicke(const QString& name);
     /// Die Zeile, die der Quelltext hervorhebt, als `pfad:zeile`, in einem Notebook dazu
     /// ` (cell n, line m)`; leer = keine.
     [[nodiscard]] QString gezeigteStelle() const;
@@ -552,7 +556,17 @@ private:
     [[nodiscard]] bool istPlan() const;
     void leitePlanAb();
     [[nodiscard]] bool istLauf() const;
+    /// Die gezeigte Datei ist ein Event-Log (seine Plaene stammen aus den SQL-Ereignissen, L6).
+    [[nodiscard]] bool imLog() const;
+    /// Zeitachse: das Ereignis eines Balkens im Log.
+    bool zeigeLogZeile(c2d::diagramm::KnotenId knoten);
+    /// Zeitachse, Doppelklick: der Plan eines Jobs, einer Stage (L6).
+    void folgeLauf(c2d::diagramm::KnotenId knoten);
     void leiteLaufAb();
+    /// Zum Lauf in der Datei `log`: die Zeitachse, dort der Balken des Jobs (`stage` < 0) bzw. der Stage (L5).
+    void geheZuLauf(std::size_t log, const std::vector<int>& jobs, int stage, c2d::diagramm::KnotenId von);
+    /// Was in den Laeufen des Projekts zu einem Knoten des Datenflusses gehoert: Text fuer das Menue, Ziel.
+    [[nodiscard]] std::vector<c2d::projekt::LaufTreffer> laeufeDesKnotens(const c2d::diagramm::DatenflussKnoten& k) const;
     /// Zum Plan `wahl` (wie m_planWahl) der Datei `datei`; Back fuehrt zurueck.
     void geheZuPlan(std::size_t datei, const QString& wahl, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
     /// Der gewaehlte Plan der Datei (nach m_planWahl) und sein Abschnitt; nullptr = keiner.
@@ -640,6 +654,7 @@ private:
     QString m_flussName;                                     ///< der gezeigte; leer = die ganze Datei
     c2d::diagramm::Plandiagramm m_planDiagramm;              ///< der gezeigte Plan
     c2d::diagramm::Zeitachse m_zeitachse;                    ///< der gezeigte Lauf
+    c2d::projekt::Laufverbindung m_laufCode;                 ///< wo seine Aktionen und Stages im Code stehen (L5)
     QComboBox* m_planAuswahl = nullptr;                      ///< beim Plan: welcher (Daten: wie m_planWahl)
     /// Der gezeigte Plan: sein Name, mit `\t` und dem Kurznamen eines logischen Abschnitts dahinter.
     QString m_planWahl;

@@ -46,6 +46,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/test_Notebook.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Plan.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/test_Lauf.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test_LaufCode.cpp"
 )
 
 set(_local_headers
