@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <set>
 #include <utility>
@@ -244,7 +245,9 @@ std::vector<double> brandesKoepf(const std::vector<std::vector<std::size_t>>& sc
 /// sie in einer eigenen Spalte, statt durch Knoten oder aussen herum. Der erste
 /// Stuetzpunkt ist `stuetzBreite[e]` breit (0: schmal) — Platz fuer eine Beschriftung.
 ///
-/// `gruppenVon[v]`: die Rahmen, in denen Knoten v liegt (alle, auch die aeusseren).
+/// `gruppenVon[v]`: die Rahmen, in denen Knoten v liegt (alle, auch die aeusseren); zwischen den Schichten
+/// bleibt je Rahmen, der dort beginnt oder endet, sein Rand frei und vor ihm `titelLaengs` fuer den Titel
+/// (nach rechts gerechnet 0: der Titel steht quer).
 /// Ueber der Zeile, in der ein Rahmen beginnt, bleibt Platz fuer seinen Titel und
 /// Rand, unter der, in der er endet, fuer seinen Rand — so biegen die Kanten
 /// ausserhalb der Rahmen ab, und ihre Beschriftungen stehen nicht auf dem Titel.
@@ -264,7 +267,12 @@ std::vector<double> brandesKoepf(const std::vector<std::vector<std::size_t>>& sc
 /// rueckt nur neben die seiner Gruppe, mit denen es Schichten teilt, sonst an den linken Rand der
 /// Gruppe (eine Stage unter der davor statt daneben); jede Gruppe beginnt rechts von allem davor.
 /// `titelQuer`: so viel braucht der Titel eines Rahmens quer zur Richtung (nach rechts gerechnet:
-/// er steht oben) — beim Stapeln je Rahmenebene zwischen zwei Baendern.
+/// er steht oben) — beim Stapeln je Rahmenebene zwischen zwei Baendern. `bandKette[b]` (leer: jedes
+/// Band ist ein Rahmen unter seiner Gruppe): die Rahmen unter der Gruppe bis zu dem von Band b, aussen zuerst,
+/// so sortiert, dass die Baender eines Rahmens aufeinander folgen (eine Unterabfrage, darin Stages, darin
+/// Codegen). Zwei Baender zaehlen an dem ersten Rahmen, in dem sie sich trennen, mit dessen Schichten, und
+/// lassen Platz fuer die Raender aller Ebenen darunter — so rueckt kein fremdes Band in einen Rahmen, der
+/// mehrere Baender umfasst.
 Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten,
                     const std::vector<double>& stuetzBreite = {},
                     const std::vector<std::vector<std::size_t>>& gruppenVon = {},
@@ -272,7 +280,8 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
                     const std::vector<std::size_t>& bandVon = {},
                     const std::vector<double>& bandBreite = {},
                     const std::vector<bool>& zuUnterst = {},
-                    const std::vector<std::size_t>& bandGruppe = {}, double titelQuer = 0)
+                    const std::vector<std::size_t>& bandGruppe = {}, double titelQuer = 0,
+                    const std::vector<std::vector<std::size_t>>& bandKette = {}, double titelLaengs = kGruppenTitel)
 {
     const std::size_t n = groesse.size();
     Schichtung s;
@@ -499,7 +508,7 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
                                                 [&](std::size_t g) { return erste[g] == s.rang[v]; });
             const auto enden = std::count_if(gruppenVon[v].begin(), gruppenVon[v].end(),
                                              [&](std::size_t g) { return letzte[g] == s.rang[v]; });
-            vorher[r] = std::max(vorher[r], static_cast<double>(beginnen) * (kGruppenRand + kGruppenTitel));
+            vorher[r] = std::max(vorher[r], static_cast<double>(beginnen) * (kGruppenRand + titelLaengs));
             nachher[r] = std::max(nachher[r], static_cast<double>(enden) * kGruppenRand);
         }
     }
@@ -663,9 +672,42 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
         {
             std::size_t von, bis;
             double rechts;
+            std::size_t band;
         };
         std::vector<Gelegt> gelegt;  // die Baender der laufenden Gruppe
         double ganzRechts = -1e18;   // was alle Gruppen bisher belegen
+        // mit Ketten: je Rahmen die Schichten, die seine Baender belegen, und die tiefste Kette
+        const bool mitKetten = !bandKette.empty();
+        std::map<std::size_t, std::pair<std::size_t, std::size_t>> rahmenZeilen;
+        std::size_t tiefste = 1;
+        if (mitKetten)
+        {
+            std::vector<std::size_t> bandVonZeile(baender, static_cast<std::size_t>(-1)), bandBisZeile(baender, 0);
+            for (std::size_t v = 0; v < alle; ++v)
+                if (band[v] < baender)
+                {
+                    bandVonZeile[band[v]] = std::min(bandVonZeile[band[v]], zeileVon[v]);
+                    bandBisZeile[band[v]] = std::max(bandBisZeile[band[v]], zeileVon[v]);
+                }
+            for (std::size_t b = 0; b < baender && b < bandKette.size(); ++b)
+            {
+                tiefste = std::max(tiefste, bandKette[b].size());
+                if (bandVonZeile[b] > bandBisZeile[b]) continue;
+                for (const std::size_t r : bandKette[b])
+                {
+                    auto [it, neu] = rahmenZeilen.try_emplace(r, bandVonZeile[b], bandBisZeile[b]);
+                    if (!neu)
+                    {
+                        it->second.first = std::min(it->second.first, bandVonZeile[b]);
+                        it->second.second = std::max(it->second.second, bandBisZeile[b]);
+                    }
+                }
+            }
+        }
+        static const std::vector<std::size_t> kOhneKette;
+        const auto ketteVon = [&](std::size_t b) -> const std::vector<std::size_t>& {
+            return b < bandKette.size() ? bandKette[b] : kOhneKette;
+        };
         for (std::size_t b = 0; b < baender; ++b)
         {
             double anfang = 1e18, rechts = -1e18;
@@ -686,18 +728,37 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
                 if (erstes || gruppe != gruppeJetzt)
                 {
                     gruppeJetzt = gruppe;
-                    // zwischen zwei Gruppen die Raender (und Titel) zweier Rahmen je Seite: der der Gruppe und der
-                    // ihres Bands
-                    gruppeAnfang = erstes ? anfang : ganzRechts + 4 * kGruppenRand + 2 * titelQuer + kAbstandNachbar;
+                    // zwischen zwei Gruppen die Raender (und Titel) aller Rahmen je Seite: der der Gruppe und die ihrer
+                    // Baender (ohne Ketten: einer je Band)
+                    const double ebenen = mitKetten ? static_cast<double>(tiefste) + 1 : 2;
+                    gruppeAnfang = erstes ? anfang : ganzRechts + 2 * ebenen * kGruppenRand + ebenen * titelQuer + kAbstandNachbar;
                     gelegt.clear();
                 }
                 ziel = gruppeAnfang;
                 for (const Gelegt& g : gelegt)
-                    if (g.von <= bis && von <= g.bis)
-                        ziel = std::max(ziel, g.rechts + 2 * kGruppenRand + titelQuer + kAbstandNachbar);
+                {
+                    if (!mitKetten)
+                    {
+                        if (g.von <= bis && von <= g.bis)
+                            ziel = std::max(ziel, g.rechts + 2 * kGruppenRand + titelQuer + kAbstandNachbar);
+                        continue;
+                    }
+                    // mit Ketten: am ersten Rahmen, in dem sie sich trennen, zaehlen dessen Schichten (die des ganzen
+                    // Rahmens, nicht nur des Bands); Platz fuer die Raender aller Ebenen darunter, die Titel davor
+                    const std::vector<std::size_t>& kg = ketteVon(g.band);
+                    const std::vector<std::size_t>& kb = ketteVon(b);
+                    std::size_t i = 0;
+                    while (i < kg.size() && i < kb.size() && kg[i] == kb[i]) ++i;
+                    const std::pair<std::size_t, std::size_t> zg = i < kg.size() ? rahmenZeilen[kg[i]] : std::pair{g.von, g.bis};
+                    const std::pair<std::size_t, std::size_t> zb = i < kb.size() ? rahmenZeilen[kb[i]] : std::pair{von, bis};
+                    if (zg.first > zb.second || zb.first > zg.second) continue;
+                    const double lg = static_cast<double>(kg.size() - i);
+                    const double lb = static_cast<double>(kb.size() - i);
+                    ziel = std::max(ziel, g.rechts + (lg + lb) * kGruppenRand + lb * titelQuer + kAbstandNachbar);
+                }
                 double r = rechts + (ziel - anfang);
                 if (b < bandBreite.size()) r = std::max(r, ziel + bandBreite[b]);
-                gelegt.push_back({von, bis, r});
+                gelegt.push_back({von, bis, r, b});
                 ganzRechts = std::max(ganzRechts, r);
             }
             for (std::size_t v = 0; v < alle; ++v)
@@ -933,7 +994,8 @@ Wege fuehreKanten(const Schichtung& s, const std::vector<Rechteck>& orte, const 
 /// Die Anordnung eines Flussdiagramms, mit Baendern (schichte) und den Zeilen der Legende.
 FlussAnordnung ordneFluss(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen,
                           const std::vector<std::size_t>& bandVon, const std::vector<Farbzeile>& farbzeilen,
-                          const std::vector<double>& bandBreite = {}, const std::vector<std::size_t>& bandGruppe = {})
+                          const std::vector<double>& bandBreite = {}, const std::vector<std::size_t>& bandGruppe = {},
+                          const std::vector<std::vector<std::size_t>>& bandKette = {})
 {
     const std::vector<Knoten>& knoten = diagramm.knoten();
     const std::vector<Kante>& kanten = diagramm.kanten();
@@ -960,16 +1022,17 @@ FlussAnordnung ordneFluss(const Flussdiagramm& diagramm, const AnordnungOptionen
         stuetzBreite.push_back(k.beschriftung.empty() ? 0 : drehen ? optionen.zeilenHoehe + 6 : breite);
         schildLaenge.push_back(k.beschriftung.empty() || !drehen ? 0 : breite);
     }
-    // Platz fuer Titel und Rand der Rahmen — nach unten gerechnet; nach rechts steht der Titel
-    // oben quer zur Richtung und braucht keinen.
-    std::vector<std::vector<std::size_t>> gruppenVon(drehen ? 0 : knoten.size());
+    // Platz fuer Rand und Titel der Rahmen zwischen den Schichten; nach rechts steht der Titel oben quer zur
+    // Richtung und braucht dort keinen, der Rand schon (sonst stossen Rahmen mehrerer Ebenen aneinander).
+    std::vector<std::vector<std::size_t>> gruppenVon(knoten.size());
     for (std::size_t v = 0; v < gruppenVon.size(); ++v)
         for (std::size_t g = knoten[v].gruppe; g < diagramm.gruppen().size(); g = diagramm.gruppen()[g].eltern)
             gruppenVon[v].push_back(g);
     std::vector<bool> unten(knoten.size(), false);
     for (std::size_t v = 0; v < knoten.size(); ++v) unten[v] = knoten[v].unerreichbar;
     const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon, schildLaenge, bandVon,
-                                  drehen ? std::vector<double>() : bandBreite, unten, bandGruppe, drehen ? kGruppenTitel : 0);
+                                  drehen ? std::vector<double>() : bandBreite, unten, bandGruppe, drehen ? kGruppenTitel : 0,
+                                  bandKette, drehen ? 0 : kGruppenTitel);
     a.knoten = s.orte;
 
     const Wege wege = fuehreKanten(s, a.knoten, paare, stuetzBreite, schildLaenge);
@@ -1514,14 +1577,21 @@ FlussAnordnung ordneAn(const Abfragediagramm& diagramm, const AnordnungOptionen&
     return ordneFluss(fluss, optionen, baender, {}, bandBreite);
 }
 
-FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOptionen& optionen)
+namespace
 {
-    // Rahmen als Gruppen. Je innerstem Rahmen (einer Stage; der Rahmen einer Funktion fuer ihren Kopf) ein Band, so
-    // umfasst keine Stage einen fremden Knoten; die Baender einer Funktion bilden eine Gruppe — eine Stage steht unter
-    // der davor, wenn sie keine Schicht mit ihr teilt (sonst gaebe jede Stage eine Stufe einer Treppe). Was in keinem
-    // Rahmen steht (Session, Aufrufe), steht in der letzten Gruppe.
+
+/// Ein Datenfluss oder ein Plan: je Knoten texte(), je Kante ihr Text, je Rahmen (titel, eltern) eine Gruppe. Je
+/// innerstem Rahmen ein Band, so umfasst kein Rahmen einen fremden Knoten; die Baender, fuer die `gruppeVon(r, o)`
+/// (r der Rahmen, o sein oberster) dasselbe sagt, bilden eine Gruppe — ein Band steht unter dem davor, wenn es
+/// keine Schicht mit ihm teilt (sonst gaebe jedes eine Stufe einer Treppe), die Gruppen nebeneinander. Was in
+/// keinem Rahmen steht, steht in der letzten Gruppe. `mitKetten`: Rahmen unter der Gruppe umfassen mehrere Baender
+/// (eine Stage ihre Codegen-Stufen, eine Unterabfrage ihre Stages) — je Band seine Kette (schichte, bandKette).
+template <typename Diagramm, typename GruppeVon>
+FlussAnordnung ordneGerahmt(const Diagramm& diagramm, const AnordnungOptionen& optionen, GruppeVon gruppeVonRahmen,
+                            bool mitKetten)
+{
     Flussdiagramm fluss(diagramm.titel);
-    for (const DatenflussRahmen& r : diagramm.rahmen)
+    for (const auto& r : diagramm.rahmen)
     {
         Gruppe g;
         g.titel = r.titel;
@@ -1530,14 +1600,14 @@ FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOption
     }
     if (diagramm.rahmen.empty())
     {
-        for (const DatenflussKnoten& k : diagramm.knoten)
+        for (const auto& k : diagramm.knoten)
         {
             Knoten n;
             n.zeilen = texte(k);
             n.quellZeile = k.zeile;
             fluss.neuerKnoten(std::move(n));
         }
-        for (const DatenflussKante& e : diagramm.kanten) fluss.verbinde(e.von, e.nach, e.text);
+        for (const auto& e : diagramm.kanten) fluss.verbinde(e.von, e.nach, e.text);
         return ordneAn(fluss, optionen);
     }
     const auto oberster = [&](std::size_t r) {
@@ -1546,7 +1616,7 @@ FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOption
     };
     // die Baender: genutzte innerste Rahmen, nach (oberster Rahmen, Rahmen); ohne Rahmen zuletzt
     std::vector<std::size_t> genutzt;
-    for (const DatenflussKnoten& k : diagramm.knoten)
+    for (const auto& k : diagramm.knoten)
         if (std::find(genutzt.begin(), genutzt.end(), k.gruppe) == genutzt.end()) genutzt.push_back(k.gruppe);
     std::sort(genutzt.begin(), genutzt.end(), [&](std::size_t a, std::size_t b) {
         const std::size_t oa = a == kKeine ? diagramm.rahmen.size() : oberster(a);
@@ -1554,24 +1624,36 @@ FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOption
         if (oa != ob) return oa < ob;
         return (a == kKeine ? diagramm.rahmen.size() : a) < (b == kKeine ? diagramm.rahmen.size() : b);
     });
-    // die Gruppe: der Rahmen der Funktion (ein oberster Rahmen mit Rahmen darin); Stages ohne ihn teilen eine
     const auto gruppeVon = [&](std::size_t r) -> std::size_t {
         if (r == kKeine) return diagramm.rahmen.size() + 1;
-        const std::size_t o = oberster(r);
-        const bool behaelter = std::any_of(diagramm.rahmen.begin(), diagramm.rahmen.end(),
-                                           [&](const DatenflussRahmen& x) { return x.eltern == o; });
-        return behaelter || o != r ? o : diagramm.rahmen.size();
+        return gruppeVonRahmen(r, oberster(r));
     };
     std::stable_sort(genutzt.begin(), genutzt.end(), [&](std::size_t a, std::size_t b) { return gruppeVon(a) < gruppeVon(b); });
+    // mit Ketten: je Band die Rahmen unter seiner Gruppe bis zu seinem, aussen zuerst; die Baender eines Rahmens
+    // beisammen (nach Gruppe, dann Kette)
+    const auto ketteVon = [&](std::size_t r) {
+        std::vector<std::size_t> k;
+        const std::size_t g = gruppeVon(r);
+        for (; r != kKeine && r != g; r = diagramm.rahmen[r].eltern) k.push_back(r);
+        std::reverse(k.begin(), k.end());
+        return k;
+    };
+    if (mitKetten)
+        std::stable_sort(genutzt.begin(), genutzt.end(), [&](std::size_t a, std::size_t b) {
+            if (gruppeVon(a) != gruppeVon(b)) return gruppeVon(a) < gruppeVon(b);
+            return ketteVon(a) < ketteVon(b);
+        });
     std::vector<double> bandBreite;
     std::vector<std::size_t> bandGruppe;
+    std::vector<std::vector<std::size_t>> bandKette;
     for (const std::size_t r : genutzt)
     {
         bandBreite.push_back(r == kKeine ? 0 : titelBreite(diagramm.rahmen[r].titel, optionen) - 2 * kGruppenRand);
         bandGruppe.push_back(gruppeVon(r));
+        if (mitKetten) bandKette.push_back(ketteVon(r));
     }
     std::vector<std::size_t> baender;
-    for (const DatenflussKnoten& k : diagramm.knoten)
+    for (const auto& k : diagramm.knoten)
     {
         Knoten n;
         n.zeilen = texte(k);
@@ -1580,13 +1662,44 @@ FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOption
         fluss.neuerKnoten(std::move(n));
         baender.push_back(static_cast<std::size_t>(std::find(genutzt.begin(), genutzt.end(), k.gruppe) - genutzt.begin()));
     }
-    for (const DatenflussKante& e : diagramm.kanten)
+    for (const auto& e : diagramm.kanten)
     {
         std::string text = e.text;
         if (optionen.maxZeilenLaenge != 0 && text.size() > optionen.maxZeilenLaenge) text.resize(optionen.maxZeilenLaenge);
         fluss.verbinde(e.von, e.nach, text);
     }
-    return ordneFluss(fluss, optionen, baender, {}, bandBreite, bandGruppe);
+    return ordneFluss(fluss, optionen, baender, {}, bandBreite, bandGruppe, bandKette);
+}
+
+}  // namespace
+
+FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    // die Gruppe: der Rahmen der Funktion (ein oberster Rahmen mit Rahmen darin); Stages ohne ihn teilen eine
+    return ordneGerahmt(
+        diagramm, optionen,
+        [&](std::size_t r, std::size_t o) -> std::size_t {
+            const bool behaelter = std::any_of(diagramm.rahmen.begin(), diagramm.rahmen.end(),
+                                               [&](const DatenflussRahmen& x) { return x.eltern == o; });
+            return behaelter || o != r ? o : diagramm.rahmen.size();
+        },
+        false);
+}
+
+FlussAnordnung ordneAn(const Plandiagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    // die Gruppe: die aeusserste Unterabfrage, sonst der Plan selbst — seine Stages stehen untereinander, wo sie
+    // keine Schicht teilen, nicht je Stage nebeneinander. Mit Ketten: eine Stage umfasst ihre Codegen-Stufen, eine
+    // innere Unterabfrage ihre Stages.
+    return ordneGerahmt(
+        diagramm, optionen,
+        [&](std::size_t r, std::size_t) -> std::size_t {
+            std::size_t gruppe = diagramm.rahmen.size();
+            for (; r != kKeine; r = diagramm.rahmen[r].eltern)
+                if (diagramm.rahmen[r].art == PlanRahmenArt::Unterabfrage) gruppe = r;
+            return gruppe;
+        },
+        true);
 }
 
 // ---------------------------------------------------------------------------

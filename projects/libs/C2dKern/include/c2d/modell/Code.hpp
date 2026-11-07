@@ -525,6 +525,63 @@ struct Aufhebung
     int zeile = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Spark: ein Plan aus `explain()` (Spark Schicht 2, Entscheide P2-1 bis P2-4) — der Text, wie Spark ihn schreibt,
+// als Baum; was die Operatoren bedeuten, weiss erst die Ableitung (diagramm/Plan.hpp)
+// ---------------------------------------------------------------------------
+
+/// Ein Operator eines Plans, eine Zeile des Baums.
+struct PlanOperator
+{
+    std::string name;       ///< das erste Wort: `BroadcastHashJoin`, `Scan`, `Exchange`, `'Project`
+    std::string argumente;  ///< was im Baum dahinter steht (`Inner BuildRight`, `hashpartitioning(k#1, 200), …`)
+    int nummer = 0;         ///< `(n)` in `formatted`; 0 = keine
+    /// Die Stufe von WholeStageCodegen, in der er laeuft (`*(3)`, `[codegen id : 3]`, `WholeStageCodegen (3)`);
+    /// 0 = keine; -1 = ja, ohne Kennung (`*Project`).
+    int codegen = 0;
+    /// Worauf er sich bezieht: `#3` (simplified) bzw. die Nummer aus `Reuses operator id: 49`; leer = nichts.
+    std::string verweis;
+    std::vector<std::pair<std::string, std::string>> angaben;  ///< `formatted`: `Output [3]`, `Condition`, `Arguments` …
+    std::vector<std::size_t> kinder;  ///< in der Reihenfolge des Texts (links vor rechts)
+    /// Ein inneres Kind seines Eltern (`:  +- Subquery …` zwei Stufen tiefer): eine Unterabfrage in dessen Ausdruck.
+    bool innen = false;
+    int zeile = 0;  ///< im Text des Plans (der Datei, der Ausgabe)
+};
+
+/// Eine Unterabfrage aus dem Abschnitt `===== Subqueries =====` (`formatted`): ihr Baum haengt an einem Operator.
+struct PlanUnterabfrage
+{
+    int nummer = 0;                   ///< `Subquery:1`
+    int gastgeber = 0;                ///< `Hosting operator id = 4` (PlanOperator::nummer)
+    std::string ausdruck;             ///< `Hosting Expression = …`
+    std::size_t wurzel = kKeinBlock;  ///< ihr Baum (Stelle in Planbaum::operatoren); kKeinBlock = ohne eigenen Baum
+    int zeile = 0;
+};
+
+/// Ein Abschnitt eines Plans: `Physical Plan`, `Optimized Logical Plan` …
+struct Planbaum
+{
+    std::string art;  ///< wie in `== … ==`; ohne Kopf (simplified) `Physical Plan`
+    std::vector<PlanOperator> operatoren;  ///< [0] ist die Wurzel; dahinter die Wurzeln der Unterabfragen
+    std::vector<PlanUnterabfrage> unterabfragen;
+    int zeile = 0;  ///< der Kopf `== … ==` bzw. die erste Zeile
+};
+
+struct Plan
+{
+    std::string name;  ///< vom Projekt: `funktion@zeile`, `<cell 3>@zeile`, der Dateiname, `datei@zeile`
+    /// `simple`, `extended`, `formatted`, `simplified` (der Baum aus Einrueckung, wie Sparks Pruefdateien),
+    /// `cost`, `codegen`
+    std::string modus;
+    std::vector<Planbaum> baeume;  ///< in der Reihenfolge des Texts
+    bool adaptiv = false;          ///< `AdaptiveSparkPlan`
+    bool endgueltig = false;       ///< dann `isFinalPlan=true`: gezeigt ist der endgueltige
+    int zeile = 0;                 ///< seine erste Zeile im Text
+    /// Steht er in der Ausgabe einer Zelle: die Zeile des `explain()`, zu dem er gehoert, im Text der Datei;
+    /// 0 = er steht in der Datei selbst (dann sind die Zeilen der Operatoren Zeilen der Datei).
+    int aufruf = 0;
+};
+
 /// Eine Uebersetzungseinheit: eine Quelldatei.
 struct Einheit
 {
@@ -543,6 +600,8 @@ struct Einheit
     std::vector<Zugriff> zugriffe;
     /// SQL: jede Abfrage der Datei, in der Reihenfolge der Quelle (auch in Views und Routinen).
     std::vector<Abfrage> abfragen;
+    /// Spark: die Plaene aus `explain()` — einer Plan-Datei oder der Ausgaben eines Notebooks.
+    std::vector<Plan> plaene;
 };
 
 // ---------------------------------------------------------------------------

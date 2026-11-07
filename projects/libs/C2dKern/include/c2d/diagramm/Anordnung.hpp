@@ -23,6 +23,7 @@
 #include "c2d/diagramm/ErDiagramm.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
+#include "c2d/diagramm/Plan.hpp"
 #include "c2d/diagramm/Schaltstellen.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
@@ -293,6 +294,10 @@ inline constexpr std::size_t kAtomZeichen = 30;
 /// Ein Datenfluss ordnet sich wie eine Abfrage: je Knoten ein Knoten (texte(): Stereotyp, Titel, Zeilen), je
 /// Kante eine Kante, je Rahmen (Stage, Funktion) eine Gruppe; je oberster Rahmen ein Band.
 [[nodiscard]] FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOptionen& optionen = {});
+
+/// Ein Plan ordnet sich wie ein Datenfluss (texte(), je Rahmen eine Gruppe, je innerster Rahmen ein Band); eine
+/// Gruppe sind die Baender einer Unterabfrage bzw. des Plans selbst.
+[[nodiscard]] FlussAnordnung ordneAn(const Plandiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// Wie viele Zeichen des Titels in den Rahmen `rahmen` passen (mindestens ein
 /// paar): wer zeichnet, kuerzt ihn darauf — ganz steht er in der Legende.

@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages), Physical plan (Spark: explain()) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg; Notebooks (`.ipynb`, Databricks) je Zelle | |
@@ -408,6 +408,29 @@ Tabelle in `diagramm/Datenfluss.cpp`:
   eine Funktion, Zelle; eine Zelle zeigt, was sie aus früheren liest. Klick → Stelle; Doppelklick: Tabelle → Data
   types, «sql» → Abfrage, UDF oder `map(f)` → Ablauf, «call» → Datenfluss der Funktion. Beispiel
   `beispiele/spark/lager_spark.py`.
+- Der Knoten vor einem `explain()`, dessen Plan in der Ausgabe der Zelle steht, trägt `plan: <name>`; ein
+  Doppelklick führt zum Plan.
+
+**Physical plan (Spark, Diagram *Physical plan*)** — der Text von `explain()`, gelesen von `sprache/plan/Plan.cpp`
+(eine Sprache ohne Lexer, Zeile für Zeile), gedeutet von `diagramm/Plan.cpp` (die Tabelle von Spark):
+- **Quellen:** eine Textdatei (`.txt`, `.out`), in der ein Kopf `== Physical Plan ==` u. ä. am Zeilenanfang steht
+  oder die der eingerückte Baum aus Sparks Prüfdateien ist (`simplified.txt`); sonst liest das Projekt sie nicht.
+  Und die Ausgaben der Code-Zellen eines `.ipynb` (stream, `text/plain`, aus Databricks exportiert `text/html`
+  mit `ansiout`): ein Plan gehört der Reihe nach zum `explain()` seiner Zelle (Hinweis bei ungleicher Zahl).
+- **Formen von explain():** der Baum (`+-`, `:-`, `*(n)`), `formatted` (`(n) Name [codegen id : k]` mit den Angaben,
+  `===== Subqueries =====`), `extended` (die logischen Pläne wählbar), AQE (der endgültige, wenn er dasteht);
+  `cost` ohne Statistik, `codegen` nicht (Hinweis).
+- **Namen:** `funktion@zeile` bzw. `<cell n>@zeile` nach dem `explain()`, in einer Datei ihr Name (mehrere:
+  `datei@zeile`).
+- **Knoten in Datenrichtung:** Scan (Tabelle, Spalten, Ort, Filter), Exchange «shuffle» (Partitionierung und Zahl),
+  BroadcastExchange «broadcast», Join (Art, Schlüssel `links = rechts`, `build: right`, die Kante der
+  Broadcast-Seite heißt `build`), Aggregat (Schlüssel, Funktionen), Filter, Project, Sort, Limit; die Kennungen der
+  Attribute (`key#12`) fallen weg. Rahmen je Unterabfrage, Stage (ein Exchange beendet die Stage, die in ihn
+  schreibt) und WholeStageCodegen-Stufe. Eine Unterabfrage führt gestrichelt in ihren Gastgeber, eine
+  Wiederverwendung (`ReusedExchange`, `ReusedSubquery`) gepunktet `reuses`.
+- **Ansicht:** Klick → in einer Plan-Datei die Zeile des Operators, aus einer Ausgabe das `explain()` (die Zeile der
+  Ausgabe in der Statuszeile). Beispiele `beispiele/spark/lager_plaene.txt`, `beispiele/notebooks/lager_explain.ipynb`;
+  eigene Pläne in jedem Modus erzeugt `beispiele/spark/plaene_aufnehmen.py`.
 
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
@@ -679,6 +702,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--datenfluss` zeichnet den **Datenfluss (Spark)** der Datei (im Projekt mit `--datei`), `--datenfluss bericht`
   oder `--datenfluss "<cell 3>"` den einer Funktion oder Zelle (wie `--liste` sie als `dataflow` nennt); Hinweise
   (`recomputed by …`, ein Parameter, der nicht verfolgt wird) auf stderr; csv sagt ab.
+- `--plan` zeichnet einen **Plan von Spark** (wie `--liste` ihn als `plan` nennt; ohne Namen den ersten der Datei,
+  im Projekt mit `--datei`), `--abschnitt optimized|analyzed|parsed` einen logischen; Hinweise auf stderr; csv sagt ab.
 - `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
   ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
   rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
@@ -923,7 +948,10 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
-- **Notebooks:** die Ausgaben der Zellen (auch `explain()`) werden nicht gelesen; `%run` wird nicht
+- **Physical plan:** kein Operator ist einem Knoten des Datenflusses zugeordnet (P2-2); die Stages sind aus den
+  Exchanges gezählt, nicht Sparks Nummern; welche Unterabfrage eine wiederverwendete meint, steht bei maskierten
+  Kennungen (`#x`, Sparks sql-tests) nicht im Text (Hinweis); ein Operator führt per Doppelklick nirgends hin.
+- **Notebooks:** von den Ausgaben der Zellen werden nur die Pläne von `explain()` gelesen; `%run` wird nicht
   verfolgt; eine SQL-Zelle hat als `<cell n>` keinen Ablauf (nur Zugriffe und Abfragen); dass Zellen in
   anderer Reihenfolge laufen können als im Notebook, sieht das Diagramm nicht. Eine Zeile mit `%` oder `!`
   vorn gilt als Magie, auch mitten in einem Ausdruck über mehrere Zeilen.

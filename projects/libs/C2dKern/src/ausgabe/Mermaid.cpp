@@ -548,6 +548,64 @@ public:
         return aus;
     }
 
+    /// Ein Plan als flowchart: je Rahmen (Unterabfrage, Stage, Codegen) ein subgraph; Scan Zylinder, Exchange
+    /// Sechseck (Broadcast gestrichelt), Unterabfrage mit doppelten Seiten, die Wurzel rund, wiederverwendet
+    /// gestrichelt; Fluss `-->`, Unterabfrage `-.->`, Wiederverwendung `-.->` gepunktet.
+    [[nodiscard]] std::string schreibe(const Plandiagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kommentar(d.titel);
+        aus += "flowchart ";
+        aus += optionen.richtung;
+        aus += '\n';
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const PlanKnoten& k = d.knoten[i];
+            std::string text;
+            const auto dazu = [&](const std::string& t) { text += (text.empty() ? "" : "<br>") + t; };
+            if (const std::string_view s = stereotyp(k.art); !s.empty()) dazu("<i>" + maskiere(std::string(s)) + "</i>");
+            dazu("<b>" + maskiere(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</b>");
+            for (const std::string& z : k.zeilen) dazu(maskiere(kuerze(z, optionen.maxZeilenLaenge)));
+            std::string_view auf = "[", zu = "]";
+            switch (k.art)
+            {
+                case PlanKnotenArt::Scan: auf = "[("; zu = ")]"; break;
+                case PlanKnotenArt::Exchange:
+                case PlanKnotenArt::Broadcast: auf = "{{"; zu = "}}"; break;
+                case PlanKnotenArt::Unterabfrage: auf = "[["; zu = "]]"; break;
+                case PlanKnotenArt::Wurzel: auf = "("; zu = ")"; break;
+                default: break;
+            }
+            aus += einzug + "d" + std::to_string(i) + std::string(auf) + "\"" + text + "\"" + std::string(zu) + "\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph r" + std::to_string(r) + "[\"" + maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\"]\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "end\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        std::string gestrichelt;
+        for (std::size_t i = 0; i < d.knoten.size(); ++i)
+            if (d.knoten[i].art == PlanKnotenArt::Wiederverwendet || d.knoten[i].art == PlanKnotenArt::Broadcast)
+                gestrichelt += (gestrichelt.empty() ? "" : ",") + ("d" + std::to_string(i));
+        if (!gestrichelt.empty()) aus += "    classDef gestrichelt stroke-dasharray:6 4\n    class " + gestrichelt + " gestrichelt\n";
+        std::string gepunktet;
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+        {
+            const PlanKante& k = d.kanten[e];
+            aus += "    d" + std::to_string(k.von) + (k.art == PlanKantenArt::Fluss ? " -->" : " -.->");
+            if (!k.text.empty()) aus += "|\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"|";
+            aus += " d" + std::to_string(k.nach) + '\n';
+            if (k.art == PlanKantenArt::Wiederverwendung) gepunktet += (gepunktet.empty() ? "" : ",") + std::to_string(e);
+        }
+        if (!gepunktet.empty()) aus += "    linkStyle " + gepunktet + " stroke-dasharray:2 3\n";
+        return aus;
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         std::string aus = kommentar(graph.titel);

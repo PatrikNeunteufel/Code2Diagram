@@ -409,6 +409,20 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.datenflussKnoten().join(QStringLiteral(" | ")));
                      });
 
+    anbindung.aktion(QStringLiteral("plan_zeigen"),
+                     QStringLiteral("Shows a Spark plan from explain() (Diagram > Physical plan): by its name, and optionally "
+                                    "one of its logical plans"),
+                     QStringLiteral("name=<function@line | <cell n>@line | file name> (empty: the first), "
+                                    "abschnitt=physical|optimized|analyzed|parsed (empty: physical)"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         const QString abschnitt = st::argument(argumente, QStringLiteral("abschnitt"));
+                         if (!fenster.zeigePlan(name, abschnitt))
+                             return st::ungueltig(QStringLiteral("No plan '%1' %2 - there are: %3")
+                                                      .arg(name, abschnitt, fenster.plaene().join(QStringLiteral(", "))));
+                         return st::ok(fenster.planKnoten().join(QStringLiteral(" | ")));
+                     });
+
     anbindung.aktion(QStringLiteral("notation_waehlen"),
                      QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
                                     "columns are ellipses in Chen and (min,max)"),

@@ -160,6 +160,7 @@ struct Roh
     std::vector<std::string> ziele;
     std::string abfrage;
     std::string tabelle;
+    std::string plan;
     std::size_t bereich = 0;
     int job = 0;
     bool weg = false;  ///< in einen anderen zusammengefasst
@@ -753,6 +754,18 @@ private:
             }
             return w;
         }
+        if (n == "explain")
+        {
+            // der Plan aus der Ausgabe dieses explain() (P2-2): eine Zeile am Knoten, Doppelklick dorthin
+            if (m_u.planAn)
+                if (const std::string plan = m_u.planAn(m_zeile); !plan.empty())
+                    for (const std::size_t p : w.knoten)
+                    {
+                        k[p].zeilen.push_back("plan: " + plan);
+                        k[p].plan = plan;
+                    }
+            return {};
+        }
         if (in(kOhneKnoten, n)) return n == "unpersist" ? w : Wert{};
         if (in(kAktion, n) || (w.rdd && in(kAktionRdd, n)))
         {
@@ -970,6 +983,7 @@ void fasseZusammen(std::vector<Roh>& k, std::vector<RohKante>& e)
                 if (std::find(a.ziele.begin(), a.ziele.end(), z) == a.ziele.end()) a.ziele.push_back(z);
             a.cache = b.cache;
             a.rdd = b.rdd;
+            if (!b.plan.empty()) a.plan = b.plan;
             b.weg = true;
             e.erase(e.begin() + static_cast<std::ptrdiff_t>(i));
             for (RohKante& y : e)
@@ -1164,6 +1178,7 @@ Datenflussdiagramm datenflussVon(std::span<const DatenflussBereich> bereiche, bo
         n.ziele = r.ziele;
         n.abfrage = r.abfrage;
         n.tabelle = r.tabelle;
+        n.plan = r.plan;
         n.gruppe = inStage(i) ? rahmenDerStage(i) : bereichsRahmen[r.bereich];
         if (r.art == DatenflussKnotenArt::Aktion) ++d.jobs;
         neu[i] = d.knoten.size();

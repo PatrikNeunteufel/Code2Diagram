@@ -251,6 +251,21 @@ public:
 /// Begrenzern. Kein Praeprozessor; LeseOptionen gelten nicht.
 [[nodiscard]] const Sprache& sql();
 
+/// Ein Plan von Spark (Spark Schicht 2, Entscheid P2-3): eine Textdatei (`.txt`, `.out`), in der `explain()`
+/// steht — der Baum (`+-`, `:-`), `formatted` mit seinen Angaben und Unterabfragen, `extended` mit den
+/// logischen Plaenen, AQE (der endgueltige, wenn er dasteht), und der eingerueckte Baum ohne Kopf aus Sparks
+/// Pruefdateien (`simplified.txt`). Eine Datei ohne Plan liest das Projekt nicht (plantext). Je Plan ein
+/// modell::Plan in Einheit::plaene, benannt nach der Datei (mehrere: `datei@zeile`).
+[[nodiscard]] const Sprache& sparkPlan();
+
+/// Steht in dem Text ein Plan von Spark (ein Kopf `== Physical Plan ==` u. ae. am Zeilenanfang, oder er ist der
+/// eingerueckte Baum ohne Kopf)?
+[[nodiscard]] bool plantext(std::string_view text);
+
+/// Die Plaene mit Kopf in einem Text (der Ausgabe einer Zelle, Entscheid P2-3), in seiner Reihenfolge, noch ohne
+/// Namen; Zeilen und Meldungen im Text.
+[[nodiscard]] std::vector<modell::Plan> liesPlaene(std::string_view text, std::vector<quelle::Meldung>& meldungen);
+
 /// Die Dialekte von SQL, wie LeseOptionen::dialekt und die Projektdatei (`"sql"`) sie nennen: `sqlite`,
 /// `postgres`, `duckdb`, `spark`, `mysql`, `tsql`.
 [[nodiscard]] std::span<const std::string_view> sqlDialekte();

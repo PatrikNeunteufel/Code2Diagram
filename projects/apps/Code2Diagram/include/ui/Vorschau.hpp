@@ -55,6 +55,9 @@ public:
     /// Ein Datenfluss (Spark); ein Knoten ist fuer Klick, Doppelklick, Kontextmenue und markiere() wie ein
     /// Knoten des Flussdiagramms: seine Stelle in Datenflussdiagramm::knoten.
     void zeige(const c2d::diagramm::Datenflussdiagramm& diagramm, bool nachRechts);
+    /// Ein Plan von Spark; ein Knoten ist fuer Klick, Doppelklick, Kontextmenue und markiere() wie ein Knoten
+    /// des Flussdiagramms: seine Stelle in Plandiagramm::knoten.
+    void zeige(const c2d::diagramm::Plandiagramm& diagramm, bool nachRechts);
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
     void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},

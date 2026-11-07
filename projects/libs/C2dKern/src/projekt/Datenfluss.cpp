@@ -59,6 +59,11 @@ DatenflussUmfeld umfeld(const Projekt& p, std::size_t datei, const std::shared_p
             if (q.zeile >= von && q.zeile <= bis) return &q;
         return nullptr;
     };
+    u.planAn = [&d](int zeile) -> std::string {
+        for (const modell::Plan& p : d.ergebnis.einheit.plaene)
+            if (p.aufruf == zeile) return p.name;
+        return {};
+    };
     return u;
 }
 

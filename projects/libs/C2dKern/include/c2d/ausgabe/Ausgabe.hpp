@@ -17,6 +17,7 @@
 #include "c2d/diagramm/Datenfluss.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
 #include "c2d/diagramm/Flussdiagramm.hpp"
+#include "c2d/diagramm/Plan.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
@@ -58,6 +59,7 @@ enum class Diagrammart
     Abhaengigkeiten,  ///< die Abhaengigkeiten der Daten, im Modell des Aufrufgraphen
     Abfrage,          ///< eine SQL-Abfrage: Quellen, Joins, Ergebnis, Unterabfragen in Rahmen
     Datenfluss,       ///< Spark: Quellen, Schritte, Shuffles, Aktionen (Jobs), Stages in Rahmen
+    Plan,             ///< Spark: der Plan aus explain() — Operatoren, Exchanges, Stages und Codegen in Rahmen
 };
 
 /// Wie die Diagrammart heisst, wo sie gemeldet wird: `Flowchart`, `Truth table` ...
@@ -88,6 +90,7 @@ public:
     [[nodiscard]] virtual std::string schreibe(const diagramm::Struktogramm& diagramm, const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Abfragediagramm& diagramm, const Optionen& optionen) const = 0;
     [[nodiscard]] virtual std::string schreibe(const diagramm::Datenflussdiagramm& diagramm, const Optionen& optionen) const = 0;
+    [[nodiscard]] virtual std::string schreibe(const diagramm::Plandiagramm& diagramm, const Optionen& optionen) const = 0;
     /// Eine oder mehrere Wahrheitstabellen, untereinander.
     [[nodiscard]] virtual std::string schreibe(std::span<const diagramm::Wahrheitstabelle> tabellen,
                                                const Optionen& optionen) const = 0;

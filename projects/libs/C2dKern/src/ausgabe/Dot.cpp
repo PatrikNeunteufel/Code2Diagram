@@ -353,6 +353,59 @@ public:
         return aus + "}\n";
     }
 
+    /// Ein Plan: je Rahmen ein cluster, HTML-Label (Stereotyp kursiv, Titel fett, Zeilen links); Scan Zylinder,
+    /// Exchange Sechseck (Broadcast gestrichelt), Unterabfrage doppelt umrandet, die Wurzel rund getoent,
+    /// wiederverwendet gestrichelt; Unterabfrage-Kanten gestrichelt, Wiederverwendung gepunktet.
+    [[nodiscard]] std::string schreibe(const Plandiagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kopf(d.titel, optionen);
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const PlanKnoten& k = d.knoten[i];
+            std::string label;
+            const auto dazu = [&](const std::string& t) { label += (label.empty() ? "" : "<BR ALIGN=\"LEFT\"/>") + t; };
+            if (const std::string_view s = stereotyp(k.art); !s.empty()) dazu("<I>" + htmlText(std::string(s)) + "</I>");
+            dazu("<B>" + htmlText(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</B>");
+            for (const std::string& z : k.zeilen) dazu(htmlText(kuerze(z, optionen.maxZeilenLaenge)));
+            label += "<BR ALIGN=\"LEFT\"/>";
+            std::string form = "shape=box";
+            switch (k.art)
+            {
+                case PlanKnotenArt::Scan: form = "shape=cylinder"; break;
+                case PlanKnotenArt::Exchange: form = "shape=hexagon"; break;
+                case PlanKnotenArt::Broadcast: form = "shape=hexagon, style=dashed"; break;
+                case PlanKnotenArt::Wiederverwendet: form = "shape=box, style=dashed"; break;
+                case PlanKnotenArt::Unterabfrage: form = "shape=box, peripheries=2"; break;
+                case PlanKnotenArt::Wurzel:
+                    form = "shape=box, style=\"rounded,filled\", fillcolor=\"" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + "\"";
+                    break;
+                default: break;
+            }
+            aus += einzug + "d" + std::to_string(i) + " [" + form + ", label=<" + label + ">];\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph cluster_" + std::to_string(r) + " {\n" + einzug + "    style=dashed; label=\"" +
+                       maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\";\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "}\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        for (const PlanKante& k : d.kanten)
+        {
+            aus += "    d" + std::to_string(k.von) + " -> d" + std::to_string(k.nach) + " [arrowhead=normal";
+            if (k.art == PlanKantenArt::Unterabfrage) aus += ", style=dashed";
+            if (k.art == PlanKantenArt::Wiederverwendung) aus += ", style=dotted";
+            if (!k.text.empty()) aus += ", label=\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"";
+            aus += "];\n";
+        }
+        return aus + "}\n";
+    }
+
     /// Text in einem HTML-Label: `<`, `>`, `&`, `"` maskiert, Zeilenwechsel als Leerzeichen.
     [[nodiscard]] static std::string htmlText(std::string_view text)
     {

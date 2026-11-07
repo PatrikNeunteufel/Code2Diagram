@@ -7,6 +7,7 @@
 //                                            [--ohne-fremde]]
 //                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
 //                             [--abfrage [<name>|<zeile>]] [--datenfluss [<funktion>]]
+//                             [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
@@ -40,7 +41,11 @@
 //   --datenfluss   Spark: der Datenfluss dieser Funktion oder Zelle (`<cell 3>`) — Quellen, Schritte,
 //                  Shuffles, Jobs, Stages; ohne Namen der ganzen Datei (im Projekt: --datei);
 //                  Hinweise auf stderr; --liste nennt sie "dataflow"
-//   --tiefe n      so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
+//   --plan         Spark: der Plan aus explain() mit diesem Namen (`funktion@zeile`, `<cell 3>@zeile`, der
+//                  Dateiname, `datei@zeile`) — Operatoren, Exchanges, Stages und Codegen in Rahmen; ohne Namen
+//                  der erste der Datei (im Projekt: --datei); --liste nennt sie "plan"
+//   --abschnitt    mit --plan: physical (Vorgabe), optimized, analyzed, parsed (explain(extended))
+//   --tiefe n     so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
 //   --hoechstens n hoechstens so viele Funktionen (Vorgabe 300), 0 = unbegrenzt
 //   --aufrufer     wer die Funktion ruft, statt was sie ruft; --beide: beides
 //   --ohne-fremde  Aufrufe ohne Funktion im Projekt (Bibliothek, Makro) weglassen
@@ -106,6 +111,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace
@@ -140,6 +146,7 @@ int aufruf()
                  "                         [--schaltet <name>] [--schalter] [--breite]\n"
                  "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
                  "                         [--datenfluss [<function>]]\n"
+                 "                         [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -215,6 +222,17 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
                   << " stages" << (fluss.hinweise.empty() ? std::string() : ", " + std::to_string(fluss.hinweise.size()) + " notes")
                   << ")\n";
     }
+    // ein Plan von Spark (Schicht 2): je explain() in einer Ausgabe bzw. je Plan einer Plan-Datei
+    for (const c2d::modell::Plan& plan : einheit.plaene)
+    {
+        const c2d::diagramm::Plandiagramm d = c2d::diagramm::planVon(plan);
+        std::string abschnitte;
+        for (const c2d::modell::Planbaum& b : plan.baeume) abschnitte += (abschnitte.empty() ? "" : ", ") + c2d::diagramm::kurzname(b);
+        std::cout << "plan      " << plan.name << " (" << plan.modus << ": " << abschnitte << "; " << d.knoten.size()
+                  << " operators, " << d.stages << " stages"
+                  << (plan.adaptiv ? plan.endgueltig ? ", adaptive final" : ", adaptive" : "")
+                  << (d.hinweise.empty() ? std::string() : ", " + std::to_string(d.hinweise.size()) + " notes") << ")\n";
+    }
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)
         std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';
@@ -248,6 +266,45 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
                   << " columns)\n";
 }
 
+/// Wie viele Rahmen einen Knoten oder Rahmen umfassen, der nicht in ihnen steht (Datenfluss, Plan: die Rahmen
+/// kennen ihre Eltern, die Knoten ihren innersten Rahmen).
+template <typename Diagramm>
+std::size_t ueberdeckungen(const Diagramm& d, const c2d::diagramm::FlussAnordnung& a, std::string& erste)
+{
+    const auto schneidet = [](const c2d::diagramm::Rechteck& f, const c2d::diagramm::Rechteck& x) {
+        return x.x < f.x + f.breite && x.x + x.breite > f.x && x.y < f.y + f.hoehe && x.y + x.hoehe > f.y;
+    };
+    const auto vorfahr = [&](std::size_t oben, std::size_t r) {
+        for (; r != c2d::projekt::kKeine; r = d.rahmen[r].eltern)
+            if (r == oben) return true;
+        return false;
+    };
+    std::size_t aus = 0;
+    for (std::size_t g = 0; g < d.rahmen.size() && g < a.gruppen.size(); ++g)
+    {
+        for (std::size_t k = 0; k < d.knoten.size() && k < a.knoten.size(); ++k)
+            if (!vorfahr(g, d.knoten[k].gruppe) && !(d.knoten[k].gruppe != c2d::projekt::kKeine && vorfahr(d.knoten[k].gruppe, g)) &&
+                schneidet(a.gruppen[g], a.knoten[k]))
+            {
+                if (aus++ == 0) erste = "'" + d.rahmen[g].titel + "' over node '" + d.knoten[k].titel + "'";
+            }
+        for (std::size_t h = g + 1; h < d.rahmen.size() && h < a.gruppen.size(); ++h)
+            if (!vorfahr(g, h) && !vorfahr(h, g) && schneidet(a.gruppen[g], a.gruppen[h]))
+            {
+                if (aus++ == 0)
+                {
+                    const auto r = [](const c2d::diagramm::Rechteck& x) {
+                        return "[" + std::to_string(static_cast<int>(x.x)) + "," + std::to_string(static_cast<int>(x.y)) + " " +
+                               std::to_string(static_cast<int>(x.breite)) + "x" + std::to_string(static_cast<int>(x.hoehe)) + "]";
+                    };
+                    erste = "'" + d.rahmen[g].titel + "' " + r(a.gruppen[g]) + " over frame '" + d.rahmen[h].titel + "' " +
+                            r(a.gruppen[h]);
+                }
+            }
+    }
+    return aus;
+}
+
 /// Passt der Name auf den Automaten: die Variable, ihr letztes Glied, oder der Titel?
 bool istAutomat(const c2d::diagramm::Zustandsdiagramm& z, const std::string& name)
 {
@@ -273,6 +330,9 @@ int main(int argc, char* argv[])
     std::string abfrageName;  // --abfrage <name>|<zeile>
     bool datenfluss = false;
     std::string flussName;  // --datenfluss <funktion>
+    bool plan = false;
+    std::string planName;   // --plan <name>
+    std::string abschnitt;  // --abschnitt physical|optimized|analyzed|parsed
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
     c2d::diagramm::ErNotation notation = c2d::diagramm::ErNotation::Tabellen;  // --notation (Entscheid N5)
@@ -351,6 +411,18 @@ int main(int argc, char* argv[])
             datenfluss = true;
             // der Name der Funktion (oder Zelle) darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') flussName = argv[++i];
+        }
+        else if (a == "--plan")
+        {
+            plan = true;
+            // der Name darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') planName = argv[++i];
+        }
+        else if (a == "--abschnitt")
+        {
+            abschnitt = wert();
+            if (abschnitt != "physical" && abschnitt != "optimized" && abschnitt != "analyzed" && abschnitt != "parsed") return aufruf();
+            plan = true;
         }
         else if (a == "--abhaengigkeiten")
         {
@@ -476,7 +548,7 @@ int main(int argc, char* argv[])
     if (breite)
     {
         using namespace c2d::diagramm;
-        std::size_t geprueft = 0, zuBreit = 0;
+        std::size_t geprueft = 0, zuBreit = 0, ueberdeckt = 0;
         double hoechstes = 0;
         std::string wo;
         for (std::size_t i = 0; i < p.dateien.size(); ++i)
@@ -492,6 +564,17 @@ int main(int argc, char* argv[])
                     const double v = querVerhaeltnis(a);
                     ++geprueft;
                     const std::string hier = vorn(p.dateien[i].pfad) + ": " + was + (nachRechts ? " LR" : " TD");
+                    // ein Rahmen um einen fremden Knoten (Datenfluss, Plan)
+                    using Art = std::decay_t<decltype(diagramm)>;
+                    if constexpr (std::is_same_v<Art, Datenflussdiagramm> || std::is_same_v<Art, Plandiagramm>)
+                    {
+                        std::string erste;
+                        if (const std::size_t n = ueberdeckungen(diagramm, a, erste); n > 0)
+                        {
+                            ++ueberdeckt;
+                            std::cout << hier << ": " << n << " frame(s) over a node or frame not in them, first " << erste << '\n';
+                        }
+                    }
                     if (v > hoechstes)
                     {
                         hoechstes = v;
@@ -517,12 +600,14 @@ int main(int argc, char* argv[])
                 pruefe(c2d::projekt::abfrageIn(p, i, q), "query " + einheit.abfragen[q].name);
             if (!c2d::projekt::datenfluesseIn(p, i).empty())
                 pruefe(c2d::projekt::datenflussIn(p, i, ""), "data flow of the file");
+            for (const c2d::modell::Plan& x : einheit.plaene) pruefe(planVon(x), "plan " + x.name);
         }
         std::cout << "checked " << geprueft << " layouts, " << zuBreit << " wider than x" << kHoechstesQuerVerhaeltnis
                   << " of their widest layer";
         if (geprueft > 0) std::cout << "; widest x" << std::fixed << std::setprecision(2) << hoechstes << " in " << wo;
+        if (ueberdeckt > 0) std::cout << "; " << ueberdeckt << " with a frame over a foreign node";
         std::cout << '\n';
-        return zuBreit > 0 ? 3 : 0;
+        return zuBreit > 0 || ueberdeckt > 0 ? 3 : 0;
     }
 
     // die konstanten Tabellen einer Datei
@@ -604,6 +689,36 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Datenfluss, fluss);
+    }
+
+    // --plan: ein Plan von Spark (Schicht 2, Entscheid P2-4) — nach Name, sonst der erste der Datei; --abschnitt
+    // waehlt einen logischen
+    if (plan)
+    {
+        const std::size_t d = gewaehlteDatei != c2d::projekt::kKeine ? gewaehlteDatei : 0;
+        const std::vector<c2d::modell::Plan>& plaene = p.dateien[d].ergebnis.einheit.plaene;
+        const auto x = std::find_if(plaene.begin(), plaene.end(),
+                                    [&](const c2d::modell::Plan& y) { return planName.empty() || y.name == planName; });
+        if (x == plaene.end())
+        {
+            std::cerr << "c2d: no Spark plan" << (planName.empty() ? std::string() : " '" + planName + "'") << " in "
+                      << vorn(p.dateien[d].pfad) << " - see --liste (plan)\n";
+            return 1;
+        }
+        std::size_t baum = c2d::projekt::kKeine;
+        if (!abschnitt.empty())
+        {
+            for (std::size_t b = 0; b < x->baeume.size(); ++b)
+                if (c2d::diagramm::kurzname(x->baeume[b]) == abschnitt) baum = b;
+            if (baum == c2d::projekt::kKeine)
+            {
+                std::cerr << "c2d: the plan '" << x->name << "' has no " << abschnitt << " plan\n";
+                return 1;
+            }
+        }
+        const c2d::diagramm::Plandiagramm d2 = c2d::diagramm::planVon(*x, baum);
+        for (const std::string& h : d2.hinweise) std::cerr << vorn(p.dateien[d].pfad) << ": " << x->name << ": " << h << '\n';
+        return schreibe(c2d::ausgabe::Diagrammart::Plan, d2);
     }
 
     // --abfrage: das Diagramm einer Abfrage (Entscheid Q5) — nach Name, nach Zeile, sonst die erste der Datei

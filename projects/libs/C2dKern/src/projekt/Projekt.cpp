@@ -510,6 +510,77 @@ void ordneZellenZu(modell::Einheit& e, const std::vector<Zelle>& zellen)
                      [](const modell::Typ& a, const modell::Typ& b) { return a.zeile < b.zeile; });
 }
 
+/// Die `explain()` in einer Anweisung und allem darunter: je eins seine Zeile.
+void sammleExplain(const modell::Anweisung& a, std::vector<int>& zeilen)
+{
+    for (const modell::Aufrufkette& k : a.ketten)
+        for (const modell::Kettenglied& g : k.glieder)
+            if (g.aufruf && g.name == "explain")
+            {
+                zeilen.push_back(k.zeile > 0 ? k.zeile : a.zeile);
+                break;
+            }
+    for (const modell::AnweisungPtr& k : a.kinder)
+        if (k) sammleExplain(*k, zeilen);
+    if (a.sonst) sammleExplain(*a.sonst, zeilen);
+}
+
+/// Die Plaene in den Ausgaben eines Notebooks (Entscheid P2-3): je Zelle der Reihe nach zu ihren `explain()`,
+/// benannt `funktion@zeile` nach dem explain (P2-4). Ungleiche Zahl: ein Hinweis; ein Plan ohne explain heisst
+/// `<cell n>@output:m` (m: seine Zeile in der Ausgabe). Meldungen ueber den Text einer Ausgabe stehen am Kopf der
+/// Zelle.
+void ordnePlaeneZu(sprache::Ergebnis& e, const Notebook& notebook, std::string_view text)
+{
+    if (notebook.ausgaben.empty()) return;
+    struct Explain
+    {
+        int zeile;
+        std::string funktion;
+    };
+    std::vector<Explain> explains;
+    for (const modell::Funktion& f : e.einheit.funktionen)
+    {
+        if (!f.rumpf) continue;
+        std::vector<int> zeilen;
+        sammleExplain(*f.rumpf, zeilen);
+        for (const int z : zeilen) explains.push_back({z, f.vollerName()});
+    }
+    std::sort(explains.begin(), explains.end(), [](const Explain& a, const Explain& b) { return a.zeile < b.zeile; });
+    const Zeilen zeilen(text);
+    for (const ZellAusgabe& a : notebook.ausgaben)
+    {
+        const Zelle& z = notebook.zellen[a.zelle];
+        const quelle::Position kopf = zeilen.ort(zeilen.anfang(z.kopf > 0 ? z.kopf : z.zeile));
+        std::vector<Meldung> meldungen;
+        std::vector<modell::Plan> plaene = sprache::liesPlaene(a.text, meldungen);
+        for (Meldung& m : meldungen)
+            e.meldungen.push_back({m.schwere, kopf, "output, line " + std::to_string(m.ort.zeile) + ": " + m.text});
+        if (plaene.empty()) continue;
+        std::vector<const Explain*> hier;
+        for (const Explain& x : explains)
+            if (x.zeile >= z.zeile && x.zeile <= z.bisZeile) hier.push_back(&x);
+        if (hier.size() != plaene.size())
+            e.meldungen.push_back({Schwere::Hinweis, kopf,
+                                   std::to_string(plaene.size()) + " plan(s) in the output, " + std::to_string(hier.size()) +
+                                       " explain() in the cell - matched in order"});
+        for (std::size_t i = 0; i < plaene.size(); ++i)
+        {
+            modell::Plan& p = plaene[i];
+            if (i < hier.size())
+            {
+                p.name = hier[i]->funktion + "@" + std::to_string(hier[i]->zeile);
+                p.aufruf = hier[i]->zeile;
+            }
+            else
+            {
+                p.name = zellenName(a.zelle + 1) + "@output:" + std::to_string(p.zeile);
+                p.aufruf = z.zeile;
+            }
+            e.einheit.plaene.push_back(std::move(p));
+        }
+    }
+}
+
 /// Liest eine Datei: ein Notebook (`notebook`) in seiner Sprache und je fremde Zelle in deren (N3).
 sprache::Ergebnis liesEinheit(const Datei& d, const Notebook* notebook, const std::string& name,
                               const std::vector<sprache::Definition>& definitionen, const ProjektOptionen& optionen,
@@ -541,6 +612,9 @@ sprache::Ergebnis liesEinheit(const Datei& d, const Notebook* notebook, const st
     std::stable_sort(e.meldungen.begin(), e.meldungen.end(),
                      [](const Meldung& a, const Meldung& b) { return a.ort.versatz < b.ort.versatz; });
     ordneZellenZu(e.einheit, notebook->zellen);
+    ordnePlaeneZu(e, *notebook, d.text);
+    std::stable_sort(e.meldungen.begin(), e.meldungen.end(),
+                     [](const Meldung& a, const Meldung& b) { return a.ort.versatz < b.ort.versatz; });
     return e;
 }
 
@@ -637,6 +711,8 @@ public:
                 continue;
             }
             d.sprache = sprache::spracheFuer(name, d.text);  // ein Notebook bekommt sie in liesAlle
+            // eine Textdatei ist nur ein Plan von Spark, wenn einer darin steht (Entscheid P2-3)
+            if (d.sprache == &sprache::sparkPlan() && !sprache::plantext(d.text)) continue;
             m_p.dateien.push_back(std::move(d));
         }
     }

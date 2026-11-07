@@ -1177,6 +1177,56 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("Data flow is not available in csv"));
     }
 
+    TEST_CASE("Physical plan: aus einer Plan-Datei und aus der Ausgabe einer Zelle, Klick, logischer Abschnitt, Back")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("== Physical Plan ==\n"                                     // 1
+                      "* Sort (4)\n"                                              // 2
+                      "+- Exchange (3)\n"                                         // 3
+                      "   +- * ColumnarToRow (2)\n"                               // 4
+                      "      +- Scan parquet spark_catalog.default.t (1)\n"       // 5
+                      "\n\n"
+                      "(3) Exchange\n"
+                      "Input [1]: [key#1]\n"
+                      "Arguments: rangepartitioning(key#1 ASC NULLS FIRST, 200), ENSURE_REQUIREMENTS, [plan_id=1]\n",
+                      "plan.txt");
+        CHECK(fenster.diagramme().contains("plan"));
+        CHECK(fenster.plaene() == QStringList{"plan.txt"});
+        REQUIRE(fenster.zeigePlan());
+        CHECK(fenster.diagramm() == "plan");
+        CHECK(fenster.planKnoten() == QStringList{"Sort (4)", "Exchange (3)", "ColumnarToRow (2)", "Scan parquet (1)"});
+        CHECK(fenster.vorschauFormen() == 4);
+        REQUIRE(fenster.klicke("Exchange (3)"));
+        CHECK(fenster.gezeigteStelle() == "plan.txt:3");
+        CHECK_FALSE(fenster.zeigePlan("plan.txt", "optimized"));  // nur der physische
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().contains("partitions: 200"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("Physical plan is not available in csv"));
+
+        // ein Notebook: der Plan gehoert zum explain() seiner Zelle, ein Klick zeigt es; extended mit logischen
+        fenster.zeige(QStringLiteral(R"nb({"nbformat": 4, "nbformat_minor": 5,
+            "metadata": {"language_info": {"name": "python"}},
+            "cells": [{"cell_type": "code", "metadata": {}, "source": ["df = spark.read.parquet(\"x\")\n", "df.explain(True)"],
+                       "outputs": [{"output_type": "stream", "name": "stdout", "text": ["== Optimized Logical Plan ==\n",
+                       "Relation [a#1] parquet\n", "\n", "== Physical Plan ==\n", "*(1) ColumnarToRow\n",
+                       "+- FileScan parquet [a#1] Batched: true\n"]}]}]})nb"),
+                      QStringLiteral("n.ipynb"));
+        REQUIRE(fenster.plaene() == QStringList{"<cell 1>@3"});
+        REQUIRE(fenster.zeigePlan("<cell 1>@3"));
+        CHECK(fenster.planKnoten() == QStringList{"ColumnarToRow", "FileScan parquet"});
+        REQUIRE(fenster.klicke("FileScan parquet"));
+        CHECK(fenster.gezeigteStelle() == "n.ipynb:3 (cell 1, line 2)");
+        REQUIRE(fenster.zeigePlan("<cell 1>@3", "optimized"));
+        CHECK(fenster.planKnoten() == QStringList{"Relation"});
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.planKnoten() == QStringList{"ColumnarToRow", "FileScan parquet"});
+        // im Datenfluss traegt der Knoten vor dem explain() die Zeile plan:
+        REQUIRE(fenster.zeigeDatenfluss());
+        REQUIRE(fenster.waehleFormat("svg"));
+        CHECK(fenster.diagrammText().contains("plan: &lt;cell 1&gt;@3"));
+    }
+
     TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")
     {
         using namespace c2d::diagramm;

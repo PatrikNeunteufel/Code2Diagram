@@ -116,6 +116,43 @@ std::string textVon(const json::Wert* w)
     return aus;
 }
 
+/// Der Text einer Ausgabe in HTML, wie Databricks ihn exportiert (`<div class="ansiout">…</div>`): ohne Tags, die
+/// Entitaeten aufgeloest; leer = kein solcher Block.
+std::string ansiText(std::string_view html)
+{
+    constexpr std::string_view kAuf = "<div class=\"ansiout\">";
+    const std::size_t a = html.find(kAuf);
+    if (a == std::string_view::npos) return {};
+    std::string_view s = html.substr(a + kAuf.size());
+    s = s.substr(0, s.rfind("</div>"));
+    constexpr std::pair<std::string_view, char> kEntitaeten[] = {
+        {"&lt;", '<'}, {"&gt;", '>'}, {"&amp;", '&'}, {"&quot;", '"'}, {"&#39;", '\''}, {"&#x27;", '\''}, {"&nbsp;", ' '}};
+    std::string aus;
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        if (s[i] == '<')
+        {
+            const std::size_t zu = s.find('>', i);
+            if (zu == std::string_view::npos) break;
+            i = zu;
+            continue;
+        }
+        if (s[i] == '&')
+        {
+            const auto e = std::find_if(std::begin(kEntitaeten), std::end(kEntitaeten),
+                                        [&](const auto& x) { return s.substr(i).starts_with(x.first); });
+            if (e != std::end(kEntitaeten))
+            {
+                aus.push_back(e->second);
+                i += e->first.size() - 1;
+                continue;
+            }
+        }
+        aus.push_back(s[i]);
+    }
+    return aus;
+}
+
 /// Eine fremde Zelle, waehrend das Skript waechst: ihre Zeilen.
 struct FremdeZeilen
 {
@@ -250,6 +287,24 @@ std::optional<Notebook> ausIpynb(std::string_view text, Meldung& fehler)
             z.bisZeile = zeile;
             n.zellen.push_back(std::move(z));
             continue;
+        }
+
+        // die Ausgaben (Text: stream, text/plain; aus Databricks exportiert: text/html mit einem Block `ansiout`),
+        // aneinander — darin stehen die Plaene von explain() (P2-3)
+        if (const json::Wert* ausgaben = feld(&c, "outputs"); ausgaben != nullptr && ausgaben->art == json::Art::Liste)
+        {
+            ZellAusgabe a;
+            a.zelle = i;
+            for (const json::Wert& o : ausgaben->elemente)
+            {
+                const json::Wert* t = feld(&o, "text");
+                if (t == nullptr) t = feld(feld(&o, "data"), "text/plain");
+                std::string s = t != nullptr ? textVon(t) : ansiText(textVon(feld(feld(&o, "data"), "text/html")));
+                if (s.empty()) continue;
+                if (!a.text.empty() && a.text.back() != '\n') a.text.push_back('\n');
+                a.text += s;
+            }
+            if (!a.text.empty()) n.ausgaben.push_back(std::move(a));
         }
 
         // Zellmagie in der ersten Zeile: `%%sql` wechselt die Sprache, `%%time` nicht, `%%bash` liest niemand

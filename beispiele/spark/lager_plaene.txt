@@ -1,0 +1,149 @@
+-- Plaene von Spark zu lager_spark.py, in der Schreibweise von explain() (von Hand gesetzt, nach Sparks
+-- Pruefdateien tpcds-plan-stability und sql-tests): formatted mit Unterabfrage, extended, AQE endgueltig.
+
+-- explain(mode="formatted") von bestand.join(artikel, "nr").filter(menge > Durchschnitt).groupBy("lager")
+== Physical Plan ==
+* HashAggregate (10)
++- Exchange (9)
+   +- * HashAggregate (8)
+      +- * Project (7)
+         +- * BroadcastHashJoin Inner BuildRight (6)
+            :- * Filter (3)
+            :  +- * ColumnarToRow (2)
+            :     +- Scan parquet spark_catalog.lager.bestand (1)
+            +- BroadcastExchange (5)
+               +- * ColumnarToRow (4)
+                  +- Scan parquet spark_catalog.lager.artikel (11)
+
+
+(1) Scan parquet spark_catalog.lager.bestand
+Output [3]: [nr#1, lager#2, menge#3]
+Batched: true
+Location: InMemoryFileIndex [file:/daten/bestand]
+PushedFilters: [IsNotNull(menge), IsNotNull(nr)]
+ReadSchema: struct<nr:int,lager:string,menge:int>
+
+(2) ColumnarToRow [codegen id : 2]
+Input [3]: [nr#1, lager#2, menge#3]
+
+(3) Filter [codegen id : 2]
+Input [3]: [nr#1, lager#2, menge#3]
+Condition : ((isnotnull(menge#3) AND isnotnull(nr#1)) AND (cast(menge#3 as double) > Subquery scalar-subquery#20, [id=#5]))
+
+(4) ColumnarToRow [codegen id : 1]
+Input [2]: [nr#4, titel#5]
+
+(5) BroadcastExchange
+Input [2]: [nr#4, titel#5]
+Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, false] as bigint)),false), [plan_id=1]
+
+(6) BroadcastHashJoin [codegen id : 2]
+Left keys [1]: [nr#1]
+Right keys [1]: [nr#4]
+Join type: Inner
+Join condition: None
+
+(7) Project [codegen id : 2]
+Output [2]: [lager#2, menge#3]
+Input [5]: [nr#1, lager#2, menge#3, nr#4, titel#5]
+
+(8) HashAggregate [codegen id : 2]
+Input [2]: [lager#2, menge#3]
+Keys [1]: [lager#2]
+Functions [1]: [partial_sum(menge#3)]
+Aggregate Attributes [1]: [sum#6L]
+Results [2]: [lager#2, sum#7L]
+
+(9) Exchange
+Input [2]: [lager#2, sum#7L]
+Arguments: hashpartitioning(lager#2, 8), ENSURE_REQUIREMENTS, [plan_id=2]
+
+(10) HashAggregate [codegen id : 3]
+Input [2]: [lager#2, sum#7L]
+Keys [1]: [lager#2]
+Functions [1]: [sum(menge#3)]
+Aggregate Attributes [1]: [sum(menge#3)#8L]
+Results [2]: [lager#2, sum(menge#3)#8L AS summe#9L]
+
+(11) Scan parquet spark_catalog.lager.artikel
+Output [2]: [nr#4, titel#5]
+Batched: true
+Location: InMemoryFileIndex [file:/daten/artikel]
+PushedFilters: [IsNotNull(nr)]
+ReadSchema: struct<nr:int,titel:string>
+
+===== Subqueries =====
+
+Subquery:1 Hosting operator id = 3 Hosting Expression = Subquery scalar-subquery#20, [id=#5]
+* HashAggregate (15)
++- Exchange (14)
+   +- * HashAggregate (13)
+      +- Scan parquet spark_catalog.lager.bestand (12)
+
+
+(12) Scan parquet spark_catalog.lager.bestand
+Output [1]: [menge#21]
+Batched: true
+Location: InMemoryFileIndex [file:/daten/bestand]
+ReadSchema: struct<menge:int>
+
+(13) HashAggregate [codegen id : 1]
+Input [1]: [menge#21]
+Keys: []
+Functions [1]: [partial_avg(menge#21)]
+Aggregate Attributes [2]: [sum#22, count#23L]
+Results [2]: [sum#24, count#25L]
+
+(14) Exchange
+Input [2]: [sum#24, count#25L]
+Arguments: SinglePartition, ENSURE_REQUIREMENTS, [plan_id=3]
+
+(15) HashAggregate [codegen id : 2]
+Input [2]: [sum#24, count#25L]
+Keys: []
+Functions [1]: [avg(menge#21)]
+Aggregate Attributes [1]: [avg(menge#21)#26]
+Results [1]: [avg(menge#21)#26 AS avg(menge)#27]
+
+
+-- explain(True) von artikel.select("titel").distinct()
+== Parsed Logical Plan ==
+'Distinct
++- 'Project ['titel]
+   +- Relation spark_catalog.lager.artikel[nr#4,titel#5] parquet
+
+== Analyzed Logical Plan ==
+titel: string
+Distinct
++- Project [titel#5]
+   +- Relation spark_catalog.lager.artikel[nr#4,titel#5] parquet
+
+== Optimized Logical Plan ==
+Aggregate [titel#5], [titel#5]
++- Project [titel#5]
+   +- Relation spark_catalog.lager.artikel[nr#4,titel#5] parquet
+
+== Physical Plan ==
+*(2) HashAggregate(keys=[titel#5], functions=[], output=[titel#5])
++- Exchange hashpartitioning(titel#5, 8), ENSURE_REQUIREMENTS, [plan_id=4]
+   +- *(1) HashAggregate(keys=[titel#5], functions=[], output=[titel#5])
+      +- *(1) ColumnarToRow
+         +- FileScan parquet spark_catalog.lager.artikel[titel#5] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/daten/artikel], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<titel:string>
+
+
+-- explain() nach collect(), mit spark.sql.adaptive.enabled: der endgueltige Plan
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=true
++- == Final Plan ==
+   *(2) HashAggregate(keys=[lager#2], functions=[count(1)])
+   +- AQEShuffleRead coalesced
+      +- ShuffleQueryStage 0
+         +- Exchange hashpartitioning(lager#2, 8), ENSURE_REQUIREMENTS, [plan_id=10]
+            +- *(1) HashAggregate(keys=[lager#2], functions=[partial_count(1)])
+               +- *(1) ColumnarToRow
+                  +- FileScan parquet spark_catalog.lager.bestand[lager#2] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/daten/bestand], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<lager:string>
++- == Initial Plan ==
+   HashAggregate(keys=[lager#2], functions=[count(1)])
+   +- Exchange hashpartitioning(lager#2, 8), ENSURE_REQUIREMENTS, [plan_id=5]
+      +- HashAggregate(keys=[lager#2], functions=[partial_count(1)])
+         +- FileScan parquet spark_catalog.lager.bestand[lager#2] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/daten/bestand], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<lager:string>

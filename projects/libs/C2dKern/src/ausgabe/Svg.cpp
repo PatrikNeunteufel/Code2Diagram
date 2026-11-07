@@ -675,6 +675,81 @@ public:
         return aus;
     }
 
+    /// Ein Plan: hinten die Rahmen (Unterabfragen, Stages, Codegen), dann die Kanten (Fluss durchgezogen,
+    /// Unterabfrage gestrichelt, Wiederverwendung gepunktet, je mit Spitze), darauf die Knoten, vorn die Texte.
+    [[nodiscard]] std::string schreibe(const Plandiagramm& d, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const FlussAnordnung a = ordneAn(d, o);
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        for (const Rechteck& r : a.gruppen) aus += rechteck(r, "rahmen");
+        for (std::size_t e = 0; e < a.kanten.size(); ++e)
+        {
+            const Linienzug& l = a.kanten[e];
+            if (l.size() < 2) continue;
+            std::string stil;
+            if (d.kanten[e].art == PlanKantenArt::Unterabfrage) stil = " style=\"stroke-dasharray:6 4\"";
+            if (d.kanten[e].art == PlanKantenArt::Wiederverwendung) stil = " style=\"stroke-dasharray:2 3\"";
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\"" + stil + "/>\n";
+            aus += spitze(l[l.size() - 2], l.back(), true);
+        }
+        for (std::size_t g = 0; g < a.gruppen.size() && g < d.rahmen.size(); ++g)
+            aus += rahmenTitel(kuerze(d.rahmen[g].titel, titelZeichen(a.gruppen[g], o)), a.gruppen[g], o, "font-style=\"italic\"");
+        for (std::size_t i = 0; i < a.knoten.size() && i < d.knoten.size(); ++i) aus += planKnoten(d.knoten[i], a.knoten[i], o);
+        for (std::size_t e = 0; e < d.kanten.size() && e < a.beschriftungen.size(); ++e)
+            if (!d.kanten[e].text.empty()) aus += schild(kuerze(d.kanten[e].text, optionen.maxZeilenLaenge), a.beschriftungen[e], o);
+        return aus + "</svg>\n";
+    }
+
+    /// Ein Operator: Scan mit gewoelbtem Deckel, Exchange Sechseck (Broadcast gestrichelt), wiederverwendet
+    /// gestrichelt, Unterabfrage mit doppelten Seiten, die Wurzel (AdaptiveSparkPlan) rund getoent. Stereotyp kursiv
+    /// und Titel fett mittig, die Zeilen links.
+    [[nodiscard]] static std::string planKnoten(const PlanKnoten& k, const Rechteck& r, const AnordnungOptionen& o)
+    {
+        std::string aus;
+        const std::string strich = "style=\"stroke-dasharray:6 4\"";
+        switch (k.art)
+        {
+            case PlanKnotenArt::Scan:
+                aus += rechteckMit(r, "flaeche", "rx=\"6\"");
+                aus += "  <path class=\"linie\" fill=\"none\" d=\"M" + zahl(r.x) + "," + zahl(r.y + 5) + " Q" + zahl(r.x + r.breite / 2) +
+                       "," + zahl(r.y + 13) + " " + zahl(r.x + r.breite) + "," + zahl(r.y + 5) + "\"/>\n";
+                break;
+            case PlanKnotenArt::Exchange:
+            case PlanKnotenArt::Broadcast:
+                aus += "  <polygon class=\"flaeche\" points=\"" + punkte(sechseck(r)) + "\"" +
+                       (k.art == PlanKnotenArt::Broadcast ? " " + strich : std::string()) + "/>\n";
+                break;
+            case PlanKnotenArt::Wiederverwendet: aus += rechteckMit(r, "flaeche", strich); break;
+            case PlanKnotenArt::Unterabfrage:
+                aus += rechteckMit(r, "flaeche", "");
+                aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + 6, r.y}, {r.x + 6, r.y + r.hoehe}}) + "\"/>\n";
+                aus += "  <polyline class=\"linie\" points=\"" + punkte({{r.x + r.breite - 6, r.y}, {r.x + r.breite - 6, r.y + r.hoehe}}) + "\"/>\n";
+                break;
+            case PlanKnotenArt::Wurzel: aus += rechteckMit(r, "getoent", "rx=\"10\""); break;
+            case PlanKnotenArt::Join:
+            case PlanKnotenArt::Aggregat:
+            case PlanKnotenArt::Operator: aus += rechteckMit(r, "flaeche", ""); break;
+        }
+        const std::vector<std::string> zeilen = texte(k);
+        const std::size_t vorn = (stereotyp(k.art).empty() ? 0 : 1) + 1;
+        const double oben = r.mitte().y - o.zeilenHoehe * static_cast<double>(zeilen.size()) / 2;
+        for (std::size_t z = 0; z < zeilen.size(); ++z)
+        {
+            const std::string t = kuerze(zeilen[z], o.maxZeilenLaenge);
+            const double y = oben + o.zeilenHoehe * static_cast<double>(z);
+            if (z < vorn)
+            {
+                const bool istStereotyp = z == 0 && !stereotyp(k.art).empty();
+                aus += textMittig({t}, {r.mitte().x, y + o.zeilenHoehe / 2}, o.zeilenHoehe,
+                                  istStereotyp ? "font-style=\"italic\"" : "font-weight=\"bold\"");
+            }
+            else
+                aus += textLinks(t, r.x + 10, y, o.zeilenHoehe);
+        }
+        return aus;
+    }
+
     [[nodiscard]] static std::string abfrageKnoten(const AbfrageKnoten& k, const Rechteck& r, const AnordnungOptionen& o)
     {
         std::string aus;

@@ -43,6 +43,13 @@ struct FremdeZelle
     std::vector<std::size_t> abzug;
 };
 
+/// Was eine Code-Zelle eines `.ipynb` ausgegeben hat (Text), aneinander — fuer die Plaene von `explain()` (P2-3).
+struct ZellAusgabe
+{
+    std::size_t zelle = 0;  ///< Index in Notebook::zellen
+    std::string text;
+};
+
 struct Notebook
 {
     std::string skript;  ///< Datei::text
@@ -54,6 +61,7 @@ struct Notebook
     std::string lesetext;
     std::vector<sprache::Abschnitt> abschnitte;  ///< je Code-Zelle in ihrer Sprache `<cell n>`
     std::vector<FremdeZelle> fremde;
+    std::vector<ZellAusgabe> ausgaben;       ///< je Code-Zelle mit Text in ihren Ausgaben
     std::vector<quelle::Meldung> meldungen;  ///< Stellen im Skript
 };
 

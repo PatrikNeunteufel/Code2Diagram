@@ -46,6 +46,7 @@ struct DatenflussKnoten
     std::vector<std::string> ziele;   ///< Funktionen des Projekts, die er nennt (UDF, `map(f)`, `f(df)`)
     std::string abfrage;              ///< nur Sql: der Name der modell::Abfrage (Doppelklick)
     std::string tabelle;              ///< nur Quelle `table`: der Name der Tabelle (Doppelklick)
+    std::string plan;                 ///< der Plan aus seinem `explain()` (modell::Plan::name, Doppelklick); leer = keiner
 };
 
 /// «session», «source», «shuffle», «action», «sql», «call»; leer bei Schritte.
@@ -118,6 +119,8 @@ struct DatenflussUmfeld
     std::function<SparkRueckgabe(std::string_view name)> liefert;
     /// Die Abfrage, die das Projekt aus SQL in den Zeilen [von, bis] gelesen hat (`spark.sql("…")`); nullptr = keine.
     std::function<const modell::Abfrage*(int von, int bis)> abfrageIn;
+    /// Der Plan aus der Ausgabe des `explain()` in dieser Zeile (modell::Plan::name, Spark Schicht 2); leer = keiner.
+    std::function<std::string(int zeile)> planAn;
 };
 
 /// Ein Stueck Code, dessen Fluss gezeigt wird: eine Funktion (auch `<module>`, `<cell n>`).

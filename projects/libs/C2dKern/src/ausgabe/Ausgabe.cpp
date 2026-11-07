@@ -33,6 +33,7 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Abhaengigkeiten: return "Data dependencies";
         case Diagrammart::Abfrage: return "Query";
         case Diagrammart::Datenfluss: return "Data flow";
+        case Diagrammart::Plan: return "Physical plan";
         case Diagrammart::Struktogramm: return "Nassi-Shneiderman";
         case Diagrammart::Wahrheitstabelle: return "Truth table";
         case Diagrammart::Entscheidungstabelle: return "Decision table";

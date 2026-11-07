@@ -1024,3 +1024,33 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **AE7 Notebook:** `beispiele/notebooks/kunden_databricks.py`: Data flow mit `spark` vorgegeben, die Zellen
       teilen ihre Namen; im zweiten Feld `<cell 3>` zeigt, was die Zelle tut und was sie aus früheren liest.
       `aktion: datei_oeffnen pfad=beispiele/notebooks/kunden_databricks.py` `aktion: datenfluss_zeigen`
+
+## AF. Physical plan (Spark Schicht 2)
+
+- [ ] **AF0 Vorbereiten:** File > Open source file… `beispiele/spark/lager_plaene.txt` (Dateifilter `Spark plan
+      files (*.txt *.out)`), Vorschau. Statuszeile: `read as Spark plan`.
+      `aktion: datei_oeffnen pfad=beispiele/spark/lager_plaene.txt` `aktion: ansicht_waehlen name=preview`
+- [ ] **AF1 Eintrag und Feld:** Diagram bietet `Physical plan (3)`. Das zweite Feld nennt `lager_plaene.txt@5`,
+      `lager_plaene.txt@110`, dahinter `lager_plaene.txt@110 - parsed logical`, `… - analyzed logical`,
+      `… - optimized logical`, und `lager_plaene.txt@135`.
+      `aktion: plan_zeigen`
+- [ ] **AF2 formatted:** Scans mit gewölbtem Deckel (Tabelle, `columns`, `location`, `pushed filters`), Exchanges
+      als Sechseck «shuffle» (`hash: lager`, `partitions: 8`; in der Unterabfrage `single partition`), der
+      BroadcastExchange gestrichelt «broadcast»; `BroadcastHashJoin (6)` mit `Inner`, `keys: nr = nr`, `build: right`,
+      die Kante vom Broadcast heißt `build`. Rahmen `Subquery 1`, `Stage 1` … `Stage 5`, darin `WholeStageCodegen (n)`;
+      kein Rahmen umfasst einen fremden Knoten. Eine gestrichelte Kante `Subquery scalar-subquery` führt in `Filter (3)`.
+      `aktion: plan_zeigen name=lager_plaene.txt@5`
+- [ ] **AF3 Klick:** Ein Klick auf `Exchange (9)` zeigt im Quelltext die Zeile des Operators im Baum.
+      `aktion: klicken name=Exchange (9)`
+- [ ] **AF4 extended und AQE:** `lager_plaene.txt@110` zeigt den physischen Plan; im zweiten Feld
+      `… - optimized logical` nur den Baum (`Aggregate`, `Project`, `Relation`), ohne Stages; Back zurück.
+      `lager_plaene.txt@135`: Titel `(adaptive, final)`, `AdaptiveSparkPlan` rund getönt mit `final plan: yes`, darunter
+      nur der endgültige Plan (`AQEShuffleRead`, `ShuffleQueryStage 0`), nicht der anfängliche.
+      `aktion: plan_zeigen name=lager_plaene.txt@110 abschnitt=optimized`
+- [ ] **AF5 Notebook:** `beispiele/notebooks/lager_explain.ipynb`: Diagram `Physical plan (1)`, `<cell 3>@11`. Ein Klick
+      auf einen Operator zeigt `je_lager.explain()` (Zelle 3) und in der Statuszeile die Zeile in der Ausgabe.
+      In Data flow trägt `groupBy("lager")` die Zeile `plan: <cell 3>@11`; Doppelklick dorthin führt zum Plan,
+      Back zurück; Rechtsklick bietet *Physical plan <cell 3>@11*.
+      `aktion: datei_oeffnen pfad=beispiele/notebooks/lager_explain.ipynb` `aktion: plan_zeigen name=<cell 3>@11`
+- [ ] **AF6 Formate und Thema:** Format mermaid (`subgraph` je Rahmen, `{{` Exchange, `[(` Scan, `-.->`), dot, drawio;
+      csv sagt `Physical plan is not available in csv`; Left-right ohne Überdeckung; dunkles Thema lesbar.
