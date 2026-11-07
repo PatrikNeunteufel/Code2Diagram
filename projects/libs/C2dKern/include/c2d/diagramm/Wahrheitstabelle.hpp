@@ -96,12 +96,14 @@ enum class NullFaehig
     Unbekannt,  ///< eine Spalte, die das Schema nicht kennt, oder eine Variable: gilt als NULL-faehig (Hinweis)
 };
 
-/// Die Tabelle einer Bedingung einer Abfrage (Entscheide W3-W5): dreiwertig fuer Atome, die NULL sein koennen
-/// (`nullFaehig` je Atom), ohne Kurzschluss; MC/DC ueber *Zeile bleibt* aus den Zeilen ohne *unbekannt*.
-/// `klausel`: `WHERE`, `HAVING`, `ON` (dann heisst die Spalte *Joined*).
+/// Die Tabelle einer Bedingung in SQL (Entscheide W3-W5, R7): dreiwertig fuer Atome, die NULL sein koennen
+/// (`nullFaehig` je Atom), ohne Kurzschluss; MC/DC ueber die Spalte `bleibt` (`Row kept`, `Joined`, `Branch`; leer =
+/// keine solche Spalte, MC/DC ueber *wahr*) aus den Zeilen ohne *unbekannt*. `klausel`: `WHERE`, `HAVING`, `ON` einer
+/// Abfrage (`name` ist die Abfrage); leer = eine Bedingung einer Routine (`name` ist sie).
 [[nodiscard]] Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_view text,
-                                                      std::string_view abfrage, std::string_view klausel, int zeile,
-                                                      const std::function<NullFaehig(const modell::Logik&)>& nullFaehig);
+                                                      std::string_view name, std::string_view klausel, int zeile,
+                                                      const std::function<NullFaehig(const modell::Logik&)>& nullFaehig,
+                                                      std::string_view bleibt);
 
 /// Die Ueberschrift einer Tabelle: `f(): line 12`, in SQL `query@3 WHERE: line 5`.
 [[nodiscard]] std::string ueberschrift(const Wahrheitstabelle& t);

@@ -273,4 +273,89 @@ std::vector<Zuordnung> nachschlagetabellenVon(const modell::Einheit& einheit, co
     return aus;
 }
 
+namespace
+{
+
+/// Gleicher Schluessel, gleiche Bedingung (Z2): ohne Leerraum, ohne Gross/klein ausserhalb von Zeichenketten.
+std::string gleichschluessel(std::string_view text)
+{
+    std::string aus;
+    bool inZeichenkette = false;
+    for (const char c : text)
+    {
+        if (c == '\'') inZeichenkette = !inZeichenkette;
+        if (!inZeichenkette && (c == ' ' || c == '\t' || c == '\n' || c == '\r')) continue;
+        aus += !inZeichenkette && c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    return aus;
+}
+
+/// `1, 2` an den Kommas ausserhalb von Klammern und Zeichenketten (MySQL `WHEN 1, 2 THEN`): je Wert ein Stueck.
+std::vector<std::string> werteVon(std::string_view text)
+{
+    std::vector<std::string> aus;
+    std::string jetzt;
+    int tiefe = 0;
+    bool inZeichenkette = false;
+    for (const char c : text)
+    {
+        if (c == '\'') inZeichenkette = !inZeichenkette;
+        if (!inZeichenkette && c == '(') ++tiefe;
+        if (!inZeichenkette && c == ')') --tiefe;
+        if (!inZeichenkette && tiefe == 0 && c == ',')
+        {
+            aus.push_back(jetzt);
+            jetzt.clear();
+            continue;
+        }
+        jetzt += c;
+    }
+    aus.push_back(jetzt);
+    for (std::string& s : aus)
+    {
+        while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+        while (!s.empty() && s.back() == ' ') s.pop_back();
+    }
+    return aus;
+}
+
+}  // namespace
+
+std::string fallName(const modell::Fallausdruck& fall)
+{
+    return fall.besitzer + "@" + std::to_string(fall.zeile) + (fall.nummer > 0 ? ":" + std::to_string(fall.nummer) : "");
+}
+
+Zuordnung zuordnungVon(const modell::Fallausdruck& fall)
+{
+    Zuordnung z;
+    const bool einfach = !fall.gegenstand.empty();
+    z.titel = fall.besitzer + ": CASE " + (einfach ? fall.gegenstand : std::string("(first match wins)"));
+    z.quellZeile = fall.zeile;
+    z.schluessel = einfach ? fall.gegenstand : "condition";
+    z.spalten = {"value"};
+    z.nummeriert = !einfach;
+    std::vector<std::pair<std::string, int>> gesehen;  // Schluessel bzw. Bedingung, Zeile
+    for (const modell::Fallausdruck::Arm& arm : fall.arme)
+        for (const std::string& w : einfach ? werteVon(arm.wann) : std::vector<std::string>{arm.wann})
+        {
+            z.zeilen.push_back({w, {arm.dann}, arm.zeile});
+            const std::string k = gleichschluessel(w);
+            if (einfach && k == "null")
+                z.hinweise.push_back("WHEN NULL (line " + std::to_string(arm.zeile) + ") never matches - " + fall.gegenstand +
+                                     " = NULL is unknown; use CASE WHEN " + fall.gegenstand + " IS NULL");
+            const auto davor = std::find_if(gesehen.begin(), gesehen.end(), [&](const auto& g) { return g.first == k; });
+            if (davor != gesehen.end())
+                z.hinweise.push_back(std::string(einfach ? "key " : "condition ") + w + " (line " + std::to_string(arm.zeile) +
+                                     ") is never reached - the same comes first in line " + std::to_string(davor->second));
+            else
+                gesehen.emplace_back(k, arm.zeile);
+        }
+    if (fall.mitSonst)
+        z.zeilen.push_back({"ELSE", {fall.sonst}, fall.sonstZeile});
+    else
+        z.zeilen.push_back({"otherwise", {"NULL (no ELSE)"}, fall.zeile});
+    return z;
+}
+
 }  // namespace c2d::diagramm

@@ -181,7 +181,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         menue->addAction(QStringLiteral("Truth table of line %1").arg(zeile), this, [this, zeile] { zeigeWahrheitstabelle(zeile); })
             ->setEnabled(hatWahrheitstabelle(datei, zeile) || hatAbfrageTabelle(datei, zeile));
         menue->addAction(QStringLiteral("Mapping table of line %1").arg(zeile), this, [this, zeile] { zeigeZuordnung(zeile); })
-            ->setEnabled(hatZuordnung(datei, zeile));
+            ->setEnabled(hatZuordnung(datei, zeile) || fallInZeile(datei, zeile) != nullptr);
         menue->addAction(QStringLiteral("#if configuration of line %1").arg(zeile), this, [this, zeile] { zeigeKonfiguration(zeile); })
             ->setEnabled(hatKonfiguration(datei, zeile));
         // eine Abfrage in dieser Zeile: ihr Diagramm (Entscheid Q5)
@@ -419,9 +419,12 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         if (istAbfrage())
         {
             // ein Knoten des Abfragediagramms: die erste seiner Bedingungen mit Tabelle (W6)
-            if (knoten >= m_abfrageDiagramm.knoten.size() || m_abfrageDiagramm.knoten[knoten].tabellen.empty()) return;
-            geheZuAbfrageTabelle(m_datei, static_cast<std::size_t>(m_abfrage.toULongLong()),
-                                 m_abfrageDiagramm.knoten[knoten].tabellen.front(), knoten);
+            if (knoten >= m_abfrageDiagramm.knoten.size()) return;
+            const c2d::diagramm::AbfrageKnoten& k = m_abfrageDiagramm.knoten[knoten];
+            if (!k.tabellen.empty())
+                geheZuAbfrageTabelle(m_datei, static_cast<std::size_t>(m_abfrage.toULongLong()), k.tabellen.front(), knoten);
+            else if (!k.faelle.empty())
+                geheZuFall(m_datei, ausStd(k.faelle.front()), knoten);  // eine Zuordnung eines CASE (Z4)
             return;
         }
         const std::vector<int> zeilen = tabellenZeilen(knoten);
@@ -1703,8 +1706,13 @@ bool Hauptfenster::waehleEintrag(const QString& name)
     if (waehle(m_auswahl, name)) return true;
     if (name.startsWith(QLatin1String(kZuordnung)) && m_datei < m_projekt.dateien.size())
     {
-        // `mapping:<Funktion>@<Zeile>` — der switch dieser Zeile, wenn er nur Werte zuordnet
+        // `mapping:<Funktion>@<Zeile>` — der switch dieser Zeile, wenn er nur Werte zuordnet; in SQL ein CASE (Z3)
         const QString rest = name.mid(QString::fromLatin1(kZuordnung).size());
+        if (const c2d::modell::Fallausdruck* c = fallNamens(m_datei, rest))
+        {
+            m_auswahl->addItem(QStringLiteral("Mapping table: CASE, %1 line %2").arg(ausStd(c->besitzer)).arg(c->zeile), name);
+            return waehle(m_auswahl, name);
+        }
         const qsizetype at = rest.lastIndexOf(QLatin1Char('@'));
         const int zeile = at > 0 ? rest.mid(at + 1).toInt() : 0;
         if (zeile <= 0 || !hatZuordnung(m_datei, zeile)) return false;
@@ -2177,6 +2185,10 @@ void Hauptfenster::abfrageMenue(c2d::diagramm::KnotenId knoten)
         menue.addAction(QStringLiteral("Truth table (%1, line %2)").arg(klausel).arg(zeile), this,
                         [this, abfrage, zeile, knoten] { geheZuAbfrageTabelle(m_datei, abfrage, zeile, knoten); });
     }
+    for (const std::string& fall : k.faelle)  // je CASE mit Zuordnung (Z4)
+        if (const c2d::modell::Fallausdruck* c = fallNamens(m_datei, ausStd(fall)))
+            menue.addAction(QStringLiteral("Mapping table (CASE, line %1)").arg(c->zeile), this,
+                            [this, name = ausStd(fall), knoten] { geheZuFall(m_datei, name, knoten); });
     menue.addAction(QStringLiteral("Show in the source"), this, [this, knoten] { zeigeStelle(knoten); })->setEnabled(k.zeile > 0);
     menue.exec(QCursor::pos());
 }
@@ -2989,6 +3001,8 @@ bool Hauptfenster::zeigeZuordnung(int zeile)
 {
     const std::size_t datei = m_quelleZeigt < m_projekt.dateien.size() ? m_quelleZeigt : m_datei;
     if (geheZuZuordnung(datei, zeile, kKeine)) return true;
+    if (const c2d::modell::Fallausdruck* c = fallInZeile(datei, zeile))
+        return geheZuFall(datei, ausStd(c2d::diagramm::fallName(*c)), kKeine);  // ein CASE in SQL (Z4)
     statusBar()->showMessage(QStringLiteral("Line %1 has no switch that only maps values").arg(zeile), 4000);
     return false;
 }
@@ -2999,6 +3013,36 @@ bool Hauptfenster::zeigeWahrheitstabelle(int zeile)
     if (geheZuWahrheitstabelle(datei, zeile, kKeine) || geheZuAbfrageTabelle(datei, kKeine, zeile, kKeine)) return true;
     statusBar()->showMessage(QStringLiteral("Line %1 has no condition with two or more parts").arg(zeile), 4000);
     return false;
+}
+
+const c2d::modell::Fallausdruck* Hauptfenster::fallNamens(std::size_t datei, const QString& name) const
+{
+    if (datei >= m_projekt.dateien.size()) return nullptr;
+    for (const c2d::modell::Fallausdruck& c : m_projekt.dateien[datei].ergebnis.einheit.faelle)
+        if (ausStd(c2d::diagramm::fallName(c)) == name) return &c;
+    return nullptr;
+}
+
+const c2d::modell::Fallausdruck* Hauptfenster::fallInZeile(std::size_t datei, int zeile) const
+{
+    if (datei >= m_projekt.dateien.size()) return nullptr;
+    for (const c2d::modell::Fallausdruck& c : m_projekt.dateien[datei].ergebnis.einheit.faelle)
+        if (c.zeile == zeile) return &c;
+    return nullptr;
+}
+
+bool Hauptfenster::geheZuFall(std::size_t datei, const QString& name, c2d::diagramm::KnotenId von)
+{
+    if (fallNamens(datei, name) == nullptr) return false;
+    const QString ziel = QString::fromLatin1(kZuordnung) + name;
+    if (datei == m_datei && ziel == m_gezeigt) return true;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (datei != m_datei) zeigeDatei(datei);
+    const bool da = waehleEintrag(ziel);
+    m_ohneVerlauf = false;
+    aktualisiereLeiste();
+    return da;
 }
 
 bool Hauptfenster::hatAbfrageTabelle(std::size_t datei, int zeile) const
@@ -3256,10 +3300,15 @@ void Hauptfenster::baueNeu()
     };
     if (istZuordnung() && m_datei < m_projekt.dateien.size())
     {
-        const int zeile = m_gezeigt.mid(m_gezeigt.lastIndexOf(QLatin1Char('@')) + 1).toInt();
-        if (const std::size_t f = funktionZurZeile(m_datei, zeile); f != kKeine)
-            if (auto t = zuordnungVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
-                m_zuordnungen.push_back(std::move(*t));
+        if (const c2d::modell::Fallausdruck* c = fallNamens(m_datei, m_gezeigt.mid(QString::fromLatin1(kZuordnung).size())))
+            m_zuordnungen.push_back(zuordnungVon(*c));  // ein CASE in SQL (Z4)
+        else
+        {
+            const int zeile = m_gezeigt.mid(m_gezeigt.lastIndexOf(QLatin1Char('@')) + 1).toInt();
+            if (const std::size_t f = funktionZurZeile(m_datei, zeile); f != kKeine)
+                if (auto t = zuordnungVon(m_projekt.dateien[m_datei].ergebnis.einheit.funktionen[f], zeile))
+                    m_zuordnungen.push_back(std::move(*t));
+        }
         zeilenAlsKnoten();
     }
     if (m_gezeigt == QLatin1String(kKonfiguration) && m_datei < m_projekt.dateien.size())
@@ -3562,6 +3611,23 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
                     menue.addAction(QStringLiteral("Truth table (%1, line %2)").arg(ausStd(t.klausel)).arg(t.quellZeile), this,
                                     [this, von, q, zeile = t.quellZeile, knoten] { geheZuAbfrageTabelle(von, q, zeile, knoten); });
             }
+        // die CASE-Ausdruecke des Knotens (Z4): in seinen Zeilen oder in der Abfrage, die dort beginnt
+        if (von < m_projekt.dateien.size() && k.quellZeile > 0)
+        {
+            const c2d::modell::Einheit& e = m_projekt.dateien[von].ergebnis.einheit;
+            std::vector<int> zeilen{k.quellZeile};
+            zeilen.insert(zeilen.end(), k.weitereZeilen.begin(), k.weitereZeilen.end());
+            int bis = 0;
+            if (const std::size_t q = abfrageZurZeile(e.abfragen, k.quellZeile); q != kKeine) bis = e.abfragen[q].bisZeile;
+            for (const c2d::modell::Fallausdruck& c : e.faelle)
+            {
+                const bool drin = std::find(zeilen.begin(), zeilen.end(), c.zeile) != zeilen.end() ||
+                                  (k.quellZeile <= c.zeile && c.zeile <= bis);
+                if (!drin) continue;
+                menue.addAction(QStringLiteral("Mapping table (CASE, line %1)").arg(c.zeile), this,
+                                [this, von, name = ausStd(c2d::diagramm::fallName(c)), knoten] { geheZuFall(von, name, knoten); });
+            }
+        }
         if (konfigurationsZeile(knoten))
         {
             // wie die Radioknoepfe im Feld Configuration: die Namen im Feld Defines setzen

@@ -79,10 +79,12 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
             }
             kopf.push_back({"Result"});
             ganz.emplace_back();
-            if (t.dreiwertig)
+            const bool bleibt = t.dreiwertig && !t.bleibt.empty();
+            if (bleibt)
             {
                 kopf.push_back({t.bleibt});
-                ganz.emplace_back("only where the result is true (T)");
+                ganz.emplace_back(t.bleibt == "Branch" ? "yes only where the result is true (T) - unknown goes like false"
+                                                       : "only where the result is true (T)");
             }
             kopf.push_back({"MC/DC"});
             ganz.emplace_back();
@@ -101,7 +103,7 @@ TabellenAnordnung ordneAn(std::span<const Wahrheitstabelle> tabellen, const Anor
                 std::vector<std::string> r{std::to_string(z.nummer)};
                 for (const Wert w : z.werte) r.push_back(wertText(w));
                 r.push_back(t.dreiwertig ? wertText(z.wert) : z.ergebnis ? "T" : "F");
-                if (t.dreiwertig) r.push_back(z.ergebnis ? "yes" : "no");
+                if (bleibt) r.push_back(z.ergebnis ? "yes" : "no");
                 r.push_back(paareIn(z.nummer));
                 zeilen.push_back(std::move(r));
             }
@@ -158,15 +160,21 @@ TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOp
         a.breite = std::max(a.breite, kRand + weite(zeichen(a.texte.back().text)) + kRand);
         y += o.zeilenHoehe + 6;
 
-        // die Spalten: der Schluessel, dann je Wert eine — so breit wie ihr breitester Text
-        std::vector<std::string> kopf{gekuerzt(t.schluessel, o.maxZeilenLaenge)};
+        // die Spalten: (gesuchte CASE: #), der Schluessel, dann je Wert eine — so breit wie ihr breitester Text
+        const std::size_t vorn = t.nummeriert ? 1 : 0;  // die Spalte des Schluessels
+        std::vector<std::string> kopf;
+        if (t.nummeriert) kopf.emplace_back("#");
+        kopf.push_back(gekuerzt(t.schluessel, o.maxZeilenLaenge));
         for (const std::string& s : t.spalten) kopf.push_back(gekuerzt(s, o.maxZeilenLaenge));
         std::vector<double> breiten;
         for (const std::string& k : kopf) breiten.push_back(weite(zeichen(k)));
         std::vector<std::vector<std::string>> inhalt;
-        for (const Zuordnung::Zeile& z : t.zeilen)
+        for (std::size_t n = 0; n < t.zeilen.size(); ++n)
         {
-            std::vector<std::string> r{gekuerzt(z.schluessel, o.maxZeilenLaenge)};
+            const Zuordnung::Zeile& z = t.zeilen[n];
+            std::vector<std::string> r;
+            if (t.nummeriert) r.push_back(z.schluessel == "ELSE" || z.schluessel == "otherwise" ? "" : std::to_string(n + 1));
+            r.push_back(gekuerzt(z.schluessel, o.maxZeilenLaenge));
             for (const std::string& w : z.werte) r.push_back(gekuerzt(w, o.maxZeilenLaenge));
             for (std::size_t s = 0; s < r.size() && s < breiten.size(); ++s) breiten[s] = std::max(breiten[s], weite(zeichen(r[s])));
             inhalt.push_back(std::move(r));
@@ -174,8 +182,8 @@ TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOp
         double x = kRand;
         for (std::size_t s = 0; s < kopf.size(); ++s)
         {
-            a.zellen.push_back({{x, y, breiten[s], zeile}, {kopf[s]}, true, false, s == 0 && kopf[s] != t.schluessel ? t.schluessel : "",
-                                ti, kKeine, s == 0});
+            a.zellen.push_back({{x, y, breiten[s], zeile}, {kopf[s]}, true, false,
+                                s == vorn && kopf[s] != t.schluessel ? t.schluessel : "", ti, kKeine, s == vorn});
             x += breiten[s];
         }
         const double rechts = x;
@@ -185,9 +193,11 @@ TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOp
             double xr = kRand;
             for (std::size_t s = 0; s < inhalt[r].size() && s < breiten.size(); ++s)
             {
-                const std::string ganz = s == 0 ? t.zeilen[r].schluessel : t.zeilen[r].werte[s - 1];
+                const std::string ganz = s < vorn    ? inhalt[r][s]
+                                         : s == vorn ? t.zeilen[r].schluessel
+                                                     : t.zeilen[r].werte[s - vorn - 1];
                 a.zellen.push_back({{xr, y, breiten[s], zeile}, {inhalt[r][s]}, false, false, ganz != inhalt[r][s] ? ganz : "",
-                                    ti, knoten, true});
+                                    ti, knoten, s >= vorn});
                 xr += breiten[s];
             }
             a.knotenOrte.push_back({kRand, y, rechts - kRand, zeile});
@@ -195,6 +205,14 @@ TabellenAnordnung ordneAn(std::span<const Zuordnung> tabellen, const AnordnungOp
             y += zeile;
         }
         a.breite = std::max(a.breite, rechts + kRand);
+        // Hinweise unter der Tabelle (CASE: ein Schluessel NULL, ein Arm, der nie erreicht wird)
+        for (const std::string& h : t.hinweise)
+        {
+            y += 2;
+            a.texte.push_back({{kRand, y + o.zeilenHoehe / 2}, h, false, ti});
+            a.breite = std::max(a.breite, kRand + weite(zeichen(h)) + kRand);
+            y += o.zeilenHoehe;
+        }
         if (ti + 1 < tabellen.size()) y += kAbstand * o.zeilenHoehe;
     }
     a.hoehe = y + kRand;

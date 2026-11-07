@@ -526,6 +526,112 @@ private:
         m_aus.meldungen.resize(gemeldet);  // der erste Lauf ueber die ganze Anweisung hat schon gemeldet
     }
 
+    // --- CASE-Ausdruecke (Entscheide Z1, Z3) -----------------------------------
+
+    /// Bei i ein CASE: die Stelle seines END (Klammern und innere CASE uebersprungen); b, wenn es fehlt.
+    [[nodiscard]] std::size_t endeDesFalls(std::size_t i, std::size_t b) const
+    {
+        int tiefe = 0;
+        for (std::size_t k = i + 1; k < b && !amEnde(k);)
+        {
+            if (oeffnet(tok(k)))
+            {
+                k = nachKlammer(k);
+                continue;
+            }
+            if (wort(k, "case") && !wort(k - 1, "end")) ++tiefe;
+            if (wort(k, "end"))
+            {
+                if (tiefe == 0) return k;
+                --tiefe;
+            }
+            ++k;
+        }
+        return b;
+    }
+
+    /// Ab k das erste der Woerter `w` ausserhalb von Klammern und inneren CASE; e, wenn keins.
+    [[nodiscard]] std::size_t naechstesWort(std::size_t k, std::size_t e, std::initializer_list<std::string_view> w) const
+    {
+        while (k < e)
+        {
+            if (oeffnet(tok(k)))
+            {
+                k = nachKlammer(k);
+                continue;
+            }
+            if (wort(k, "case"))
+            {
+                k = endeDesFalls(k, e) + 1;
+                continue;
+            }
+            if (std::any_of(w.begin(), w.end(), [&](std::string_view x) { return wort(k, x); })) return k;
+            ++k;
+        }
+        return e;
+    }
+
+    /// Der Text von [a, b), jedes CASE darin als `CASE … END` (es hat seine eigene Tabelle, Entscheid Z2).
+    [[nodiscard]] std::string textOhneInnereFaelle(std::size_t a, std::size_t b) const
+    {
+        std::string aus;
+        std::size_t von = a;
+        const auto dazu = [&](const std::string& s) {
+            if (s.empty()) return;
+            aus += (aus.empty() ? "" : " ") + s;
+        };
+        for (std::size_t j = a; j < b;)
+        {
+            if (wort(j, "case") && !wort(j - 1, "end"))
+            {
+                dazu(textVon(von, j));
+                dazu("CASE \xE2\x80\xA6 END");
+                j = std::min(endeDesFalls(j, b) + 1, b);
+                von = j;
+                continue;
+            }
+            ++j;
+        }
+        dazu(textVon(von, b));
+        return aus;
+    }
+
+    /// Jeder CASE-Ausdruck mit mindestens zwei WHEN in [a, b) nach Einheit::faelle — nicht eine CASE-Anweisung (sie
+    /// endet mit `END CASE`, sie ist eine Auswahl im Ablauf). `besitzer`: die Routine oder die Abfrage.
+    void sammleFaelle(std::size_t a, std::size_t b, const std::string& besitzer)
+    {
+        for (std::size_t i = a; i < b && !amEnde(i); ++i)
+        {
+            if (!wort(i, "case") || (i > 0 && wort(i - 1, "end"))) continue;
+            const std::size_t e = endeDesFalls(i, b);
+            if (e >= b || wort(e + 1, "case")) continue;
+            Fallausdruck f;
+            f.besitzer = besitzer;
+            f.zeile = tok(i).ort.zeile;
+            std::size_t k = i + 1;
+            if (!wort(k, "when"))
+            {
+                const std::size_t w = naechstesWort(k, e, {"when"});
+                f.gegenstand = textOhneInnereFaelle(k, w);
+                k = w;
+            }
+            while (k < e && wort(k, "when"))
+            {
+                const std::size_t dann = naechstesWort(k + 1, e, {"then"});
+                const std::size_t weiter = naechstesWort(dann + 1, e, {"when", "else"});
+                f.arme.push_back({textOhneInnereFaelle(k + 1, dann), textOhneInnereFaelle(dann + 1, weiter), tok(k).ort.zeile});
+                k = weiter;
+            }
+            if (k < e && wort(k, "else"))
+            {
+                f.mitSonst = true;
+                f.sonst = textOhneInnereFaelle(k + 1, e);
+                f.sonstZeile = tok(k).ort.zeile;
+            }
+            if (f.arme.size() >= 2) m_aus.einheit.faelle.push_back(std::move(f));
+        }
+    }
+
     /// Die Anweisung [a, b) als eine Abfrage namens `name` (eine View, CREATE TABLE … AS).
     void abfrageAus(std::size_t a, std::size_t b, const std::string& name)
     {
@@ -855,6 +961,13 @@ private:
             std::vector<Abfrage> gefunden = leser.suche(a, b, "query");
             for (std::size_t i = 0; i < gefunden.size(); ++i)
                 gibZugriffe(gefunden[i], leser.bereiche[i].first, leser.bereiche[i].second, eigene);
+            // die CASE-Ausdruecke (Z3): dem Block, sonst der Abfrage, in der sie stehen, sonst `query@zeile`
+            const std::size_t vorher = m_aus.einheit.faelle.size();
+            sammleFaelle(a, b, block ? "<block:" + std::to_string(t.ort.zeile) + ">" : "query@" + std::to_string(t.ort.zeile));
+            for (std::size_t f = vorher; f < m_aus.einheit.faelle.size() && !block; ++f)
+                for (const Abfrage& x : gefunden)
+                    if (x.zeile <= m_aus.einheit.faelle[f].zeile && m_aus.einheit.faelle[f].zeile <= x.bisZeile)
+                        m_aus.einheit.faelle[f].besitzer = x.name;
             for (Abfrage& x : gefunden) m_aus.einheit.abfragen.push_back(std::move(x));
             return;
         }
@@ -879,6 +992,7 @@ private:
             else if (g->gebilde == Gebilde::Tabelle)
             {
                 liesCreateTable(k + 1, b);
+                sammleFaelle(a, b, "query@" + std::to_string(tok(a).ort.zeile));  // CREATE TABLE … AS SELECT CASE …
                 const std::size_t vorher = m_aus.einheit.abfragen.size();
                 abfrageAus(a, b, "query@" + std::to_string(tok(a).ort.zeile));  // CREATE TABLE … AS SELECT
                 if (alsAbfrage(a, b) != kKeiner)
@@ -1217,6 +1331,7 @@ private:
             liesTrigger(o, k, b, eigene);
         else
             liesRoutine(o, k, b, eigene);
+        sammleFaelle(k, b, o.name);  // ein Rumpf in einer Zeichenkette: dort (liesRumpfText)
         m_aus.einheit.objekte.push_back(std::move(o));
     }
 
@@ -1499,6 +1614,14 @@ private:
         rumpf.m_routine = m_routine;
         rumpf.liesRumpf(innere, eigene);
         const int versatzZeile = koerper.ort.zeile - 1;
+        rumpf.sammleFaelle(0, rumpf.m_t.size(), m_routine);
+        for (Fallausdruck& f : neben.einheit.faelle)
+        {
+            f.zeile += versatzZeile;
+            if (f.mitSonst) f.sonstZeile += versatzZeile;
+            for (Fallausdruck::Arm& arm : f.arme) arm.zeile += versatzZeile;
+            m_aus.einheit.faelle.push_back(std::move(f));
+        }
         if (ablauf != nullptr && rumpf.beginntMitCode())
         {
             *ablauf = rumpf.ablaufVon(0, rumpf.m_t.size(), plpgsql);
@@ -1866,6 +1989,29 @@ public:
         SqlLeser(text, *dialekt, optionen.platzhalter, ergebnis).liesAlles();
         ergaenzeLogik(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);      // Bedingungen der Routinen (Entscheid R6)
         ergaenzeKlauseln(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);   // WHERE, HAVING, ON (Entscheid W1)
+        // die Atome der Bedingungen der Routinen: ihre Form, Spalten, Variablen (dreiwertig, Entscheid R7)
+        const auto atome = [&](const auto& selbst, Anweisung& a) -> void {
+            if (a.logik) ergaenzeAtome(*a.logik, *dialekt->tabelle);
+            for (AnweisungPtr& k : a.kinder)
+                if (k) selbst(selbst, *k);
+            if (a.sonst) selbst(selbst, *a.sonst);
+        };
+        for (Funktion& f : ergebnis.einheit.funktionen)
+            if (f.rumpf) atome(atome, *f.rumpf);
+        // die CASE-Ausdruecke nach Zeile; mehrere in einer Zeile desselben Besitzers zaehlen 1, 2, … (Z3)
+        std::vector<Fallausdruck>& faelle = ergebnis.einheit.faelle;
+        std::stable_sort(faelle.begin(), faelle.end(), [](const Fallausdruck& x, const Fallausdruck& y) { return x.zeile < y.zeile; });
+        for (std::size_t i = 0; i < faelle.size(); ++i)
+        {
+            std::size_t gleich = 0;
+            for (std::size_t j = 0; j < faelle.size(); ++j)
+                if (faelle[j].zeile == faelle[i].zeile && faelle[j].besitzer == faelle[i].besitzer) ++gleich;
+            if (gleich < 2) continue;
+            int n = 0;
+            for (std::size_t j = 0; j <= i; ++j)
+                if (faelle[j].zeile == faelle[i].zeile && faelle[j].besitzer == faelle[i].besitzer) ++n;
+            faelle[i].nummer = n;
+        }
         ergebnis.zeichenketten.clear();  // SQL in den Zeichenketten von SQL sucht niemand
         return ergebnis;
     }

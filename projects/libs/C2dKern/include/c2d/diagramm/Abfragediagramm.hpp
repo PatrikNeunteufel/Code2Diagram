@@ -49,6 +49,8 @@ struct AbfrageKnoten
     /// Die Zeilen ihrer Bedingungen mit Wahrheitstabelle (Entscheid W6): am Ergebnis WHERE, dann HAVING; an einer
     /// Quelle ihr ON. Leer = keine.
     std::vector<int> tabellen;
+    /// Am Ergebnis: die CASE-Ausdruecke des Blocks mit Zuordnung (Entscheid Z4), je ihr Name hinter `mapping:`.
+    std::vector<std::string> faelle;
 };
 
 enum class AbfrageKantenArt

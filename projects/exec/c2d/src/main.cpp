@@ -281,6 +281,10 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
             if (const std::optional<c2d::diagramm::Zuordnung> z = c2d::diagramm::zuordnungVon(f, zeile))
                 std::cout << "mapping   " << f.name << '@' << zeile << " (" << z->zeilen.size() << " rows, "
                           << z->spalten.size() << " columns)\n";
+    // CASE-Ausdruecke in SQL (Entscheide Z1-Z3): einfach oder gesucht
+    for (const c2d::modell::Fallausdruck& c : einheit.faelle)
+        std::cout << "mapping   " << c2d::diagramm::fallName(c) << " (CASE " << (c.gegenstand.empty() ? "searched" : "simple") << ", "
+                  << c.arme.size() << " WHEN" << (c.mitSonst ? ", ELSE" : ", no ELSE") << ")\n";
     if (const std::vector<c2d::diagramm::Konfigurationstabelle> k =
             c2d::diagramm::konfigurationVon(d.ergebnis.weichen, d.ergebnis.schalter);
         !k.empty())
@@ -799,11 +803,37 @@ int main(int argc, char* argv[])
             for (std::size_t k = 0; k < abfragen.size() && welche == c2d::projekt::kKeine; ++k)
                 if (abfragen[k].name == abfrageName) welche = k;
         }
+        if (welche == c2d::projekt::kKeine && zuordnung && !abfrageName.empty())
+        {
+            // ein CASE ohne Abfrage im Modell (`SELECT CASE … END` ohne FROM, eine View aus YAML): ueber seinen Besitzer (Z3)
+            std::vector<c2d::diagramm::Zuordnung> tabellen;
+            for (const c2d::modell::Fallausdruck& c : p.dateien[d].ergebnis.einheit.faelle)
+                if (c.besitzer == abfrageName && (tabellenZeile == 0 || c.zeile == tabellenZeile))
+                    tabellen.push_back(c2d::diagramm::zuordnungVon(c));
+            if (!tabellen.empty())
+                return schreibe(c2d::ausgabe::Diagrammart::Zuordnung, std::span<const c2d::diagramm::Zuordnung>(tabellen));
+        }
         if (welche == c2d::projekt::kKeine)
         {
             std::cerr << "c2d: no query" << (abfrageName.empty() ? std::string() : " '" + abfrageName + "'") << " in "
                       << vorn(p.dateien[d].pfad) << (abfragen.empty() ? std::string() : " - see --liste (query)") << '\n';
             return 1;
+        }
+        if (zuordnung)
+        {
+            // die Zuordnungen ihrer CASE-Ausdruecke (Z4): die, die ihr gehoeren oder in ihren Zeilen stehen
+            const c2d::modell::Abfrage& q = abfragen[welche];
+            std::vector<c2d::diagramm::Zuordnung> tabellen;
+            for (const c2d::modell::Fallausdruck& c : p.dateien[d].ergebnis.einheit.faelle)
+                if ((c.besitzer == q.name || (q.zeile <= c.zeile && c.zeile <= q.bisZeile)) &&
+                    (tabellenZeile == 0 || c.zeile == tabellenZeile))
+                    tabellen.push_back(c2d::diagramm::zuordnungVon(c));
+            if (tabellen.empty())
+            {
+                std::cerr << "c2d: no CASE with two or more WHEN in " << q.name << '\n';
+                return 1;
+            }
+            return schreibe(c2d::ausgabe::Diagrammart::Zuordnung, std::span<const c2d::diagramm::Zuordnung>(tabellen));
         }
         if (wahrheitstabelle)
         {
@@ -969,6 +999,10 @@ int main(int argc, char* argv[])
             std::vector<Zuordnung> tabellen;
             for (const int z : tabellenZeile == 0 ? zeilenMitZuordnung(wahl) : std::vector<int>{tabellenZeile})
                 if (std::optional<Zuordnung> t = zuordnungVon(wahl, z)) tabellen.push_back(std::move(*t));
+            // die CASE-Ausdruecke einer SQL-Routine (Z4)
+            for (const c2d::modell::Fallausdruck& c : p.dateien[gewaehlt->datei].ergebnis.einheit.faelle)
+                if (c.besitzer == wahl.vollerName() && (tabellenZeile == 0 || c.zeile == tabellenZeile))
+                    tabellen.push_back(zuordnungVon(c));
             if (tabellen.empty())
             {
                 std::cerr << "c2d: no switch that only maps values in " << wahl.name << "()"

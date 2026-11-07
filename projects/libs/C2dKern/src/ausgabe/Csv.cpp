@@ -95,7 +95,8 @@ public:
             for (std::size_t i = 0; i < t.atome.size(); ++i)
                 kopf.push_back(atomKennung(i) + ": " + t.atome[i].text + (t.atome[i].kannNull ? " (null)" : ""));
             kopf.emplace_back("Result");
-            if (t.dreiwertig) kopf.push_back(t.bleibt);
+            const bool bleibt = t.dreiwertig && !t.bleibt.empty();
+            if (bleibt) kopf.push_back(t.bleibt);
             kopf.emplace_back("MC/DC");
             aus += zeile(kopf);
             for (const Wahrheitstabelle::Zeile& z : t.zeilen)
@@ -103,7 +104,7 @@ public:
                 std::vector<std::string> r{std::to_string(z.nummer)};
                 for (const Wert w : z.werte) r.push_back(wertText(w, true));
                 r.emplace_back(t.dreiwertig ? wertText(z.wert, true) : z.ergebnis ? "T" : "F");
-                if (t.dreiwertig) r.emplace_back(z.ergebnis ? "yes" : "no");
+                if (bleibt) r.emplace_back(z.ergebnis ? "yes" : "no");
                 std::string paare;
                 for (std::size_t i = 0; i < t.paare.size(); ++i)
                     if (t.paare[i].first == z.nummer || t.paare[i].second == z.nummer)
@@ -150,15 +151,21 @@ public:
             const Zuordnung& t = tabellen[ti];
             if (ti > 0) aus += '\n';
             aus += zeile({t.titel});
-            std::vector<std::string> kopf{t.schluessel};
+            std::vector<std::string> kopf;
+            if (t.nummeriert) kopf.emplace_back("#");
+            kopf.push_back(t.schluessel);
             kopf.insert(kopf.end(), t.spalten.begin(), t.spalten.end());
             aus += zeile(kopf);
-            for (const Zuordnung::Zeile& z : t.zeilen)
+            for (std::size_t n = 0; n < t.zeilen.size(); ++n)
             {
-                std::vector<std::string> r{z.schluessel};
+                const Zuordnung::Zeile& z = t.zeilen[n];
+                std::vector<std::string> r;
+                if (t.nummeriert) r.push_back(z.schluessel == "ELSE" || z.schluessel == "otherwise" ? "" : std::to_string(n + 1));
+                r.push_back(z.schluessel);
                 for (const std::string& w : z.werte) r.push_back(w == "\xE2\x80\x94" ? std::string("-") : w);
                 aus += zeile(r);
             }
+            for (const std::string& h : t.hinweise) aus += zeile({h});
         }
         return aus;
     }

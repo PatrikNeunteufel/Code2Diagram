@@ -417,6 +417,12 @@ private:
     /// Der Ablauf eines Objekts in *Data dependencies* (Entscheid R1): die Funktion aus dem Rumpf einer Routine oder
     /// eines Triggers, bei einem Trigger ohne Rumpf die Funktion, die er ausfuehrt (wenn eindeutig); nullopt = keiner.
     [[nodiscard]] std::optional<c2d::projekt::Fundstelle> ablaufDesObjekts(const c2d::projekt::Datenstelle& s) const;
+    /// Der CASE-Ausdruck dieses Namens (`besitzer@zeile[:n]`, Entscheid Z3); nullptr = keiner.
+    [[nodiscard]] const c2d::modell::Fallausdruck* fallNamens(std::size_t datei, const QString& name) const;
+    /// Der erste CASE-Ausdruck, der in dieser Zeile beginnt; nullptr = keiner.
+    [[nodiscard]] const c2d::modell::Fallausdruck* fallInZeile(std::size_t datei, int zeile) const;
+    /// Zur Zuordnung des CASE dieses Namens; `von` wie bei gehe(). false = keiner.
+    bool geheZuFall(std::size_t datei, const QString& name, c2d::diagramm::KnotenId von);
     /// Steht in dieser Zeile eine Bedingung einer Abfrage mit Wahrheitstabelle (WHERE, HAVING, ON — Entscheid W1)?
     [[nodiscard]] bool hatAbfrageTabelle(std::size_t datei, int zeile) const;
     /// Die Tabelle der Bedingung einer Abfrage (`abfrage`: ihr Name, leer = jede) in dieser Zeile — WHERE vor HAVING

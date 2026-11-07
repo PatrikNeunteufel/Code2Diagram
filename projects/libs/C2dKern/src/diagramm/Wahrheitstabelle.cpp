@@ -159,11 +159,22 @@ private:
     std::size_t m_schritte = 0;
 };
 
-void sammleTabellen(const modell::Anweisung& a, const std::string& funktion, std::vector<Wahrheitstabelle>& aus)
+void sammleTabellen(const modell::Anweisung& a, const std::string& funktion, bool sql, std::vector<Wahrheitstabelle>& aus)
 {
-    if (a.logik) aus.push_back(wahrheitstabelleVon(*a.logik, a.logikText, funktion, a.zeile));
-    for (const modell::AnweisungPtr& k : a.kinder) sammleTabellen(*k, funktion, aus);
-    if (a.sonst) sammleTabellen(*a.sonst, funktion, aus);
+    if (a.logik && !sql) aus.push_back(wahrheitstabelleVon(*a.logik, a.logikText, funktion, a.zeile));
+    if (a.logik && sql)
+    {
+        // eine Routine in SQL (Entscheid R7): dreiwertig, Variablen und Parameter NULL-faehig; die Spalte Branch bei den
+        // Bedingungen von IF, WHILE, REPEAT … UNTIL (CASE WHEN ist eine Kette IF), bei einem Wert keine
+        using modell::AnweisungArt;
+        const bool zweig = a.art == AnweisungArt::Wenn || a.art == AnweisungArt::Solange ||
+                           a.art == AnweisungArt::TueSolange || a.art == AnweisungArt::Fuer;
+        aus.push_back(wahrheitstabelleVonSql(
+            *a.logik, a.logikText, funktion, {}, a.zeile,
+            [](const Logik& atom) { return atom.zweiwertig ? NullFaehig::Nie : NullFaehig::Kann; }, zweig ? "Branch" : ""));
+    }
+    for (const modell::AnweisungPtr& k : a.kinder) sammleTabellen(*k, funktion, sql, aus);
+    if (a.sonst) sammleTabellen(*a.sonst, funktion, sql, aus);
 }
 
 }  // namespace
@@ -261,7 +272,7 @@ std::vector<int> zeilenMitWahrheitstabelle(const modell::Funktion& funktion)
 std::vector<Wahrheitstabelle> wahrheitstabellenVon(const modell::Funktion& funktion)
 {
     std::vector<Wahrheitstabelle> aus;
-    if (funktion.rumpf) sammleTabellen(*funktion.rumpf, funktion.vollerName(), aus);
+    if (funktion.rumpf) sammleTabellen(*funktion.rumpf, funktion.vollerName(), funktion.namenOhneFall, aus);
     return aus;
 }
 
@@ -332,17 +343,18 @@ std::string kennungen(const std::vector<std::size_t>& atome)
 
 }  // namespace
 
-Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_view text, std::string_view abfrage,
+Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_view text, std::string_view name,
                                         std::string_view klausel, int zeile,
-                                        const std::function<NullFaehig(const modell::Logik&)>& nullFaehig)
+                                        const std::function<NullFaehig(const modell::Logik&)>& nullFaehig,
+                                        std::string_view bleibt)
 {
     Wahrheitstabelle t;
-    t.funktion = std::string(abfrage);
+    t.funktion = std::string(name);
     t.bedingung = std::string(text);
     t.quellZeile = zeile;
     t.klausel = std::string(klausel);
     t.dreiwertig = true;
-    t.bleibt = klausel == "ON" ? "Joined" : "Row kept";
+    t.bleibt = std::string(bleibt);
     std::vector<const Logik*> atome;
     std::map<std::string, std::size_t> index;
     sammleSql(logik, atome, index);
@@ -362,7 +374,10 @@ Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_
         t.hinweise.push_back(std::to_string(n) + " conditions - too many for a truth table");
         return t;
     }
-    const std::string ohne = klausel == "ON" ? "not joined" : "not kept";
+    // wie der Hinweis zu NULL unter NOT spricht: die Zeile bleibt, wird verbunden, der Zweig `yes` wird genommen
+    const std::string wer = bleibt == "Joined" ? "the row" : bleibt == "Row kept" ? "the row" : "the condition";
+    const std::string ohne = bleibt == "Joined" ? "is not joined" : bleibt == "Row kept" ? "is not kept" : "is not true";
+    const std::string mit = bleibt == "Joined" ? "join it" : bleibt == "Row kept" ? "keep it" : "make it true";
 
     // jede Kombination (Atom 1 links, falsch vor wahr vor unbekannt); wird es zu viel, nur wahr und falsch
     std::size_t gesamt = 1;
@@ -444,8 +459,8 @@ Wahrheitstabelle wahrheitstabelleVonSql(const modell::Logik& logik, std::string_
             if (wo.empty()) continue;
             std::string zeilen;
             for (const std::size_t w : wo) zeilen += (zeilen.empty() ? "" : ", ") + std::to_string(w);
-            t.hinweise.push_back(atomKennung(i) + " (" + t.atome[i].text + "): if it is NULL, the row is " + ohne +
-                                 " where false would " + (klausel == "ON" ? "join" : "keep") + " it (row " + zeilen + ")");
+            t.hinweise.push_back(atomKennung(i) + " (" + t.atome[i].text + "): if it is NULL, " + wer + " " + ohne +
+                                 " where false would " + mit + " (row " + zeilen + ")");
         }
     if (!unbekannt.empty())
         t.hinweise.push_back(kennungen(unbekannt) + ": a column not in the schema or a variable - taken as possibly NULL");

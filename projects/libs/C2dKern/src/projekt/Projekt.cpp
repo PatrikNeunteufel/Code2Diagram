@@ -396,6 +396,25 @@ void lieseingebettetesSql(sprache::Ergebnis& e, const std::string& text, const s
                     }
                     e.einheit.abfragen.push_back(std::move(q));
                 }
+                // die CASE-Ausdruecke (Z3): Zeilen der Quelle, Besitzer wie ihre Abfrage (`funktion@zeile`)
+                for (modell::Fallausdruck& c : s.einheit.faelle)
+                {
+                    const std::size_t at = c.besitzer.rfind('@');
+                    const int abfrageZeile = at == std::string::npos ? c.zeile : std::atoi(c.besitzer.c_str() + at + 1);
+                    c.besitzer = (f != nullptr ? f->vollerName() : std::string("query")) + "@" +
+                                 std::to_string(hostZeile(abfrageZeile));
+                    c.zeile = hostZeile(c.zeile);
+                    if (c.mitSonst) c.sonstZeile = hostZeile(c.sonstZeile);
+                    zurueckIn(c.gegenstand, alle);
+                    zurueckIn(c.sonst, alle);
+                    for (modell::Fallausdruck::Arm& arm : c.arme)
+                    {
+                        arm.zeile = hostZeile(arm.zeile);
+                        zurueckIn(arm.wann, alle);
+                        zurueckIn(arm.dann, alle);
+                    }
+                    e.einheit.faelle.push_back(std::move(c));
+                }
             }
         }
         // das Schema (CREATE, ALTER, DROP) aller Zeichenketten als ein Text; eine zusammengesetzte traegt nur
@@ -535,6 +554,7 @@ void fuegeEin(modell::Einheit& in, modell::Einheit&& von)
     haenge(in.objekte, von.objekte);
     haenge(in.zugriffe, von.zugriffe);
     haenge(in.abfragen, von.abfragen);
+    haenge(in.faelle, von.faelle);
 }
 
 /// In einem Notebook gehoert, was SQL ausserhalb einer Funktion liest, schreibt, ruft, der Funktion seiner
@@ -571,6 +591,9 @@ void ordneZellenZu(modell::Einheit& e, const std::vector<Zelle>& zellen)
         if (q.name.starts_with(kOben))
             q.name = zellenName(zelleIn(zellen, q.zeile) + 1) + "@" + q.name.substr(kOben.size());
     }
+    for (modell::Fallausdruck& f : e.faelle)  // ein CASE einer Abfrage oben heisst wie sie (Z3)
+        if (f.besitzer.starts_with(kOben))
+            f.besitzer = zellenName(zelleIn(zellen, f.zeile) + 1) + "@" + f.besitzer.substr(kOben.size());
     std::stable_sort(e.funktionen.begin(), e.funktionen.end(),
                      [](const modell::Funktion& a, const modell::Funktion& b) { return a.zeile < b.zeile; });
     std::stable_sort(e.abfragen.begin(), e.abfragen.end(),

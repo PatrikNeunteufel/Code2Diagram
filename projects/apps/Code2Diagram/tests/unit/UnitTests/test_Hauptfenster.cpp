@@ -1101,6 +1101,24 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramm() == "queries");
     }
 
+    TEST_CASE("CASE als Zuordnung: Symbol am Ergebnis, aus dem Quelltext, Back, csv")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("CREATE TABLE t (id integer PRIMARY KEY, s text);\n"
+                      "SELECT id,\n"
+                      "  CASE s WHEN 'a' THEN 1 WHEN 'b' THEN 2 END AS n\n"
+                      "FROM t;\n",
+                      "s.sql");
+        REQUIRE(fenster.zeigeAbfrage());
+        CHECK(fenster.tabellenSymbole() == QStringList{QStringLiteral("Mapping table - click to show it")});
+        REQUIRE(fenster.zeigeZuordnung(3));
+        CHECK(fenster.diagramm() == "mapping:query@2@3");
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("otherwise;NULL (no ELSE)"));
+        CHECK(fenster.zurueck());
+        CHECK(fenster.diagramm() == "queries");
+    }
+
     // die Schule aus beispiele/sql/schule.sql, gekuerzt
     constexpr const char* kSchule =
         "CREATE TABLE lehrer (lehrer_id INTEGER PRIMARY KEY, name VARCHAR(60) NOT NULL);\n"

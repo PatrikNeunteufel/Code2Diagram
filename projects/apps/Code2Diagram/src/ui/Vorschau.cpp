@@ -1271,12 +1271,14 @@ void Vorschau::zeige(const Abfragediagramm& diagramm, bool nachRechts)
     // eine Bedingung mit Wahrheitstabelle: am Ergebnis WHERE/HAVING, an einer Quelle ihr ON (Entscheid W6)
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
     {
+        // dazu die Zuordnungen seiner CASE (Entscheid Z4): ein Klick zeigt die erste Tabelle, die uebrigen im Kontextmenue
         const std::vector<int>& t = diagramm.knoten[i].tabellen;
-        if (t.empty()) continue;
+        const std::size_t faelle = diagramm.knoten[i].faelle.size();
+        if (t.empty() && faelle == 0) continue;
+        const QString art = t.empty() ? QStringLiteral("Mapping table") : QStringLiteral("Truth table");
         z.tabellenSymbol(i, alsRect(a.knoten[i]),
-                         t.size() == 1 ? QStringLiteral("Truth table - click to show it")
-                                       : QStringLiteral("Truth table of line %1 - click to show it; the others in the context menu")
-                                             .arg(t.front()));
+                         t.size() + faelle == 1 ? art + QStringLiteral(" - click to show it")
+                                                : art + QStringLiteral(" - click to show it; the others in the context menu"));
     }
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 

@@ -407,6 +407,29 @@ struct Datenbankobjekt
 /// "Kein Block" einer Abfrage.
 inline constexpr std::size_t kKeinBlock = static_cast<std::size_t>(-1);
 
+/// Ein CASE-Ausdruck in SQL mit mindestens zwei WHEN (Entscheide Z1, Z3): einfach (`CASE x WHEN v THEN w`) oder
+/// gesucht (`CASE WHEN c THEN w`, der erste passende Arm gilt). Ein CASE in einem Arm steht dort als `CASE … END` und ist
+/// ein eigener Fallausdruck.
+struct Fallausdruck
+{
+    /// Wem er gehoert: die Routine, in deren Rumpf er steht, sonst die Abfrage (ihr Name) oder `query@zeile`.
+    std::string besitzer;
+    int zeile = 0;
+    /// Der zweite, dritte … CASE, der in derselben Zeile beginnt (1, 2, …); 0 = der einzige dort.
+    int nummer = 0;
+    std::string gegenstand;  ///< einfach: `x`; leer = gesucht
+    struct Arm
+    {
+        std::string wann;  ///< der Wert (einfach) oder die Bedingung (gesucht), wie in der Quelle
+        std::string dann;
+        int zeile = 0;
+    };
+    std::vector<Arm> arme;
+    bool mitSonst = false;
+    std::string sonst;  ///< der Wert von ELSE (nur mitSonst)
+    int sonstZeile = 0;
+};
+
 /// Ein Teil einer Bedingung (`ON`, `WHERE`, `HAVING`), an den aeussersten `AND` zerlegt.
 struct Bedingungsteil
 {
@@ -730,6 +753,8 @@ struct Einheit
     std::vector<Zugriff> zugriffe;
     /// SQL: jede Abfrage der Datei, in der Reihenfolge der Quelle (auch in Views und Routinen).
     std::vector<Abfrage> abfragen;
+    /// SQL: jeder CASE-Ausdruck mit mindestens zwei WHEN (Entscheide Z1, Z3), in der Reihenfolge der Quelle.
+    std::vector<Fallausdruck> faelle;
     /// Spark: die Plaene aus `explain()` — einer Plan-Datei oder der Ausgaben eines Notebooks.
     std::vector<Plan> plaene;
     /// Spark: der Lauf eines Event-Logs (hoechstens einer je Datei).

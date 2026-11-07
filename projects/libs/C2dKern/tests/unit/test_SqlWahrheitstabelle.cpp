@@ -12,6 +12,7 @@
 #include "c2d/diagramm/Anordnung.hpp"
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Projekt.hpp"
+#include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
 #include <string>
@@ -153,6 +154,39 @@ TEST_SUITE("SQL-Wahrheitstabelle")
         CHECK_FALSE(haben->atome[0].kannNull);  // count(*): keine Spalte
         CHECK(haben->atome[1].kannNull);        // eine Variable
         CHECK(diagramm::ueberschrift(*haben) == "query@4 HAVING: line 6");
+    }
+
+    TEST_CASE("Routinen (R7): IF dreiwertig mit Spalte Branch, IS NULL zweiwertig, ein Wert ohne Branch, kein Kurzschluss")
+    {
+        sprache::LeseOptionen o;
+        o.dialekt = "tsql";
+        const sprache::Ergebnis e = sprache::sql().lies("CREATE PROCEDURE p @x int AS\n"                   // 1
+                                                        "BEGIN\n"                                          // 2
+                                                        "  IF NOT (@x = 1) AND @y IS NULL PRINT 'a'\n"     // 3
+                                                        "END\n",
+                                                        "p.sql", o);
+        REQUIRE(e.einheit.funktionen.size() == 1);
+        const std::vector<Wahrheitstabelle> ts = diagramm::wahrheitstabellenVon(e.einheit.funktionen[0]);
+        REQUIRE(ts.size() == 1);
+        const Wahrheitstabelle& t = ts[0];
+        CHECK(t.dreiwertig);
+        CHECK(t.bleibt == "Branch");
+        CHECK(t.klausel.empty());
+        CHECK(diagramm::ueberschrift(t) == "p(): line 3");
+        REQUIRE(t.atome.size() == 2);
+        CHECK(t.atome[0].kannNull);         // ein Parameter
+        CHECK_FALSE(t.atome[1].kannNull);   // IS NULL
+        CHECK(t.zeilen.size() == 6);
+        CHECK(std::none_of(t.zeilen.begin(), t.zeilen.end(), [](const Wahrheitstabelle::Zeile& z) {
+            return std::find(z.werte.begin(), z.werte.end(), Wert::Egal) != z.werte.end();
+        }));
+        CHECK(meldet(t, "A (@x = 1): if it is NULL, the condition is not true where false would make it true"));
+        // ein Wert (`SET @ok = a AND b`): dreiwertig, ohne Spalte Branch
+        const sprache::Ergebnis w = sprache::sql().lies("CREATE PROCEDURE q AS BEGIN SET @ok = @a = 1 AND @b = 2 END\n", "q.sql", o);
+        const std::vector<Wahrheitstabelle> tw = diagramm::wahrheitstabellenVon(w.einheit.funktionen[0]);
+        REQUIRE(tw.size() == 1);
+        CHECK(tw[0].dreiwertig);
+        CHECK(tw[0].bleibt.empty());
     }
 
     TEST_CASE("`SELECT * EXCEPT (…)` (Spark) laesst Spalten weg — keine Mengenoperation, das WHERE gehoert dem Block")

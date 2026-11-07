@@ -559,9 +559,10 @@ std::vector<Wahrheitstabelle> wahrheitstabellenVon(const Abfrage& abfrage, const
         const AbfrageBlock& x = abfrage.bloecke[b];
         const auto tabelle = [&](const Klausel& k, std::string_view klausel, std::size_t imOn) {
             if (!k.logik) return;
-            aus.push_back(wahrheitstabelleVonSql(*k.logik, k.text, abfrage.name, klausel, k.zeile, [&](const Logik& atom) {
-                return nullFaehigAtom(atom, abfrage, b, suche, imOn);
-            }));
+            aus.push_back(wahrheitstabelleVonSql(
+                *k.logik, k.text, abfrage.name, klausel, k.zeile,
+                [&](const Logik& atom) { return nullFaehigAtom(atom, abfrage, b, suche, imOn); },
+                klausel == "ON" ? "Joined" : "Row kept"));
         };
         for (std::size_t q = 0; q < x.quellen.size(); ++q) tabelle(x.quellen[q].bedingungGanz, "ON", q);
         tabelle(x.woGanz, "WHERE", kKeine);

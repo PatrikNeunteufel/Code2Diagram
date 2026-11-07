@@ -36,7 +36,18 @@ struct Zuordnung
         int quellZeile = 0;
     };
     std::vector<Zeile> zeilen;
+    /// Eine gesuchte CASE (Entscheid Z2): vor dem Schluessel (der Bedingung) eine Spalte `#` — der erste passende Arm gilt.
+    bool nummeriert = false;
+    std::vector<std::string> hinweise;
 };
+
+/// Die Zuordnung eines CASE-Ausdrucks in SQL (Entscheid Z2): einfach Schluessel -> Wert, gesucht # / Bedingung -> Wert;
+/// zuletzt ELSE, ohne `otherwise` mit `NULL (no ELSE)`; Hinweise zu `WHEN NULL` und zu Armen, die nie erreicht werden.
+[[nodiscard]] Zuordnung zuordnungVon(const modell::Fallausdruck& fall);
+
+/// Der Name einer CASE-Zuordnung hinter `mapping:` (Entscheid Z3): `besitzer@zeile`, bei mehreren in einer Zeile
+/// `besitzer@zeile:n`.
+[[nodiscard]] std::string fallName(const modell::Fallausdruck& fall);
 
 /// Die Zuordnung des switch in dieser Zeile der Funktion; nullopt = dort keiner, oder er tut mehr.
 [[nodiscard]] std::optional<Zuordnung> zuordnungVon(const modell::Funktion& funktion, int zeile);

@@ -984,6 +984,17 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `beispiele/sql/routinen/tsql` im Ablauf `dbo.PruefeBestand` am Knoten mit `DECLARE c CURSOR FOR SELECT …` bleibt das
       Symbol das der Abfrage, das Kontextmenü bietet *Query diagram* und, wo es eine gibt, *Truth table (WHERE, line n)*.
 
+- [ ] **AC-Z1 CASE als Zuordnung:** eine Datei mit `SELECT id, CASE s WHEN 'a' THEN 1 WHEN 'b' THEN 2 END AS n FROM t`:
+      am Ergebnis im Query diagram das Tabellensymbol (Tooltip `Mapping table - click to show it`; mit WHERE `Truth table …`
+      und im Kontextmenü zusätzlich *Mapping table (CASE, line n)*). Klick: Titel `query@n: CASE s`, Spalten `s` und
+      `value`, zuletzt `otherwise` mit `NULL (no ELSE)`. Back zurück.
+      `aktion: abfrage_zeigen` `aktion: zuordnung_zeigen zeile=3`
+- [ ] **AC-Z2 Gesucht und Hinweise:** `CASE WHEN m < 10 THEN … WHEN m < 100 THEN CASE … END ELSE … END`: Titel `… CASE (first
+      match wins)`, Spalten `#`, `condition`, `value`, das innere CASE als `CASE … END`; `CASE s WHEN NULL …` gibt den Hinweis
+      `never matches`, ein doppelter Schlüssel `is never reached`. Format csv, svg, drawio.
+- [ ] **AC-Z3 Routinen und Quelltext:** in einer T-SQL-Prozedur `SET @s = CASE @x WHEN 1 THEN … WHEN 2 THEN … END`:
+      Rechtsklick auf die Zeile *Mapping table of line n*; im Ablauf am Knoten *Mapping table (CASE, line n)*.
+
 ## AD. Notebooks
 
 - [ ] **AD0 Vorbereiten:** File > Open source file… `beispiele/notebooks/lager.ipynb`, Vorschau. Der Dateifilter

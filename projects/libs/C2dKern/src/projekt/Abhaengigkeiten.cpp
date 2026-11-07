@@ -4,6 +4,8 @@
  */
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 
+#include "c2d/diagramm/Zuordnung.hpp"
+
 #include <algorithm>
 #include <deque>
 #include <map>
@@ -454,7 +456,21 @@ diagramm::Abfragediagramm abfrageIn(const Projekt& projekt, std::size_t datei, s
 {
     const std::vector<modell::Abfrage>& abfragen = projekt.dateien[datei].ergebnis.einheit.abfragen;
     if (abfrage >= abfragen.size()) return {};
-    return diagramm::abfrageVon(abfragen[abfrage], datenquellenIn(projekt, datei));
+    const modell::Abfrage& q = abfragen[abfrage];
+    diagramm::Abfragediagramm d = diagramm::abfrageVon(q, datenquellenIn(projekt, datei));
+    // die CASE-Ausdruecke der Abfrage (Entscheid Z4): an das Ergebnis des Blocks, in dessen Zeilen sie beginnen — das
+    // letzte, das nicht hinter ihnen beginnt
+    for (const modell::Fallausdruck& c : projekt.dateien[datei].ergebnis.einheit.faelle)
+    {
+        if (c.besitzer != q.name && !(q.zeile <= c.zeile && c.zeile <= q.bisZeile)) continue;
+        diagramm::AbfrageKnoten* ziel = nullptr;
+        for (diagramm::AbfrageKnoten& k : d.knoten)
+            if ((k.art == diagramm::AbfrageKnotenArt::Ergebnis || k.art == diagramm::AbfrageKnotenArt::Menge) &&
+                k.zeile <= c.zeile && (ziel == nullptr || k.zeile >= ziel->zeile))
+                ziel = &k;
+        if (ziel != nullptr) ziel->faelle.push_back(diagramm::fallName(c));
+    }
+    return d;
 }
 
 }  // namespace c2d::projekt
