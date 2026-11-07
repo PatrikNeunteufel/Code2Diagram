@@ -508,6 +508,61 @@ public:
         return tabelle(ordneAn(t, o), t.titel, o);
     }
 
+    /// Ein Datenfluss: je Rahmen (Stage, Funktion) ein Behaelter, Quelle Zylinder, Shuffle Sechseck, Aktion rund
+    /// getoent, spark.sql und Aufruf als Prozess, Session gestrichelt, zwischengespeichert dick; Pfad gestrichelt.
+    [[nodiscard]] std::string schreibe(const Datenflussdiagramm& d, const Optionen& optionen) const override
+    {
+        const FlussAnordnung a = ordneAn(d, anordnung(optionen));
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        const auto in = [&](std::size_t rahmen, Rechteck ort) {
+            if (rahmen < a.gruppen.size())
+            {
+                ort.x -= a.gruppen[rahmen].x;
+                ort.y -= a.gruppen[rahmen].y;
+            }
+            return ort;
+        };
+        const auto eltern = [&](std::size_t rahmen) { return rahmen < a.gruppen.size() ? "r" + std::to_string(rahmen) : std::string("1"); };
+        for (std::size_t r = 0; r < d.rahmen.size() && r < a.gruppen.size(); ++r)
+            aus += ecke("r" + std::to_string(r), html(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)),
+                        "swimlane;startSize=22;fontStyle=2;collapsible=0;container=1;dashed=1;fillColor=none;whiteSpace=wrap;html=1;" +
+                            std::string(kSchrift),
+                        eltern(d.rahmen[r].eltern), in(d.rahmen[r].eltern, a.gruppen[r]));
+        const auto hell = [](Farbe welche) { return std::string(c2d::diagramm::farbe(welche)); };
+        for (std::size_t i = 0; i < d.knoten.size(); ++i)
+        {
+            const DatenflussKnoten& k = d.knoten[i];
+            std::string stil = "rounded=0;";
+            switch (k.art)
+            {
+                case DatenflussKnotenArt::Quelle: stil = "shape=cylinder3;boundedLbl=1;size=8;"; break;
+                case DatenflussKnotenArt::Shuffle: stil = "shape=hexagon;perimeter=hexagonPerimeter2;"; break;
+                case DatenflussKnotenArt::Aktion: stil = "rounded=1;fillColor=" + hell(Farbe::Getoent) + ";"; break;
+                case DatenflussKnotenArt::Sql:
+                case DatenflussKnotenArt::Aufruf: stil = "shape=process;"; break;
+                case DatenflussKnotenArt::Sitzung: stil = "rounded=0;dashed=1;"; break;
+                case DatenflussKnotenArt::Schritte: break;
+            }
+            if (k.zwischengespeichert) stil += "strokeWidth=2.4;";
+            std::string text;
+            const auto dazu = [&](const std::string& t) { text += (text.empty() ? "" : "<br>") + t; };
+            if (const std::string_view s = stereotyp(k.art); !s.empty()) dazu("<i>" + html(std::string(s)) + "</i>");
+            if (!k.titel.empty()) dazu("<b>" + html(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</b>");
+            for (const std::string& z : k.zeilen) dazu(html(kuerze(z, optionen.maxZeilenLaenge)));
+            aus += ecke("d" + std::to_string(i), text, stil + "whiteSpace=wrap;html=1;align=left;spacingLeft=6;" + std::string(kSchrift),
+                        eltern(k.gruppe), in(k.gruppe, a.knoten[i]));
+        }
+        for (std::size_t e = 0; e < d.kanten.size(); ++e)
+        {
+            const DatenflussKante& k = d.kanten[e];
+            std::string stil = "edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;";
+            if (k.art == DatenflussKantenArt::Pfad) stil += "dashed=1;";
+            aus += kante("e" + std::to_string(e), html(kuerze(k.text, optionen.maxZeilenLaenge)), stil + std::string(kSchrift),
+                         "d" + std::to_string(k.von), "d" + std::to_string(k.nach));
+        }
+        return aus + std::string(kFuss);
+    }
+
     /// Eine Abfrage: je Rahmen ein Behaelter (verschachtelt, Orte relativ zu ihm), Knoten mit dem Titel
     /// fett, Join ohne Spitze, WHERE gestrichelt, korreliert gepunktet, Fluss mit Spitze.
     [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override

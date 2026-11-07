@@ -706,6 +706,77 @@ public:
         }
     }
 
+    /// Ein Knoten des Datenflusses (wie in SVG): Quelle mit gewoelbtem Deckel, Shuffle Sechseck, Aktion rund
+    /// getoent, spark.sql und Aufruf mit doppelten Seiten, Session gestrichelt, zwischengespeichert dick;
+    /// Stereotyp kursiv und Titel fett mittig, die Zeilen links.
+    void datenflussKnoten(KnotenId id, const DatenflussKnoten& k, const QRectF& r, double zeilenHoehe)
+    {
+        QPainterPath form;
+        QPen stift = m_strich;
+        QColor pinsel = m_flaeche;
+        if (k.zwischengespeichert) stift.setWidthF(2.4);
+        switch (k.art)
+        {
+            case DatenflussKnotenArt::Quelle:
+                form.addRoundedRect(r, 6, 6);
+                form.moveTo(r.left(), r.top() + 5);
+                form.quadTo(r.center().x(), r.top() + 13, r.right(), r.top() + 5);
+                break;
+            case DatenflussKnotenArt::Shuffle:
+            {
+                QPolygonF ecken;
+                for (const Punkt& p : sechseck({r.x(), r.y(), r.width(), r.height()})) ecken << alsPunkt(p);
+                form.addPolygon(ecken);
+                form.closeSubpath();
+                break;
+            }
+            case DatenflussKnotenArt::Aktion:
+                form.addRoundedRect(r, 10, 10);
+                pinsel = m_getoent;
+                break;
+            case DatenflussKnotenArt::Sql:
+            case DatenflussKnotenArt::Aufruf:
+                form.addRect(r);
+                form.moveTo(r.left() + 6, r.top());
+                form.lineTo(r.left() + 6, r.bottom());
+                form.moveTo(r.right() - 6, r.top());
+                form.lineTo(r.right() - 6, r.bottom());
+                break;
+            case DatenflussKnotenArt::Sitzung:
+                form.addRect(r);
+                stift.setStyle(Qt::DashLine);
+                break;
+            case DatenflussKnotenArt::Schritte: form.addRect(r); break;
+        }
+        QGraphicsPathItem* stueck = m_szene.addPath(form, stift, pinsel);
+        stueck->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        stueck->setZValue(2);
+        QString tipp = QStringLiteral("Click: show in the source.");
+        if (k.art == DatenflussKnotenArt::Quelle && !k.tabelle.empty()) tipp += QStringLiteral(" Double-click: show the table in Data types.");
+        if (k.art == DatenflussKnotenArt::Sql && !k.abfrage.empty()) tipp += QStringLiteral(" Double-click: show its query.");
+        if (k.art == DatenflussKnotenArt::Aufruf) tipp += QStringLiteral(" Double-click: show the data flow of the function.");
+        else if (!k.ziele.empty()) tipp += QStringLiteral(" Double-click: show the flow of the function it names.");
+        QStringList ganz;
+        for (const std::string& z : texte(k)) ganz << QString::fromStdString(z);
+        stueck->setToolTip(ganz.join(QLatin1Char('\n')) + QStringLiteral("\n\n") + tipp);
+        const std::vector<std::string> zeilen = texte(k);
+        const std::size_t vorn = (stereotyp(k.art).empty() ? 0 : 1) + (k.titel.empty() ? 0 : 1);
+        const double oben = r.center().y() - zeilenHoehe * static_cast<double>(zeilen.size()) / 2;
+        for (std::size_t z = 0; z < zeilen.size(); ++z)
+        {
+            const double y = oben + zeilenHoehe * static_cast<double>(z);
+            QGraphicsSimpleTextItem* t = nullptr;
+            if (z < vorn)
+            {
+                const bool istStereotyp = z == 0 && !stereotyp(k.art).empty();
+                t = text(gekuerzt(zeilen[z]), QRectF(r.left(), y, r.width(), zeilenHoehe), !istStereotyp, istStereotyp);
+            }
+            else
+                t = textLinks(gekuerzt(zeilen[z]), QPointF(r.left() + 10, y + 1));
+            t->setData(kKnoten, static_cast<qulonglong>(id) + 1);
+        }
+    }
+
     const QPen& strich() const { return m_strich; }
     const QColor& grund() const { return m_grund; }
     QGraphicsScene& szene() { return m_szene; }
@@ -1055,6 +1126,40 @@ void Vorschau::zeige(const Abfragediagramm& diagramm, bool nachRechts)
         z.szene().addRect(schild->sceneBoundingRect().adjusted(-2, 0, 2, 0), Qt::NoPen, z.grund())->setZValue(4);
     }
     for (std::size_t i = 0; i < a.knoten.size(); ++i) z.abfrageKnoten(i, diagramm.knoten[i], alsRect(a.knoten[i]), optionen.zeilenHoehe);
+    for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
+
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.knoten.size());
+    m_rahmen = static_cast<int>(a.gruppen.size());
+}
+
+void Vorschau::zeige(const Datenflussdiagramm& diagramm, bool nachRechts)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.nachRechts = nachRechts;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const FlussAnordnung a = ordneAn(diagramm, optionen);
+
+    Zeichner z(*scene(), dunkel());
+    for (std::size_t r = 0; r < a.gruppen.size() && r < diagramm.rahmen.size(); ++r)
+    {
+        const QString titel = QString::fromStdString(diagramm.rahmen[r].titel);
+        const auto passt = static_cast<qsizetype>(titelZeichen(a.gruppen[r], optionen));
+        z.rahmen(r, titel.size() <= passt ? titel : titel.left(passt - 3) + QStringLiteral("..."), alsRect(a.gruppen[r]), QColor(),
+                 titel);
+    }
+    // die Daten durchgezogen, ueber einen Pfad, eine Tabelle, eine View gestrichelt — je mit Spitze
+    for (std::size_t e = 0; e < a.kanten.size() && e < diagramm.kanten.size(); ++e)
+    {
+        const DatenflussKante& k = diagramm.kanten[e];
+        if (a.kanten[e].size() < 2) continue;
+        QPen stift = z.strich();
+        if (k.art == DatenflussKantenArt::Pfad) stift.setStyle(Qt::DashLine);
+        z.kante(a.kanten[e], gekuerzt(k.text), a.beschriftungen[e], stift);
+    }
+    for (std::size_t i = 0; i < a.knoten.size() && i < diagramm.knoten.size(); ++i)
+        z.datenflussKnoten(i, diagramm.knoten[i], alsRect(a.knoten[i]), optionen.zeilenHoehe);
     for (const Rechteck& r : a.knoten) m_orte.push_back(alsRect(r));
 
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);

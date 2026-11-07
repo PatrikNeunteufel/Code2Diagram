@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg; Notebooks (`.ipynb`, Databricks) je Zelle | |
@@ -387,6 +387,28 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   Leser (`%%bash`, `%scala`, `%sh`, `%pip` als Zelle) bleibt mit Hinweis außen vor.
 - Beispiele: `beispiele/notebooks/lager.ipynb`, `beispiele/notebooks/kunden_databricks.py`.
 
+**Datenfluss (Spark, Diagram *Data flow*)** — aus den Aufrufketten des Codes (`df.filter(…).withColumn(…)`), die
+ein sprachneutraler Zerleger liefert (`sprache/Kette.*`, bisher für Python); das Wissen über Spark ist eine
+Tabelle in `diagramm/Datenfluss.cpp`:
+- **Von einer Sitzung aus:** `SparkSession.builder…getOrCreate()`, `SparkContext(…)`, `spark.sparkContext`, eine
+  Funktion des Projekts, die eine Sitzung zurückgibt (`spark = create_spark_session()`, `self._get_spark()`); in
+  Notebooks sind `spark` und `sc` vorgegeben. Jede Zuweisung ist eine neue Fassung eines Namens, Zweige (`if`,
+  Schleifen, `try`) führen zusammen. Pandas zählt nicht.
+- **Knoten:** «source» (`read …` mit Format, Pfad und Optionen, `table`, `parallelize`, `textFile`, `range`), schmale
+  Schritte zusammen in einem Knoten, «shuffle» (`join`, `groupBy` samt `agg`, `distinct`, `orderBy`, `repartition`,
+  `reduceByKey` …) mit `partitions: <wert> (spark.sql.shuffle.partitions)` bzw. `spark.default.parallelism`,
+  «action» `Job n` (`count`, `show`, `collect`, `write …`), «sql» für `spark.sql("…")` mit den Quellen der Abfrage,
+  «call» für einen DataFrame, der an eine Funktion des Projekts geht; `cache`/`persist` dick umrandet. Ein Kopf
+  «session» nennt `appName`, `master` und jedes `config("spark.…")`.
+- **Rahmen je Stage** (zwischen Shuffles; `spark.sql` beginnt eine), gestrichelte Kanten über eine View
+  (`createOrReplaceTempView` → `spark.sql`), eine Tabelle (`saveAsTable` → `spark.table`) oder denselben Pfad
+  (`write.parquet(aus)` → `read.parquet(aus)`, gleicher Text und keine Zuweisung dazwischen). Nutzen mehrere Jobs
+  dasselbe Stück ohne `cache`, steht `recomputed by Job n` an der Verzweigung (Hinweis).
+- **Ansichten:** die ganze Datei (im Notebook alle Zellen mit gemeinsamen Namen, sonst je Funktion ein Rahmen) oder
+  eine Funktion, Zelle; eine Zelle zeigt, was sie aus früheren liest. Klick → Stelle; Doppelklick: Tabelle → Data
+  types, «sql» → Abfrage, UDF oder `map(f)` → Ablauf, «call» → Datenfluss der Funktion. Beispiel
+  `beispiele/spark/lager_spark.py`.
+
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
 Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
@@ -628,7 +650,7 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
 ### Kommandozeile
 
 ```bash
-c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax] [--attribute alle|schluessel|keine]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [--abfrage [<name>|<zeile>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
+c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <name>]... [--struktur [--typ <name>] [--notation tabellen|kraehenfuss|chen|minmax] [--attribute alle|schluessel|keine]] [--automat <variable>] [--aufrufgraph [<funktion>] [--tiefe n] [--aufrufer | --beide] [--ohne-fremde]] [--abhaengigkeiten [<objekt>]] [--abfrage [<name>|<zeile>]] [--datenfluss [<funktion>]] [-D NAME[=wert] | -D !NAME | -U NAME]... [--alle-zweige | --varianten | --rahmen] [--format svg|mermaid|dot|drawio|csv] [--richtung TD|LR] [--roh] [--struktogramm] [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle] [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration] [--schaltet <name>] [--schalter] [--breite]
 ```
 
 - ohne Auswahl: das Diagramm der ersten Funktion mit Rumpf; gibt es keine, die Datentypen
@@ -654,6 +676,9 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
 - `--abfrage` zeichnet eine **Abfrage** der Datei (im Projekt mit `--datei`). `--abfrage knapp` wählt
   nach Name (wie `--liste` sie als `query` nennt), `--abfrage 71` nach Zeile, ohne Wert die erste.
   csv sagt ab.
+- `--datenfluss` zeichnet den **Datenfluss (Spark)** der Datei (im Projekt mit `--datei`), `--datenfluss bericht`
+  oder `--datenfluss "<cell 3>"` den einer Funktion oder Zelle (wie `--liste` sie als `dataflow` nennt); Hinweise
+  (`recomputed by …`, ein Parameter, der nicht verfolgt wird) auf stderr; csv sagt ab.
 - `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
   ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
   rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
@@ -902,6 +927,12 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   verfolgt; eine SQL-Zelle hat als `<cell n>` keinen Ablauf (nur Zugriffe und Abfragen); dass Zellen in
   anderer Reihenfolge laufen können als im Notebook, sieht das Diagramm nicht. Eine Zeile mit `%` oder `!`
   vorn gilt als Magie, auch mitten in einem Ausdruck über mehrere Zeilen.
+- **Datenfluss (Spark):** nur PySpark. Verfolgt wird von einer Sitzung aus; was eine Bibliothek liefert
+  (MLlib `MLUtils.loadLibSVMFile(sc, …)`), ein Parameter (Hinweis) oder was eine Funktion des Projekts mit einem
+  DataFrame zurückgibt, nicht. Stages sind aus dem Code geschlossen (Shuffles, `spark.sql`), nicht aus dem Plan;
+  was eine Abfrage in `spark.sql` selbst verteilt, zeigt erst Schicht 2. Ein Shuffle in einer Fensterfunktion
+  (`F.row_number().over(w)` in `withColumn`) bleibt ein schmaler Schritt. Je Stage ein Band; eine Stage, die keine
+  Schicht mit einer davor teilt, steht unter ihr — teilt sie eine (über eine lange Kante), steht sie daneben.
 - Ein Funktionszeiger als Glied gibt keine Beziehung zu den Typen seiner Parameter.
 - Code, den kein Weg erreicht (hinter `return`), steht als unverbundener Knoten im Diagramm.
 - Gebaut und geprüft ist nur Windows mit Release-clang. Die DOT-Ausgabe ist gegen erwarteten

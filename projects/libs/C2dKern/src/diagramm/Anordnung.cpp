@@ -259,14 +259,20 @@ std::vector<double> brandesKoepf(const std::vector<std::vector<std::size_t>>& sc
 /// jedes Band beginnt rechts von allem, was in den Baendern davor steht, in jeder Schicht —
 /// so ueberschneiden sich die Rahmen zweier Baender nie. Ein Stuetzpunkt steht im Band des
 /// Ziels seiner Kante. `bandBreite[b]`: so breit ist Band b mindestens (Platz fuer den Titel
-/// seines Rahmens), vom linken Rand seines ersten Knotens an.
+/// seines Rahmens), vom linken Rand seines ersten Knotens an. `bandGruppe[b]` (leer: jedes Band
+/// rechts vom vorigen): die Gruppe von Band b, aufeinanderfolgende Baender je Gruppe — ein Band
+/// rueckt nur neben die seiner Gruppe, mit denen es Schichten teilt, sonst an den linken Rand der
+/// Gruppe (eine Stage unter der davor statt daneben); jede Gruppe beginnt rechts von allem davor.
+/// `titelQuer`: so viel braucht der Titel eines Rahmens quer zur Richtung (nach rechts gerechnet:
+/// er steht oben) — beim Stapeln je Rahmenebene zwischen zwei Baendern.
 Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& kanten,
                     const std::vector<double>& stuetzBreite = {},
                     const std::vector<std::vector<std::size_t>>& gruppenVon = {},
                     const std::vector<double>& schildLaenge = {},
                     const std::vector<std::size_t>& bandVon = {},
                     const std::vector<double>& bandBreite = {},
-                    const std::vector<bool>& zuUnterst = {})
+                    const std::vector<bool>& zuUnterst = {},
+                    const std::vector<std::size_t>& bandGruppe = {}, double titelQuer = 0)
 {
     const std::size_t n = groesse.size();
     Schichtung s;
@@ -645,17 +651,55 @@ Schichtung schichte(const std::vector<Punkt>& groesse, const std::vector<Paar>& 
     {
         double ende = 0;
         bool erstes = true;
+        // mit bandGruppe: ein Band rueckt nur neben die Baender seiner Gruppe, mit denen es Schichten teilt (sonst an
+        // den Rand der Gruppe); jede Gruppe beginnt rechts von allem davor
+        const bool stapeln = !bandGruppe.empty();
+        std::size_t gruppeJetzt = kKeine;
+        double gruppeAnfang = 0;
+        std::vector<std::size_t> zeileVon(alle, 0);
+        for (std::size_t r = 0; r < schicht.size(); ++r)
+            for (const std::size_t v : schicht[r]) zeileVon[v] = r;
+        struct Gelegt
+        {
+            std::size_t von, bis;
+            double rechts;
+        };
+        std::vector<Gelegt> gelegt;  // die Baender der laufenden Gruppe
+        double ganzRechts = -1e18;   // was alle Gruppen bisher belegen
         for (std::size_t b = 0; b < baender; ++b)
         {
             double anfang = 1e18, rechts = -1e18;
+            std::size_t von = static_cast<std::size_t>(-1), bis = 0;
             for (std::size_t v = 0; v < alle; ++v)
                 if (band[v] == b)
                 {
                     anfang = std::min(anfang, mitteX[v] - halbLinks[v]);
                     rechts = std::max(rechts, mitteX[v] + halbRechts[v]);
+                    von = std::min(von, zeileVon[v]);
+                    bis = std::max(bis, zeileVon[v]);
                 }
             if (anfang > 1e17) continue;
-            const double ziel = erstes ? anfang : ende + 2 * kGruppenRand + kAbstandNachbar;
+            double ziel = erstes ? anfang : ende + 2 * kGruppenRand + kAbstandNachbar;
+            if (stapeln)
+            {
+                const std::size_t gruppe = b < bandGruppe.size() ? bandGruppe[b] : kKeine;
+                if (erstes || gruppe != gruppeJetzt)
+                {
+                    gruppeJetzt = gruppe;
+                    // zwischen zwei Gruppen die Raender (und Titel) zweier Rahmen je Seite: der der Gruppe und der
+                    // ihres Bands
+                    gruppeAnfang = erstes ? anfang : ganzRechts + 4 * kGruppenRand + 2 * titelQuer + kAbstandNachbar;
+                    gelegt.clear();
+                }
+                ziel = gruppeAnfang;
+                for (const Gelegt& g : gelegt)
+                    if (g.von <= bis && von <= g.bis)
+                        ziel = std::max(ziel, g.rechts + 2 * kGruppenRand + titelQuer + kAbstandNachbar);
+                double r = rechts + (ziel - anfang);
+                if (b < bandBreite.size()) r = std::max(r, ziel + bandBreite[b]);
+                gelegt.push_back({von, bis, r});
+                ganzRechts = std::max(ganzRechts, r);
+            }
             for (std::size_t v = 0; v < alle; ++v)
                 if (band[v] == b) mitteX[v] += ziel - anfang;
             ende = rechts + (ziel - anfang);
@@ -889,7 +933,7 @@ Wege fuehreKanten(const Schichtung& s, const std::vector<Rechteck>& orte, const 
 /// Die Anordnung eines Flussdiagramms, mit Baendern (schichte) und den Zeilen der Legende.
 FlussAnordnung ordneFluss(const Flussdiagramm& diagramm, const AnordnungOptionen& optionen,
                           const std::vector<std::size_t>& bandVon, const std::vector<Farbzeile>& farbzeilen,
-                          const std::vector<double>& bandBreite = {})
+                          const std::vector<double>& bandBreite = {}, const std::vector<std::size_t>& bandGruppe = {})
 {
     const std::vector<Knoten>& knoten = diagramm.knoten();
     const std::vector<Kante>& kanten = diagramm.kanten();
@@ -925,7 +969,7 @@ FlussAnordnung ordneFluss(const Flussdiagramm& diagramm, const AnordnungOptionen
     std::vector<bool> unten(knoten.size(), false);
     for (std::size_t v = 0; v < knoten.size(); ++v) unten[v] = knoten[v].unerreichbar;
     const Schichtung s = schichte(groesse, paare, stuetzBreite, gruppenVon, schildLaenge, bandVon,
-                                  drehen ? std::vector<double>() : bandBreite, unten);
+                                  drehen ? std::vector<double>() : bandBreite, unten, bandGruppe, drehen ? kGruppenTitel : 0);
     a.knoten = s.orte;
 
     const Wege wege = fuehreKanten(s, a.knoten, paare, stuetzBreite, schildLaenge);
@@ -1468,6 +1512,81 @@ FlussAnordnung ordneAn(const Abfragediagramm& diagramm, const AnordnungOptionen&
     }
     if (aussen == 0) return ordneAn(fluss, optionen);  // keine Unterabfrage: ein Band
     return ordneFluss(fluss, optionen, baender, {}, bandBreite);
+}
+
+FlussAnordnung ordneAn(const Datenflussdiagramm& diagramm, const AnordnungOptionen& optionen)
+{
+    // Rahmen als Gruppen. Je innerstem Rahmen (einer Stage; der Rahmen einer Funktion fuer ihren Kopf) ein Band, so
+    // umfasst keine Stage einen fremden Knoten; die Baender einer Funktion bilden eine Gruppe — eine Stage steht unter
+    // der davor, wenn sie keine Schicht mit ihr teilt (sonst gaebe jede Stage eine Stufe einer Treppe). Was in keinem
+    // Rahmen steht (Session, Aufrufe), steht in der letzten Gruppe.
+    Flussdiagramm fluss(diagramm.titel);
+    for (const DatenflussRahmen& r : diagramm.rahmen)
+    {
+        Gruppe g;
+        g.titel = r.titel;
+        g.eltern = r.eltern;
+        fluss.neueGruppe(std::move(g));
+    }
+    if (diagramm.rahmen.empty())
+    {
+        for (const DatenflussKnoten& k : diagramm.knoten)
+        {
+            Knoten n;
+            n.zeilen = texte(k);
+            n.quellZeile = k.zeile;
+            fluss.neuerKnoten(std::move(n));
+        }
+        for (const DatenflussKante& e : diagramm.kanten) fluss.verbinde(e.von, e.nach, e.text);
+        return ordneAn(fluss, optionen);
+    }
+    const auto oberster = [&](std::size_t r) {
+        while (r != kKeine && diagramm.rahmen[r].eltern != kKeine) r = diagramm.rahmen[r].eltern;
+        return r;
+    };
+    // die Baender: genutzte innerste Rahmen, nach (oberster Rahmen, Rahmen); ohne Rahmen zuletzt
+    std::vector<std::size_t> genutzt;
+    for (const DatenflussKnoten& k : diagramm.knoten)
+        if (std::find(genutzt.begin(), genutzt.end(), k.gruppe) == genutzt.end()) genutzt.push_back(k.gruppe);
+    std::sort(genutzt.begin(), genutzt.end(), [&](std::size_t a, std::size_t b) {
+        const std::size_t oa = a == kKeine ? diagramm.rahmen.size() : oberster(a);
+        const std::size_t ob = b == kKeine ? diagramm.rahmen.size() : oberster(b);
+        if (oa != ob) return oa < ob;
+        return (a == kKeine ? diagramm.rahmen.size() : a) < (b == kKeine ? diagramm.rahmen.size() : b);
+    });
+    // die Gruppe: der Rahmen der Funktion (ein oberster Rahmen mit Rahmen darin); Stages ohne ihn teilen eine
+    const auto gruppeVon = [&](std::size_t r) -> std::size_t {
+        if (r == kKeine) return diagramm.rahmen.size() + 1;
+        const std::size_t o = oberster(r);
+        const bool behaelter = std::any_of(diagramm.rahmen.begin(), diagramm.rahmen.end(),
+                                           [&](const DatenflussRahmen& x) { return x.eltern == o; });
+        return behaelter || o != r ? o : diagramm.rahmen.size();
+    };
+    std::stable_sort(genutzt.begin(), genutzt.end(), [&](std::size_t a, std::size_t b) { return gruppeVon(a) < gruppeVon(b); });
+    std::vector<double> bandBreite;
+    std::vector<std::size_t> bandGruppe;
+    for (const std::size_t r : genutzt)
+    {
+        bandBreite.push_back(r == kKeine ? 0 : titelBreite(diagramm.rahmen[r].titel, optionen) - 2 * kGruppenRand);
+        bandGruppe.push_back(gruppeVon(r));
+    }
+    std::vector<std::size_t> baender;
+    for (const DatenflussKnoten& k : diagramm.knoten)
+    {
+        Knoten n;
+        n.zeilen = texte(k);
+        n.gruppe = k.gruppe;
+        n.quellZeile = k.zeile;
+        fluss.neuerKnoten(std::move(n));
+        baender.push_back(static_cast<std::size_t>(std::find(genutzt.begin(), genutzt.end(), k.gruppe) - genutzt.begin()));
+    }
+    for (const DatenflussKante& e : diagramm.kanten)
+    {
+        std::string text = e.text;
+        if (optionen.maxZeilenLaenge != 0 && text.size() > optionen.maxZeilenLaenge) text.resize(optionen.maxZeilenLaenge);
+        fluss.verbinde(e.von, e.nach, text);
+    }
+    return ordneFluss(fluss, optionen, baender, {}, bandBreite, bandGruppe);
 }
 
 // ---------------------------------------------------------------------------

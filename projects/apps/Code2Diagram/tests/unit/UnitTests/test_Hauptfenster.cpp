@@ -998,14 +998,26 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.gezeigteStelle() == "n.ipynb:7 (cell 2, line 3)");
     }
 
-    TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns")
+    TEST_CASE("Der Dateifilter nennt die Endungen der Sprachen des Kerns, vorn alle unterstuetzten")
     {
         // aus sprachen() gebildet: eine neue Sprache braucht hier keine neue Zeile
         const auto sprachen = c2d::sprache::sprachen();
-        const QStringList filter = Hauptfenster::dateiFilter().split(QStringLiteral(";;"));
-        REQUIRE(filter.size() == static_cast<qsizetype>(sprachen.size()) + 2);  // dazu Notebooks und alle
+        QStringList filter = Hauptfenster::dateiFilter().split(QStringLiteral(";;"));
+        // dazu vorn alle unterstuetzten (die Vorgabe des Dialogs), hinten Notebooks und alle Dateien
+        REQUIRE(filter.size() == static_cast<qsizetype>(sprachen.size()) + 3);
+        const QString vorn = filter.takeFirst();
+        REQUIRE(vorn.startsWith(QStringLiteral("All supported files (")));
+        QStringList alle = vorn.mid(vorn.indexOf(QLatin1Char('(')) + 1).chopped(1).split(QLatin1Char(' '));
+        CHECK(alle.removeDuplicates() == 0);
+        CHECK(alle.contains("*.c"));
+        CHECK(alle.contains("*.h"));
+        CHECK(alle.contains("*.kt"));
+        CHECK(alle.contains("*.sql"));
+        CHECK(alle.back() == "*.ipynb");
         for (std::size_t i = 0; i < sprachen.size(); ++i)
         {
+            for (const std::string_view endung : sprachen[i]->endungen())
+                CHECK(alle.contains(QStringLiteral("*.") + QString::fromUtf8(endung.data(), static_cast<qsizetype>(endung.size()))));
             QStringList muster;
             for (const std::string_view endung : sprachen[i]->endungen())
                 muster << QStringLiteral("*.") + QString::fromUtf8(endung.data(), static_cast<qsizetype>(endung.size()));
@@ -1130,6 +1142,39 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("---|\"inner: b.artikel_id = a.artikel_id\"|"));
         REQUIRE(fenster.waehleFormat("csv"));
         CHECK(fenster.diagrammText().contains("Query is not available in csv"));
+    }
+
+    TEST_CASE("Data flow: Eintrag und zweites Feld, Datei und Funktion, Klick zeigt die Stelle, Back, Formate")
+    {
+        Hauptfenster fenster;
+        fenster.zeige("from pyspark.sql import SparkSession\n"                        // 1
+                      "def lade(p):\n"                                                 // 2
+                      "    spark = SparkSession.builder.appName(\"A\").getOrCreate()\n"  // 3
+                      "    df = spark.read.parquet(p).filter(\"x > 0\")\n"              // 4
+                      "    df.groupBy(\"k\").count().show()\n"                          // 5
+                      "def leer():\n"                                                  // 6
+                      "    return 1\n",                                                // 7
+                      "f.py");
+        CHECK(fenster.diagramme().contains("flow"));
+        CHECK(fenster.datenfluesse() == QStringList{"lade"});
+        CHECK_FALSE(fenster.zeigeDatenfluss("leer"));
+        REQUIRE(fenster.zeigeDatenfluss("lade"));
+        CHECK(fenster.diagramm() == "flow");
+        CHECK(fenster.datenflussKnoten() ==
+              QStringList{"Session", "read parquet", "filter(\"x > 0\")", "groupBy(\"k\")", "Job 1: show()"});
+        CHECK(fenster.vorschauFormen() == 5);
+        CHECK(fenster.klicke("groupBy(\"k\")"));
+        CHECK(fenster.gezeigteStelle() == "f.py:5");
+        // die ganze Datei, dann zurueck zur Funktion
+        REQUIRE(fenster.zeigeDatenfluss());
+        CHECK(fenster.datenflussKnoten().size() == 5);
+        REQUIRE(fenster.zurueck());
+        CHECK(fenster.diagramm() == "flow");
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().contains("{{\"<i>"));
+        CHECK(fenster.diagrammText().contains("subgraph"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("Data flow is not available in csv"));
     }
 
     TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")

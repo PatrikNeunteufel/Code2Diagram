@@ -268,6 +268,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     m_abfrageAuswahl->setObjectName(QStringLiteral("abfrageAuswahl"));
     m_abfrageAuswahl->setToolTip(QStringLiteral("The query shown, in the order of the file"));
     m_abfrageAuswahl->hide();
+    // beim Datenfluss (Entscheid F6): die Datei oder eine Funktion, Zelle
+    m_flussAuswahl = new QComboBox(rechts);
+    m_flussAuswahl->setObjectName(QStringLiteral("flussAuswahl"));
+    m_flussAuswahl->setToolTip(QStringLiteral("The Spark data flow shown: the whole file, or one function or cell"));
+    m_flussAuswahl->hide();
     m_format = new QComboBox(rechts);
     m_format->setObjectName(QStringLiteral("format"));
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate())
@@ -319,6 +324,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     leiste->addWidget(m_auswahl, 1);
     leiste->addWidget(m_typAuswahl, 1);
     leiste->addWidget(m_abfrageAuswahl, 1);
+    leiste->addWidget(m_flussAuswahl, 1);
     leiste->addWidget(m_darstellung);
     leiste->addWidget(m_notation);
     leiste->addWidget(m_attribute);
@@ -373,6 +379,18 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         zeigeLage();
         aktualisiereLeiste();
     });
+    connect(m_flussAuswahl, &QComboBox::currentIndexChanged, this, [this] {
+        const QVariant daten = m_flussAuswahl->currentData();
+        if (!daten.isValid()) return;
+        const QString neu = daten.toString();
+        if (neu == m_flussName && !m_datenfluss.knoten.empty()) return;
+        if (!m_ohneVerlauf && istDatenfluss()) m_verlauf << hier();
+        m_flussName = neu;
+        leiteDatenflussAb();
+        zeichne();
+        zeigeLage();
+        aktualisiereLeiste();
+    });
     // ein Klick zeigt die Stelle im Quelltext, ein Doppelklick fuehrt zu dem, was genannt ist
     m_vorschau->beiKlick = [this](c2d::diagramm::KnotenId knoten) { zeigeStelle(knoten); };
     m_vorschau->beiKlickKasten = [this](std::size_t kasten, std::size_t eintrag) { zeigeStelle(kasten, eintrag); };
@@ -409,6 +427,11 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
         if (istAbfrage())
         {
             folgeAbfrage(knoten);
+            return;
+        }
+        if (istDatenfluss())
+        {
+            folgeDatenfluss(knoten);
             return;
         }
         if (istAufrufgraph())
@@ -448,6 +471,8 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             abhaengigkeitenMenue(knoten);
         else if (istAbfrage())
             abfrageMenue(knoten);
+        else if (istDatenfluss())
+            datenflussMenue(knoten);
         else if (istAufrufgraph())
             aufrufgraphMenue(knoten, ort);
         else
@@ -921,6 +946,10 @@ void Hauptfenster::zeigeDatei(std::size_t index)
             m_auswahl->addItem(QStringLiteral("Data dependencies (%1)").arg(n), QString::fromLatin1(kAbhaengigkeitenDatei));
         if (!einheit.abfragen.empty())
             m_auswahl->addItem(QStringLiteral("Queries (%1)").arg(einheit.abfragen.size()), QString::fromLatin1(kAbfragen));
+        // der Datenfluss (Spark Schicht 1): je Funktion oder Zelle mit einem, dazu die ganze Datei
+        m_flussNamen = c2d::projekt::datenfluesseIn(m_projekt, m_datei);
+        if (!m_flussNamen.empty())
+            m_auswahl->addItem(QStringLiteral("Data flow (%1)").arg(m_flussNamen.size()), QString::fromLatin1(kDatenfluss));
         if (const std::size_t n = c2d::diagramm::nachschlagetabellenVon(einheit).size(); n > 0)  // nur die Zahl
             m_auswahl->addItem(QStringLiteral("Lookup tables (%1)").arg(n), QString::fromLatin1(kNachschlagetabellen));
         if (!d.ergebnis.weichen.empty())
@@ -953,6 +982,14 @@ void Hauptfenster::zeigeDatei(std::size_t index)
             m_abfrageAuswahl->addItem(QStringLiteral("%1 (line %2)").arg(ausStd(abfragen[i].name)).arg(abfragen[i].zeile),
                                       QString::number(i));
         m_abfrage = abfragen.empty() ? QString() : QStringLiteral("0");
+    }
+    {
+        // der Datenfluss: vorn die ganze Datei, dann je Funktion oder Zelle; gewaehlt ist die Datei
+        const QSignalBlocker ruhe(m_flussAuswahl);
+        m_flussAuswahl->clear();
+        m_flussAuswahl->addItem(QStringLiteral("Whole file (%1)").arg(m_flussNamen.size()), QString());
+        for (const std::string& f : m_flussNamen) m_flussAuswahl->addItem(ausStd(f), ausStd(f));
+        m_flussName.clear();
     }
     {
         // im Baum die Datei markieren, ohne dass er sie noch einmal waehlt
@@ -1040,7 +1077,7 @@ void Hauptfenster::zeigeLage()
         if (!eintrag.startsWith(QLatin1String(kAutomat)) && eintrag != QLatin1String(kDatentypen) &&
             eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)) &&
             eintrag != QLatin1String(kAbhaengigkeitenDatei) && !eintrag.startsWith(QLatin1String(kAbhaengigkeiten)) &&
-            eintrag != QLatin1String(kAbfragen))
+            eintrag != QLatin1String(kAbfragen) && eintrag != QLatin1String(kDatenfluss))
             ++funktionen;
     const QString art = d.zellen.empty() ? QString() : QStringLiteral(" notebook (%1 cells)").arg(d.zellen.size());
     QString lage = QStringLiteral("%1, read as %2%3%4: %5 function(s), %6 data type(s)")
@@ -1086,6 +1123,18 @@ void Hauptfenster::zeigeLage()
                     .arg(m_abfrageDiagramm.knoten.size())
                     .arg(m_abfrageDiagramm.kanten.size())
                     .arg(m_abfrageDiagramm.rahmen.size());
+    if (istDatenfluss())
+    {
+        lage += QStringLiteral(" | data flow: %1 node(s), %2 job(s), %3 stage(s)")
+                    .arg(m_datenfluss.knoten.size())
+                    .arg(m_datenfluss.jobs)
+                    .arg(m_datenfluss.stages);
+        if (!m_datenfluss.hinweise.empty())
+            lage += QStringLiteral(" - %1 note(s), first line %2: %3")
+                        .arg(m_datenfluss.hinweise.size())
+                        .arg(m_datenfluss.hinweise.front().zeile)
+                        .arg(ausStd(m_datenfluss.hinweise.front().text));
+    }
     if (istAbhaengigkeiten())
     {
         const c2d::diagramm::Aufrufgraph& g = m_abhaengigkeiten.graph;
@@ -1408,6 +1457,9 @@ QStringList Hauptfenster::diagramme() const
 
 bool Hauptfenster::waehleDiagramm(const QString& name)
 {
+    // `flow:<funktion>`: der Datenfluss einer Funktion oder Zelle (`flow` allein: der Datei)
+    const QString fluss = QString::fromLatin1(kDatenfluss) + QLatin1Char(':');
+    if (name.startsWith(fluss)) return zeigeDatenfluss(name.mid(fluss.size()));
     const QString typen = QString::fromLatin1(kDatentypen) + QLatin1Char(':');
     if (name.startsWith(typen))
         return m_typAuswahl->findData(name.mid(typen.size())) >= 0 && waehleEintrag(QString::fromLatin1(kDatentypen)) &&
@@ -1417,7 +1469,7 @@ bool Hauptfenster::waehleDiagramm(const QString& name)
 
 Hauptfenster::Stelle Hauptfenster::hier(c2d::diagramm::KnotenId von) const
 {
-    return Stelle{m_datei, m_gezeigt, von, istAbfrage() ? m_abfrage : m_typ};
+    return Stelle{m_datei, m_gezeigt, von, istAbfrage() ? m_abfrage : istDatenfluss() ? m_flussName : m_typ};
 }
 
 QStringList Hauptfenster::typen() const
@@ -1700,6 +1752,144 @@ void Hauptfenster::geheZuAbfrage(std::size_t datei, std::size_t index, c2d::diag
     m_ohneVerlauf = false;
     zeigeLage();
     aktualisiereLeiste();
+}
+
+// --- Datenfluss (Spark Schicht 1, Entscheid F6) ---------------------------------------------------
+
+bool Hauptfenster::istDatenfluss() const
+{
+    return m_gezeigt == QLatin1String(kDatenfluss);
+}
+
+void Hauptfenster::leiteDatenflussAb()
+{
+    m_datenfluss = {};
+    if (!istDatenfluss() || m_datei >= m_projekt.dateien.size()) return;
+    m_datenfluss = c2d::projekt::datenflussIn(m_projekt, m_datei, m_flussName.toStdString());
+}
+
+bool Hauptfenster::zeigeDatenfluss(const QString& funktion)
+{
+    if (m_datei >= m_projekt.dateien.size()) return false;
+    // der Name allein oder voll; im Feld steht der volle
+    QString voll = funktion;
+    if (!funktion.isEmpty())
+    {
+        voll.clear();
+        for (const std::string& f : m_flussNamen)
+        {
+            const QString n = ausStd(f);
+            if (n == funktion || n.endsWith(QStringLiteral("::") + funktion)) voll = n;
+        }
+        if (voll.isEmpty()) return false;
+    }
+    geheZuDatenfluss(m_datei, voll);
+    return istDatenfluss() && m_flussName == voll;
+}
+
+void Hauptfenster::geheZuDatenfluss(std::size_t datei, const QString& funktion, c2d::diagramm::KnotenId von)
+{
+    if (datei >= m_projekt.dateien.size()) return;
+    if (datei == m_datei && istDatenfluss() && m_flussName == funktion) return;
+    if (!m_gezeigt.isEmpty()) m_verlauf << hier(von);
+    m_ohneVerlauf = true;
+    if (datei != m_datei) zeigeDatei(datei);
+    {
+        const QSignalBlocker ruhe(m_flussAuswahl);
+        waehle(m_flussAuswahl, funktion);
+    }
+    m_flussName = funktion;
+    if (!istDatenfluss())
+        waehleEintrag(QString::fromLatin1(kDatenfluss));
+    else
+    {
+        leiteDatenflussAb();
+        zeichne();
+    }
+    m_ohneVerlauf = false;
+    zeigeLage();
+    aktualisiereLeiste();
+}
+
+QStringList Hauptfenster::datenfluesse() const
+{
+    QStringList aus;
+    for (const std::string& f : m_flussNamen) aus << ausStd(f);
+    return aus;
+}
+
+QStringList Hauptfenster::datenflussKnoten() const
+{
+    QStringList aus;
+    if (istDatenfluss())
+        for (const c2d::diagramm::DatenflussKnoten& k : m_datenfluss.knoten)
+            aus << (k.titel.empty() ? (k.zeilen.empty() ? QString() : ausStd(k.zeilen.front())) : ausStd(k.titel));
+    return aus;
+}
+
+/// Wohin ein Knoten des Datenflusses fuehrt: eine Tabelle nach Data types, spark.sql zu ihrer Abfrage, ein
+/// Aufruf zum Datenfluss der Funktion (sonst ihr Ablauf), eine UDF oder `map(f)` zum Ablauf von f.
+void Hauptfenster::folgeDatenfluss(c2d::diagramm::KnotenId knoten)
+{
+    if (!istDatenfluss() || knoten >= m_datenfluss.knoten.size()) return;
+    const c2d::diagramm::DatenflussKnoten k = m_datenfluss.knoten[knoten];
+    using Art = c2d::diagramm::DatenflussKnotenArt;
+    if (k.art == Art::Quelle && !k.tabelle.empty())
+    {
+        if (!zeigeTyp(ausStd(k.tabelle)))
+            statusBar()->showMessage(QStringLiteral("%1: no table in the project").arg(ausStd(k.tabelle)), 4000);
+        return;
+    }
+    if (k.art == Art::Sql && !k.abfrage.empty())
+    {
+        if (const auto [d, i] = abfrageVon(k.abfrage); d != kKeine) geheZuAbfrage(d, i, knoten);
+        return;
+    }
+    if (k.ziele.empty()) return;
+    if (k.ziele.size() > 1)
+    {
+        datenflussMenue(knoten);
+        return;
+    }
+    folgeZiel(k, k.ziele.front(), knoten);
+}
+
+void Hauptfenster::folgeZiel(const c2d::diagramm::DatenflussKnoten& k, const std::string& ziel, c2d::diagramm::KnotenId knoten)
+{
+    // ein Aufruf mit einem DataFrame: der Datenfluss der Funktion, wenn sie einen hat
+    if (k.art == c2d::diagramm::DatenflussKnotenArt::Aufruf)
+        for (const std::string& f : m_flussNamen)
+            if (f == ziel || f.ends_with("::" + ziel))
+            {
+                geheZuDatenfluss(m_datei, ausStd(f), knoten);
+                return;
+            }
+    const std::vector<c2d::projekt::Fundstelle> stellen = c2d::projekt::kandidaten(m_projekt, m_datei, ziel);
+    if (stellen.empty())
+    {
+        statusBar()->showMessage(QStringLiteral("%1: not defined in the project").arg(ausStd(ziel)), 4000);
+        return;
+    }
+    gehe(stellen.front(), knoten);
+    if (stellen.size() > 1)
+        statusBar()->showMessage(QStringLiteral("%1: %2 candidates, showing the first").arg(ausStd(ziel)).arg(stellen.size()), 4000);
+}
+
+void Hauptfenster::datenflussMenue(c2d::diagramm::KnotenId knoten)
+{
+    if (!istDatenfluss() || knoten >= m_datenfluss.knoten.size()) return;
+    const c2d::diagramm::DatenflussKnoten k = m_datenfluss.knoten[knoten];
+    using Art = c2d::diagramm::DatenflussKnotenArt;
+    QMenu menue(this);
+    if (k.art == Art::Quelle && !k.tabelle.empty())
+        menue.addAction(QStringLiteral("Show %1 in Data types").arg(ausStd(k.tabelle)), this, [this, knoten] { folgeDatenfluss(knoten); });
+    if (k.art == Art::Sql && !k.abfrage.empty())
+        menue.addAction(QStringLiteral("Query diagram of %1").arg(ausStd(k.abfrage)), this, [this, knoten] { folgeDatenfluss(knoten); });
+    for (const std::string& z : k.ziele)
+        menue.addAction((k.art == Art::Aufruf ? QStringLiteral("Data flow of %1") : QStringLiteral("Show the flow of %1()")).arg(ausStd(z)),
+                        this, [this, k, z, knoten] { folgeZiel(k, z, knoten); });
+    if (k.zeile > 0) menue.addAction(QStringLiteral("Show in the source"), this, [this, knoten] { zeigeStelle(knoten); });
+    if (!menue.isEmpty()) menue.exec(QCursor::pos());
 }
 
 std::pair<std::size_t, std::size_t> Hauptfenster::abfrageVon(const std::string& name) const
@@ -2044,6 +2234,16 @@ bool Hauptfenster::zurueck()
         leiteAbfrageAb();
         zeichne();
     }
+    if (gefunden && davor.diagramm == QLatin1String(kDatenfluss) && davor.typ != m_flussName)
+    {
+        {
+            const QSignalBlocker ruhe(m_flussAuswahl);
+            waehle(m_flussAuswahl, davor.typ);
+        }
+        m_flussName = davor.typ;
+        leiteDatenflussAb();
+        zeichne();
+    }
     m_ohneVerlauf = false;
     // zurueck zum Aufruf, von dem man kam: er ist hervorgehoben
     if (gefunden && m_gezeigt == davor.diagramm) m_vorschau->markiere(davor.knoten);
@@ -2059,6 +2259,7 @@ QString Hauptfenster::markiert() const
     if (istAbhaengigkeiten())
         return k < m_abhaengigkeiten.graph.knoten.size() ? ausStd(m_abhaengigkeiten.graph.knoten[k].name) : QString();
     if (istAbfrage()) return k < m_abfrageDiagramm.knoten.size() ? ausStd(m_abfrageDiagramm.knoten[k].titel) : QString();
+    if (istDatenfluss()) return k < m_datenfluss.knoten.size() ? datenflussKnoten().value(static_cast<qsizetype>(k)) : QString();
     if (m_gezeigt == QLatin1String(kDatentypen))
         return k < m_struktur.kaesten.size() ? ausStd(m_struktur.kaesten[k].name) : QString();
     if (k >= m_fluss.knoten().size()) return {};
@@ -2672,13 +2873,19 @@ int Hauptfenster::meldungen() const
 
 QString Hauptfenster::dateiFilter()
 {
+    // vorn (die Vorgabe des Dialogs) alles, was sich lesen laesst — jede Endung einmal (C und C++ teilen `.h`)
     QStringList filter;
+    QStringList alle;
     for (const c2d::sprache::Sprache* s : c2d::sprache::sprachen())
     {
         QStringList muster;
         for (const std::string_view endung : s->endungen()) muster << QStringLiteral("*.") + ausStd(endung);
         filter << QStringLiteral("%1 files (%2)").arg(ausStd(s->name()), muster.join(QLatin1Char(' ')));
+        for (const QString& m : muster)
+            if (!alle.contains(m)) alle << m;
     }
+    alle << QStringLiteral("*.ipynb");
+    filter.prepend(QStringLiteral("All supported files (%1)").arg(alle.join(QLatin1Char(' '))));
     filter << QStringLiteral("Jupyter notebooks (*.ipynb)");
     filter << QStringLiteral("All files (*)");
     return filter.join(QStringLiteral(";;"));
@@ -2781,6 +2988,8 @@ void Hauptfenster::baueNeu()
     m_typAuswahl->setVisible(m_gezeigt == QLatin1String(kDatentypen));
     m_abfrageAuswahl->setVisible(istAbfrage());
     leiteAbfrageAb();
+    m_flussAuswahl->setVisible(istDatenfluss());
+    leiteDatenflussAb();
     zeigeNotationsfelder();
     leiteAufrufgraphAb();
     leiteAbhaengigkeitenAb();
@@ -2924,6 +3133,12 @@ void Hauptfenster::zeichne()
     {
         m_vorschau->zeige(m_abfrageDiagramm, nachRechts);
         m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Abfrage, m_abfrageDiagramm));
+        return;
+    }
+    if (istDatenfluss())
+    {
+        m_vorschau->zeige(m_datenfluss, nachRechts);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Datenfluss, m_datenfluss));
         return;
     }
     if (istAbhaengigkeiten())
@@ -3223,6 +3438,9 @@ bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
     if (istAbfrage())
         return knoten < m_abfrageDiagramm.knoten.size() && m_abfrageDiagramm.knoten[knoten].zeile > 0 &&
                zeigeZeile(m_datei, m_abfrageDiagramm.knoten[knoten].zeile);
+    if (istDatenfluss())
+        return knoten < m_datenfluss.knoten.size() && m_datenfluss.knoten[knoten].zeile > 0 &&
+               zeigeZeile(m_datei, m_datenfluss.knoten[knoten].zeile);
     if (istAbhaengigkeiten())
     {
         // die Stelle des Objekts; eine fremde Tabelle oder Routine hat keine
@@ -3272,6 +3490,13 @@ bool Hauptfenster::zeigeStelle(std::size_t kasten, std::size_t eintrag)
 bool Hauptfenster::klicke(const QString& name)
 {
     const std::string n = name.toStdString();
+    if (istDatenfluss())
+    {
+        // der Name wie datenflussKnoten() ihn nennt
+        const QStringList namen = datenflussKnoten();
+        const qsizetype k = namen.indexOf(name);
+        return k >= 0 && zeigeStelle(static_cast<c2d::diagramm::KnotenId>(k));
+    }
     if (m_gezeigt == QLatin1String(kDatentypen))
     {
         // `Typ` = der Kopf, `Typ::glied` = ein Feld oder eine Methode; der Typ selbst kann `::` tragen

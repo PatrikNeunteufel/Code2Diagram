@@ -398,6 +398,17 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.abfrage());
                      });
 
+    anbindung.aktion(QStringLiteral("datenfluss_zeigen"),
+                     QStringLiteral("Shows the Spark data flow (Diagram > Data flow): of a function or cell, or of the whole file"),
+                     QStringLiteral("name=<function | cell, e.g. <cell 3>> (empty: the whole file)"),
+                     [&fenster](const QJsonObject& argumente) -> st::Ergebnis {
+                         const QString name = st::argument(argumente, QStringLiteral("name"));
+                         if (!fenster.zeigeDatenfluss(name))
+                             return st::ungueltig(QStringLiteral("No data flow '%1' - there are: %2")
+                                                      .arg(name, fenster.datenfluesse().join(QStringLiteral(", "))));
+                         return st::ok(fenster.datenflussKnoten().join(QStringLiteral(" | ")));
+                     });
+
     anbindung.aktion(QStringLiteral("notation_waehlen"),
                      QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
                                     "columns are ellipses in Chen and (min,max)"),

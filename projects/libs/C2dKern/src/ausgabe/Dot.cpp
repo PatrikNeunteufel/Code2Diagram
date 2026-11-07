@@ -300,6 +300,79 @@ public:
     [[nodiscard]] std::string schreibe(std::span<const Zuordnung>, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(std::span<const Konfigurationstabelle>, const Optionen&) const override { return {}; }
 
+    /// Ein Datenfluss: je Rahmen ein cluster, HTML-Label (Stereotyp kursiv, Titel fett, Zeilen links); Quelle
+    /// Zylinder, Shuffle Sechseck, Aktion rund getoent, spark.sql und Aufruf doppelt umrandet, Session gestrichelt,
+    /// zwischengespeichert dick; Pfad-Kanten gestrichelt.
+    [[nodiscard]] std::string schreibe(const Datenflussdiagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kopf(d.titel, optionen);
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const DatenflussKnoten& k = d.knoten[i];
+            std::string label;
+            const auto dazu = [&](const std::string& t) { label += (label.empty() ? "" : "<BR ALIGN=\"LEFT\"/>") + t; };
+            if (const std::string_view s = stereotyp(k.art); !s.empty()) dazu("<I>" + htmlText(std::string(s)) + "</I>");
+            if (!k.titel.empty()) dazu("<B>" + htmlText(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</B>");
+            for (const std::string& z : k.zeilen) dazu(htmlText(kuerze(z, optionen.maxZeilenLaenge)));
+            label += "<BR ALIGN=\"LEFT\"/>";
+            std::string form = "shape=box";
+            switch (k.art)
+            {
+                case DatenflussKnotenArt::Quelle: form = "shape=cylinder"; break;
+                case DatenflussKnotenArt::Shuffle: form = "shape=hexagon"; break;
+                case DatenflussKnotenArt::Aktion:
+                    form = "shape=box, style=\"rounded,filled\", fillcolor=\"" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + "\"";
+                    break;
+                case DatenflussKnotenArt::Sql:
+                case DatenflussKnotenArt::Aufruf: form = "shape=box, peripheries=2"; break;
+                case DatenflussKnotenArt::Sitzung: form = "shape=box, style=dashed"; break;
+                case DatenflussKnotenArt::Schritte: break;
+            }
+            if (k.zwischengespeichert) form += ", penwidth=2.4";
+            aus += einzug + "d" + std::to_string(i) + " [" + form + ", label=<" + label + ">];\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph cluster_" + std::to_string(r) + " {\n" + einzug + "    style=dashed; label=\"" +
+                       maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\";\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "}\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        for (const DatenflussKante& k : d.kanten)
+        {
+            aus += "    d" + std::to_string(k.von) + " -> d" + std::to_string(k.nach) + " [arrowhead=normal";
+            if (k.art == DatenflussKantenArt::Pfad) aus += ", style=dashed";
+            if (!k.text.empty()) aus += ", label=\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"";
+            aus += "];\n";
+        }
+        return aus + "}\n";
+    }
+
+    /// Text in einem HTML-Label: `<`, `>`, `&`, `"` maskiert, Zeilenwechsel als Leerzeichen.
+    [[nodiscard]] static std::string htmlText(std::string_view text)
+    {
+        std::string a;
+        for (const char c : text)
+        {
+            switch (c)
+            {
+                case '<': a += "&lt;"; break;
+                case '>': a += "&gt;"; break;
+                case '&': a += "&amp;"; break;
+                case '"': a += "&quot;"; break;
+                case '\n':
+                case '\r': a += ' '; break;
+                default: a += c; break;
+            }
+        }
+        return a;
+    }
+
     /// Eine Abfrage: je Rahmen ein cluster (verschachtelt), Knoten mit HTML-Label (der Titel fett, die
     /// Zeilen links), Join ohne Spitze, WHERE gestrichelt, korreliert gepunktet, Fluss mit Spitze.
     [[nodiscard]] std::string schreibe(const Abfragediagramm& d, const Optionen& optionen) const override

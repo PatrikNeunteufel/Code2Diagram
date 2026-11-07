@@ -491,6 +491,63 @@ public:
         return aus;
     }
 
+    /// Ein Datenfluss als flowchart: je Rahmen (Stage, Funktion) ein subgraph; Quelle Zylinder, Shuffle Sechseck,
+    /// Aktion rund, spark.sql und Aufruf mit doppelten Seiten; Stereotyp kursiv, Titel fett; Fluss `-->`, Pfad `-.->`.
+    [[nodiscard]] std::string schreibe(const Datenflussdiagramm& d, const Optionen& optionen) const override
+    {
+        std::string aus = kommentar(d.titel);
+        aus += "flowchart ";
+        aus += optionen.richtung;
+        aus += '\n';
+        const auto knoten = [&](std::size_t i, const std::string& einzug) {
+            const DatenflussKnoten& k = d.knoten[i];
+            std::string text;
+            const auto dazu = [&](const std::string& t) { text += (text.empty() ? "" : "<br>") + t; };
+            if (const std::string_view s = stereotyp(k.art); !s.empty()) dazu("<i>" + maskiere(std::string(s)) + "</i>");
+            if (!k.titel.empty()) dazu("<b>" + maskiere(kuerze(k.titel, optionen.maxZeilenLaenge)) + "</b>");
+            for (const std::string& z : k.zeilen) dazu(maskiere(kuerze(z, optionen.maxZeilenLaenge)));
+            std::string_view auf = "[", zu = "]";
+            switch (k.art)
+            {
+                case DatenflussKnotenArt::Quelle: auf = "[("; zu = ")]"; break;
+                case DatenflussKnotenArt::Shuffle: auf = "{{"; zu = "}}"; break;
+                case DatenflussKnotenArt::Aktion: auf = "("; zu = ")"; break;
+                case DatenflussKnotenArt::Sql:
+                case DatenflussKnotenArt::Aufruf: auf = "[["; zu = "]]"; break;
+                case DatenflussKnotenArt::Sitzung:
+                case DatenflussKnotenArt::Schritte: break;
+            }
+            aus += einzug + "d" + std::to_string(i) + std::string(auf) + "\"" + text + "\"" + std::string(zu) + "\n";
+        };
+        const auto ebene = [&](const auto& selbst, std::size_t rahmen, const std::string& einzug) -> void {
+            for (std::size_t i = 0; i < d.knoten.size(); ++i)
+                if (d.knoten[i].gruppe == rahmen) knoten(i, einzug);
+            for (std::size_t r = 0; r < d.rahmen.size(); ++r)
+            {
+                if (d.rahmen[r].eltern != rahmen) continue;
+                aus += einzug + "subgraph r" + std::to_string(r) + "[\"" + maskiere(kuerze(d.rahmen[r].titel, optionen.maxZeilenLaenge)) + "\"]\n";
+                selbst(selbst, r, einzug + "    ");
+                aus += einzug + "end\n";
+            }
+        };
+        ebene(ebene, kKeine, "    ");
+        std::string cache, kopf;
+        for (std::size_t i = 0; i < d.knoten.size(); ++i)
+        {
+            if (d.knoten[i].zwischengespeichert) cache += (cache.empty() ? "" : ",") + ("d" + std::to_string(i));
+            if (d.knoten[i].art == DatenflussKnotenArt::Sitzung) kopf += (kopf.empty() ? "" : ",") + ("d" + std::to_string(i));
+        }
+        if (!cache.empty()) aus += "    classDef cache stroke-width:3px\n    class " + cache + " cache\n";
+        if (!kopf.empty()) aus += "    classDef kopf stroke-dasharray:6 4\n    class " + kopf + " kopf\n";
+        for (const DatenflussKante& k : d.kanten)
+        {
+            aus += "    d" + std::to_string(k.von) + (k.art == DatenflussKantenArt::Pfad ? " -.->" : " -->");
+            if (!k.text.empty()) aus += "|\"" + maskiere(kuerze(k.text, optionen.maxZeilenLaenge)) + "\"|";
+            aus += " d" + std::to_string(k.nach) + '\n';
+        }
+        return aus;
+    }
+
     [[nodiscard]] std::string schreibe(const Aufrufgraph& graph, const Optionen& optionen) const override
     {
         std::string aus = kommentar(graph.titel);

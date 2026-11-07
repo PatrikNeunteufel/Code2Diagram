@@ -83,6 +83,37 @@ struct Logik
     std::vector<Logik> teile;
 };
 
+/// Ein Glied einer Aufrufkette: `.name`, mit Klammer ein Aufruf; `[…]` heisst `[]`.
+struct Kettenglied
+{
+    std::string name;
+    bool aufruf = false;
+    std::vector<std::string> argumente;  ///< je Argument der Text der Quelle (`mode="x"` mit Namen)
+    std::vector<std::string> namen;      ///< die Bezeichner in den Argumenten, je einmal, in Textfolge
+};
+
+inline constexpr std::size_t kKeineKette = static_cast<std::size_t>(-1);
+
+/// Eine Kette von Aufrufen in einer Anweisung (Entscheid F1): `df.withColumn(…).select(…)`,
+/// `SparkSession.builder.appName("a").getOrCreate()`. Sprachneutral — was ein Glied bedeutet, weiss erst
+/// die Ableitung (Spark: diagramm/Datenfluss). Eine Klammer um die ganze Kette faellt weg.
+struct Aufrufkette
+{
+    std::vector<Kettenglied> glieder;  ///< [0] ist die Wurzel (`df`, `SparkSession`, `f(x)`)
+    /// Wem sie zugewiesen wird, wenn sie der ganze Wert einer Zuweisung ist (`df = …`); der Text links
+    /// (`a, b`, `self.df`); leer = keiner.
+    std::string ziel;
+    /// Sie ist der ganze Ausdruck: der Wert einer Zuweisung, eines return, einer Anweisung, eines
+    /// Arguments (bei einer inneren Kette) — kein Operator dahinter oder davor.
+    bool ganz = false;
+    /// Eine Kette in einem Argument einer anderen: deren Stelle in Anweisung::ketten, das Glied und das
+    /// Argument; sonst kKeineKette.
+    std::size_t eltern = kKeineKette;
+    std::size_t glied = 0;
+    std::size_t argument = 0;
+    int zeile = 0;  ///< in der Datei
+};
+
 struct Anweisung
 {
     AnweisungArt art = AnweisungArt::Einfach;
@@ -130,6 +161,9 @@ struct Anweisung
     /// Die Funktionen, die in der Anweisung definiert werden (ein Callback `(x) => {…}`, eine Methode
     /// eines Objekts, Python `def` im Rumpf): ihr voller Name — der Text nennt sie nicht.
     std::vector<std::string> innere;
+    /// Die Aufrufketten in `text` (Einfach, Ruecksprung, Wurf, Mit; bei Schleifen und if der Kopf), aeussere vor
+    /// inneren, in Textfolge; ein Name allein nur als ganzer Wert. Bisher fuellt sie der Leser von Python.
+    std::vector<Aufrufkette> ketten;
 };
 
 using AnweisungPtr = std::unique_ptr<Anweisung>;

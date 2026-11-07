@@ -50,6 +50,7 @@
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
+#include "c2d/projekt/Datenfluss.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Typen.hpp"
 
@@ -101,6 +102,7 @@ public:
     static constexpr const char* kAbhaengigkeiten = "deps:";
     /// Die Abfragen der Datei (Entscheid Q5): welche, waehlt das zweite Feld.
     static constexpr const char* kAbfragen = "queries";
+    static constexpr const char* kDatenfluss = "flow";  ///< der Datenfluss; welcher, sagt das zweite Feld
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
@@ -227,6 +229,13 @@ public:
     [[nodiscard]] QString abfrage() const;
     /// Die Titel der Knoten der gezeigten Abfrage.
     [[nodiscard]] QStringList abfrageKnoten() const;
+    /// Den Datenfluss (Spark Schicht 1) zeigen: der Funktion oder Zelle `funktion` (Name allein oder voll), leer =
+    /// der ganzen Datei. false = die Datei hat keinen, oder keinen dieser Funktion.
+    bool zeigeDatenfluss(const QString& funktion = {});
+    /// Die Funktionen und Zellen der Datei mit einem Datenfluss, voller Name, in ihrer Reihenfolge.
+    [[nodiscard]] QStringList datenfluesse() const;
+    /// Je Knoten des gezeigten Datenflusses der Titel, bei Schritten die erste Zeile.
+    [[nodiscard]] QStringList datenflussKnoten() const;
     [[nodiscard]] QString diagramm() const;
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
@@ -495,6 +504,12 @@ private:
     void abfrageMenue(c2d::diagramm::KnotenId knoten);
     /// Zur Abfrage `index` der Datei `datei`; Back fuehrt zurueck.
     void geheZuAbfrage(std::size_t datei, std::size_t index, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    [[nodiscard]] bool istDatenfluss() const;
+    void leiteDatenflussAb();
+    void geheZuDatenfluss(std::size_t datei, const QString& funktion, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
+    void folgeDatenfluss(c2d::diagramm::KnotenId knoten);
+    void folgeZiel(const c2d::diagramm::DatenflussKnoten& k, const std::string& ziel, c2d::diagramm::KnotenId knoten);
+    void datenflussMenue(c2d::diagramm::KnotenId knoten);
     /// Die Abfrage einer View oder Routine im Projekt (ihr Name, auch `routine@…`): Datei und Stelle; kKeine = keine.
     [[nodiscard]] std::pair<std::size_t, std::size_t> abfrageVon(const std::string& name) const;
     /// Die gezeigten Abhaengigkeiten neu ableiten (Richtung, Tiefe, Max).
@@ -572,6 +587,10 @@ private:
     c2d::projekt::AufrufgraphErgebnis m_aufrufgraph;  ///< der gezeigte Aufrufgraph
     c2d::projekt::AbhaengigkeitsErgebnis m_abhaengigkeiten;  ///< die gezeigten Abhaengigkeiten der Daten
     c2d::diagramm::Abfragediagramm m_abfrageDiagramm;        ///< die gezeigte Abfrage
+    c2d::diagramm::Datenflussdiagramm m_datenfluss;          ///< der gezeigte Datenfluss
+    std::vector<std::string> m_flussNamen;                   ///< die Funktionen der Datei mit einem Datenfluss
+    QComboBox* m_flussAuswahl = nullptr;                     ///< beim Datenfluss: welcher (Daten: der Name, leer = Datei)
+    QString m_flussName;                                     ///< der gezeigte; leer = die ganze Datei
     std::vector<c2d::projekt::Fundstelle> m_aufgeklappt;  ///< darin aufgeklappt
     QString m_gezeigt;                      ///< wofuer m_fluss (m_aufrufgraph) gebaut ist
     QList<Stelle> m_verlauf;                ///< die Diagramme davor, fuer zurueck()

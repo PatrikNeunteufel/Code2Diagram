@@ -970,7 +970,8 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 ## AD. Notebooks
 
 - [ ] **AD0 Vorbereiten:** File > Open source file… `beispiele/notebooks/lager.ipynb`, Vorschau. Der Dateifilter
-      bietet `Jupyter notebooks (*.ipynb)`.
+      steht vorn auf `All supported files (…)` (zeigt `.c`, `.py`, `.sql`, `.ipynb` … zugleich) und bietet
+      daneben je Sprache einen und `Jupyter notebooks (*.ipynb)`.
       `aktion: datei_oeffnen pfad=beispiele/notebooks/lager.ipynb` `aktion: ansicht_waehlen name=preview`
 - [ ] **AD1 Das Skript:** Links steht kein JSON, sondern je Zelle eine Kopfzeile `# %% [1] markdown`, `# %% [2]` …;
       die Markdown-Zelle als Kommentar (`# # Lager`), `%pip install pandas` und `!ls -l lager.db`, wie sie in der
@@ -993,3 +994,33 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: datei_oeffnen pfad=beispiele/notebooks/kunden_databricks.py`
 - [ ] **AD7 Ordner:** File > Open folder… `beispiele/notebooks`: beide im Dateibaum, File > Open recent nennt sie.
       `aktion: ordner_oeffnen pfad=beispiele/notebooks`
+
+## AE. Datenfluss (Spark Schicht 1)
+
+- [ ] **AE0 Vorbereiten:** File > Open source file… `beispiele/spark/lager_spark.py`, Vorschau.
+      `aktion: datei_oeffnen pfad=beispiele/spark/lager_spark.py` `aktion: ansicht_waehlen name=preview`
+- [ ] **AE1 Eintrag und Feld:** Diagram bietet `Data flow (2)`. Gewählt erscheint ein zweites Feld mit
+      `Whole file (2)`, `bericht`, `woerter`; vorn steht die ganze Datei, je Funktion ein Rahmen.
+      `aktion: datenfluss_zeigen`
+- [ ] **AE2 bericht:** Kopf «session» (gestrichelt) mit `appName: "Lager"`, `master: "local[4]"`,
+      `spark.sql.shuffle.partitions: 8` — aus `sitzung()`, die die Sitzung liefert. Zwei Quellen (gewölbter Deckel)
+      `read csv` mit `option("header", "true")` und `read parquet`; der Zweig `if nur_neu`: `read parquet` führt
+      direkt und über `filter(…)` in `join` (Sechseck «shuffle», `partitions: 8 (spark.sql.shuffle.partitions)`).
+      Die beiden `withColumn` und `cache()` in einem Knoten, dick umrandet. Rahmen `Stage 1` … `Stage 7`.
+      `aktion: datenfluss_zeigen name=bericht`
+- [ ] **AE3 Views und Pfade:** `groupBy("lager")` trägt `agg(…)` und `view summen`; eine gestrichelte Kante
+      `view summen` führt zu «sql» `spark.sql` (`reads summen`). `Job 1: write` (rund, getönt) mit
+      `mode("overwrite")`, `parquet(aus)`; eine gestrichelte Kante `same path` führt zu `read parquet aus` und weiter
+      zu `Job 3: count()`. `Job 2: show()` hinter `select("kurz")` und `distinct()`.
+- [ ] **AE4 Klick und Doppelklick:** Ein Klick auf `groupBy("lager")` zeigt Zeile 30. Doppelklick auf «sql» zeigt
+      das Abfragediagramm (`bericht@32`), Back zurück. Rechtsklick auf den Knoten mit `withColumn("kurz", name("titel"))`:
+      *Show the flow of kuerze()* (die UDF) führt zum Ablauf von `kuerze`.
+      `aktion: klicken name=groupBy("lager")`
+- [ ] **AE5 RDD und neu gerechnet:** `woerter`: `textFile` (RDD aus `spark.sparkContext`), `flatMap`/`map` in einem
+      Knoten, `reduceByKey` mit `partitions: default` und `recomputed by Job 2`; Statuszeile nennt `1 note(s)`.
+      `aktion: datenfluss_zeigen name=woerter`
+- [ ] **AE6 Formate und Thema:** Format mermaid (`[(` Quelle, `{{` Shuffle, `subgraph` je Stage), dot, drawio; csv
+      sagt `Data flow is not available in csv`; dunkles Thema lesbar.
+- [ ] **AE7 Notebook:** `beispiele/notebooks/kunden_databricks.py`: Data flow mit `spark` vorgegeben, die Zellen
+      teilen ihre Namen; im zweiten Feld `<cell 3>` zeigt, was die Zelle tut und was sie aus früheren liest.
+      `aktion: datei_oeffnen pfad=beispiele/notebooks/kunden_databricks.py` `aktion: datenfluss_zeigen`

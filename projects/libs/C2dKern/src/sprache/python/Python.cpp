@@ -11,6 +11,7 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include "../Leser.hpp"
+#include "../Kette.hpp"
 #include "../Logik.hpp"
 
 #include <algorithm>
@@ -828,6 +829,7 @@ public:
         ergebnis.einheit.name = std::string(einheitName);
         PythonLeser(text, ergebnis).liesModul(optionen.abschnitte);
         ergaenzeLogik(ergebnis.einheit, kTabelle, kRegeln);
+        ergaenzeKetten(ergebnis.einheit, kTabelle, kRegeln);  // Aufrufketten (Spark, Entscheid F1)
         return ergebnis;
     }
 };

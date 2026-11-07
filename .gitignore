@@ -13,6 +13,8 @@ sichttest-logs/
 /beispiele/sql/fremd/
 # Eigene Event-Logs und ausgefuehrte Notebooks (beispiele/spark/eventlogs_aufnehmen.py)
 /beispiele/spark/fremd/
+# Plaene von Spark (Pruefdateien von apache/spark, Spark Schicht 2; Quellen: beispiele/sql/QUELLEN.md)
+/beispiele/spark/plaene/
 
 # Claude: lokal (Projektkontext, Handover, Sessions)
 /CLAUDE.md

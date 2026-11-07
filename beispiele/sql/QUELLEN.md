@@ -16,6 +16,17 @@ Lizenzdatei (`_LIZENZ.txt`, bei Pagila `_README_der_Quelle.txt`).
 | `spark-examples` | [apache/spark](https://github.com/apache/spark) `master:examples/src/main/python` | PySpark | 150 `.py` | 0,36 MB | Apache-2.0 (Lizenzdatei) | Spark Schicht 1 (Datenfluss), P4 a |
 | `dbdemos` | [databricks-demos/dbdemos-notebooks](https://github.com/databricks-demos/dbdemos-notebooks) `main`, alle `.sql` | Databricks SQL, Notebook-Quellformat | 79 | 0,58 MB | **„DB license“**: Nutzung nur „in connection with your use of the Databricks Services“ | Databricks-Notebooks (`-- COMMAND ----------`, `-- MAGIC`) |
 
+Dazu, geladen am 2026-11-07 (C2D_Session11, Entscheid P2-1 a) nach **`beispiele/spark/plaene/`** (eigener
+Eintrag in `.gitignore`, Lizenzdatei `_LIZENZ.txt`):
+
+| Ordner | Quelle (Zweig: Pfad) | Form | Dateien | Grösse | Lizenz | Wofür |
+|---|---|---|---:|---:|---|---|
+| `tpcds-plan-stability/approved-plans-{v1_4,v2_7,modified}/q*/` | [apache/spark](https://github.com/apache/spark) `master:sql/core/src/test/resources/tpcds-plan-stability` | `explain.txt` (formatted), `simplified.txt` (Baum) | 628 | 8,21 MB | Apache-2.0 | Spark Schicht 2 (Plan) |
+| `sql-tests/results/explain*.sql.out` | dieselbe, `…/sql-tests/results` | `EXPLAIN` in allen Modi, AQE, CBO | 3 | 0,08 MB | Apache-2.0 | dasselbe |
+
+Geladen mit dem Skript der Sitzung aus der Baumabfrage der GitHub-API (`git/trees`), je Datei die Grösse
+geprüft (631 / 631 gleich).
+
 Zusammen 988 Dateien, rund 20 MB. Auf Wunsch Patriks auch dbdemos (Option b), obwohl die Lizenz die
 Nutzung an die Databricks-Dienste bindet — nicht weitergeben, nicht ins Repo.
 

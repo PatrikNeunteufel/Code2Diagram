@@ -6,7 +6,7 @@
 //                             [--aufrufgraph [<funktion>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]
 //                                            [--ohne-fremde]]
 //                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
-//                             [--abfrage [<name>|<zeile>]]
+//                             [--abfrage [<name>|<zeile>]] [--datenfluss [<funktion>]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
 //                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
@@ -37,6 +37,9 @@
 //   --aufrufgraph  der Aufrufgraph ab dieser Funktion (wie --funktion; steht das Ziel
 //                  davor, darf ihr Name gleich folgen); ohne Funktion der Graph der Datei
 //                  (im Projekt: --datei)
+//   --datenfluss   Spark: der Datenfluss dieser Funktion oder Zelle (`<cell 3>`) — Quellen, Schritte,
+//                  Shuffles, Jobs, Stages; ohne Namen der ganzen Datei (im Projekt: --datei);
+//                  Hinweise auf stderr; --liste nennt sie "dataflow"
 //   --tiefe n      so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
 //   --hoechstens n hoechstens so viele Funktionen (Vorgabe 300), 0 = unbegrenzt
 //   --aufrufer     wer die Funktion ruft, statt was sie ruft; --beide: beides
@@ -88,6 +91,7 @@
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
+#include "c2d/projekt/Datenfluss.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Schaltstellen.hpp"
 #include "c2d/projekt/Typen.hpp"
@@ -135,6 +139,7 @@ int aufruf()
                  "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
                  "                         [--schaltet <name>] [--schalter] [--breite]\n"
                  "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
+                 "                         [--datenfluss [<function>]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -202,6 +207,14 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
         std::cout << "query     " << q.name << " (" << q.bloecke.size() << " blocks, " << quellen << " sources"
                   << (q.ziel.empty() ? std::string() : ", " + q.schreibt + " " + q.ziel) << ")\n";
     }
+    // ein Datenfluss (Spark Schicht 1): je Funktion oder Zelle mit einem
+    for (const std::string& f : c2d::projekt::datenfluesseIn(p, i))
+    {
+        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(p, i, f);
+        std::cout << "dataflow  " << f << " (" << fluss.knoten.size() << " nodes, " << fluss.jobs << " jobs, " << fluss.stages
+                  << " stages" << (fluss.hinweise.empty() ? std::string() : ", " + std::to_string(fluss.hinweise.size()) + " notes")
+                  << ")\n";
+    }
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)
         std::cout << "variable  " << v.typ << ' ' << v.name << v.zusatz << '\n';
@@ -258,6 +271,8 @@ int main(int argc, char* argv[])
     std::string objekt;  // --abhaengigkeiten <objekt>
     bool abfrage = false;
     std::string abfrageName;  // --abfrage <name>|<zeile>
+    bool datenfluss = false;
+    std::string flussName;  // --datenfluss <funktion>
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
     c2d::diagramm::ErNotation notation = c2d::diagramm::ErNotation::Tabellen;  // --notation (Entscheid N5)
@@ -330,6 +345,12 @@ int main(int argc, char* argv[])
             abfrage = true;
             // der Name (oder die Zeile) darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') abfrageName = argv[++i];
+        }
+        else if (a == "--datenfluss")
+        {
+            datenfluss = true;
+            // der Name der Funktion (oder Zelle) darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') flussName = argv[++i];
         }
         else if (a == "--abhaengigkeiten")
         {
@@ -494,6 +515,8 @@ int main(int argc, char* argv[])
             if (mitRumpf) pruefe(c2d::projekt::aufrufgraphDerDatei(p, i, graph).graph, "call graph of the file");
             for (std::size_t q = 0; q < einheit.abfragen.size(); ++q)
                 pruefe(c2d::projekt::abfrageIn(p, i, q), "query " + einheit.abfragen[q].name);
+            if (!c2d::projekt::datenfluesseIn(p, i).empty())
+                pruefe(c2d::projekt::datenflussIn(p, i, ""), "data flow of the file");
         }
         std::cout << "checked " << geprueft << " layouts, " << zuBreit << " wider than x" << kHoechstesQuerVerhaeltnis
                   << " of their widest layer";
@@ -558,6 +581,29 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Schaltstellen, s);
+    }
+
+    // --datenfluss: der Datenfluss (Spark Schicht 1, Entscheid F6) einer Funktion oder Zelle, ohne Namen der Datei
+    if (datenfluss)
+    {
+        const std::size_t d = gewaehlteDatei != c2d::projekt::kKeine ? gewaehlteDatei : 0;
+        std::string name = flussName;
+        if (!name.empty())
+        {
+            // der Name allein oder mit Bereich; im Datenfluss steht der volle
+            for (const c2d::modell::Funktion& f : p.dateien[d].ergebnis.einheit.funktionen)
+                if (f.rumpf && (f.name == flussName || f.vollerName() == flussName)) name = f.vollerName();
+        }
+        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(p, d, name);
+        for (const c2d::diagramm::DatenflussHinweis& h : fluss.hinweise)
+            std::cerr << vorn(p.dateien[d].pfad) << ":" << h.zeile << ": " << h.text << '\n';
+        if (fluss.knoten.empty())
+        {
+            std::cerr << "c2d: no Spark data flow" << (flussName.empty() ? std::string() : " in '" + flussName + "'") << " in "
+                      << vorn(p.dateien[d].pfad) << " - see --liste (dataflow)\n";
+            return 1;
+        }
+        return schreibe(c2d::ausgabe::Diagrammart::Datenfluss, fluss);
     }
 
     // --abfrage: das Diagramm einer Abfrage (Entscheid Q5) — nach Name, nach Zeile, sonst die erste der Datei
