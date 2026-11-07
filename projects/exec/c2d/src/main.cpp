@@ -45,6 +45,9 @@
 //                  Dateiname, `datei@zeile`) — Operatoren, Exchanges, Stages und Codegen in Rahmen; ohne Namen
 //                  der erste der Datei (im Projekt: --datei); --liste nennt sie "plan"
 //   --abschnitt    mit --plan: physical (Vorgabe), optimized, analyzed, parsed (explain(extended))
+//   --lauf         Spark: der Lauf eines Event-Logs (App Name oder ID; ohne: der der Datei) als Zeitachse — Jobs,
+//                  Stages, Tasks je Executor und Kern; svg, drawio, mermaid (gantt), csv (je Task eine Zeile);
+//                  --liste nennt ihn "run"
 //   --tiefe n     so viele Stufen ab der Funktion (Vorgabe 2), 0 = alle
 //   --hoechstens n hoechstens so viele Funktionen (Vorgabe 300), 0 = unbegrenzt
 //   --aufrufer     wer die Funktion ruft, statt was sie ruft; --beide: beides
@@ -146,7 +149,7 @@ int aufruf()
                  "                         [--schaltet <name>] [--schalter] [--breite]\n"
                  "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
                  "                         [--datenfluss [<function>]]\n"
-                 "                         [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]]\n"
+                 "                         [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]] [--lauf [<name>]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -232,6 +235,22 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
                   << " operators, " << d.stages << " stages"
                   << (plan.adaptiv ? plan.endgueltig ? ", adaptive final" : ", adaptive" : "")
                   << (d.hinweise.empty() ? std::string() : ", " + std::to_string(d.hinweise.size()) + " notes") << ")\n";
+    }
+    // ein Lauf von Spark (Schicht 3): der Event-Log
+    for (const c2d::modell::Lauf& l : einheit.laeufe)
+    {
+        std::size_t offen = 0, fehlgeschlagen = 0;
+        for (const c2d::modell::LaufTask& t : l.tasks)
+        {
+            if (t.ende == 0) ++offen;
+            else if (t.ergebnis != "Success") ++fehlgeschlagen;
+        }
+        std::cout << "run       " << l.name << " (" << (l.id.empty() ? std::string() : l.id + ", ")
+                  << (l.version.empty() ? std::string() : "Spark " + l.version + ": ") << l.jobs.size() << " jobs, "
+                  << l.stages.size() << " stages, " << l.tasks.size() << " tasks, " << l.executoren.size() << " executors"
+                  << (fehlgeschlagen > 0 ? ", " + std::to_string(fehlgeschlagen) + " failed" : "")
+                  << (offen > 0 ? ", " + std::to_string(offen) + " without an end" : "") << (l.ende == 0 ? ", not finished" : "")
+                  << ")\n";
     }
     for (const c2d::modell::Alias& a : einheit.aliase) std::cout << "alias     " << a.name << " = " << a.ziel << '\n';
     for (const c2d::modell::Variable& v : einheit.variablen)
@@ -332,6 +351,8 @@ int main(int argc, char* argv[])
     std::string flussName;  // --datenfluss <funktion>
     bool plan = false;
     std::string planName;   // --plan <name>
+    bool lauf = false;
+    std::string laufName;   // --lauf <name>
     std::string abschnitt;  // --abschnitt physical|optimized|analyzed|parsed
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
     c2d::projekt::AufrufgraphOptionen graph;
@@ -418,6 +439,12 @@ int main(int argc, char* argv[])
             // der Name darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') planName = argv[++i];
         }
+        else if (a == "--lauf")
+        {
+            lauf = true;
+            // der Name (App Name oder App ID) darf folgen, wenn das Ziel schon dasteht
+            if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') laufName = argv[++i];
+        }
         else if (a == "--abschnitt")
         {
             abschnitt = wert();
@@ -476,7 +503,7 @@ int main(int argc, char* argv[])
         // die Einheit heisst wie die Datei, ohne den Weg dorthin
         const std::size_t strich = ziel.find_last_of("/\\");
         const std::string name = strich == std::string::npos ? ziel : ziel.substr(strich + 1);
-        if (!c2d::projekt::kannLesen(name))
+        if (!c2d::projekt::kannLesen(name) && !c2d::sprache::eventLogText(inhalt))
             std::cerr << "c2d: no reader for this file type - read as " << c2d::sprache::c().name() << '\n';
         p = c2d::projekt::liesText(inhalt, name, lesen);
     }
@@ -689,6 +716,25 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Datenfluss, fluss);
+    }
+
+    // --lauf: ein Lauf von Spark aus seinem Event-Log (Schicht 3) als Zeitachse — nach App Name oder ID, sonst der erste
+    if (lauf)
+    {
+        const std::size_t d = gewaehlteDatei != c2d::projekt::kKeine ? gewaehlteDatei : 0;
+        const std::vector<c2d::modell::Lauf>& laeufe = p.dateien[d].ergebnis.einheit.laeufe;
+        const auto x = std::find_if(laeufe.begin(), laeufe.end(), [&](const c2d::modell::Lauf& y) {
+            return laufName.empty() || y.name == laufName || y.id == laufName;
+        });
+        if (x == laeufe.end())
+        {
+            std::cerr << "c2d: no Spark run" << (laufName.empty() ? std::string() : " '" + laufName + "'") << " in "
+                      << vorn(p.dateien[d].pfad) << " - see --liste (run)\n";
+            return 1;
+        }
+        const c2d::diagramm::Zeitachse z = c2d::diagramm::zeitachseVon(*x);
+        for (const std::string& h : z.hinweise) std::cerr << vorn(p.dateien[d].pfad) << ": " << h << '\n';
+        return schreibe(c2d::ausgabe::Diagrammart::Zeitachse, z);
     }
 
     // --plan: ein Plan von Spark (Schicht 2, Entscheid P2-4) — nach Name, sonst der erste der Datei; --abschnitt

@@ -450,7 +450,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             folgeDatenfluss(knoten);
             return;
         }
-        if (istPlan()) return;  // ein Operator fuehrt nirgends hin; die Zeile hat schon der Klick gezeigt
+        if (istPlan() || istLauf()) return;  // fuehrt nirgends hin (L5 kommt mit den Logs); die Zeile zeigte der Klick
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -490,6 +490,13 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             abfrageMenue(knoten);
         else if (istDatenfluss())
             datenflussMenue(knoten);
+        else if (istLauf())
+        {
+            if (knoten >= m_zeitachse.balken.size()) return;
+            QMenu menue(this);
+            menue.addAction(QStringLiteral("Show the event in the log"), this, [this, knoten] { zeigeStelle(knoten); });
+            menue.exec(QCursor::pos());
+        }
         else if (istPlan())
         {
             if (knoten >= m_planDiagramm.knoten.size()) return;
@@ -979,6 +986,9 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         // die Plaene von Spark (Schicht 2): aus den Ausgaben eines Notebooks oder einer Plan-Datei
         if (!einheit.plaene.empty())
             m_auswahl->addItem(QStringLiteral("Physical plan (%1)").arg(einheit.plaene.size()), QString::fromLatin1(kPlan));
+        // der Lauf eines Event-Logs (Spark Schicht 3)
+        if (!einheit.laeufe.empty())
+            m_auswahl->addItem(QStringLiteral("Run timeline (%1)").arg(einheit.laeufe.size()), QString::fromLatin1(kLauf));
         if (const std::size_t n = c2d::diagramm::nachschlagetabellenVon(einheit).size(); n > 0)  // nur die Zahl
             m_auswahl->addItem(QStringLiteral("Lookup tables (%1)").arg(n), QString::fromLatin1(kNachschlagetabellen));
         if (!d.ergebnis.weichen.empty())
@@ -1115,14 +1125,15 @@ void Hauptfenster::zeigeLage()
     }
     const c2d::projekt::Datei& d = m_projekt.dateien[m_datei];
     const QString name = istProjekt() ? ausStd(d.pfad) : m_einzelName;
-    const bool ersatz = !c2d::projekt::kannLesen(letzterName(name).toStdString());
+    const bool ersatz = !c2d::projekt::kannLesen(letzterName(name).toStdString()) && d.sprache != &c2d::sprache::sparkEventLog();
     // die Funktionen der Auswahl: alles, was kein Automat, keine Datentypen und kein Aufrufgraph ist
     int funktionen = 0;
     for (const QString& eintrag : diagramme())
         if (!eintrag.startsWith(QLatin1String(kAutomat)) && eintrag != QLatin1String(kDatentypen) &&
             eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)) &&
             eintrag != QLatin1String(kAbhaengigkeitenDatei) && !eintrag.startsWith(QLatin1String(kAbhaengigkeiten)) &&
-            eintrag != QLatin1String(kAbfragen) && eintrag != QLatin1String(kDatenfluss) && eintrag != QLatin1String(kPlan))
+            eintrag != QLatin1String(kAbfragen) && eintrag != QLatin1String(kDatenfluss) && eintrag != QLatin1String(kPlan) &&
+            eintrag != QLatin1String(kLauf))
             ++funktionen;
     const QString art = d.zellen.empty() ? QString() : QStringLiteral(" notebook (%1 cells)").arg(d.zellen.size());
     QString lage = QStringLiteral("%1, read as %2%3%4: %5 function(s), %6 data type(s)")
@@ -1179,6 +1190,15 @@ void Hauptfenster::zeigeLage()
                         .arg(m_datenfluss.hinweise.size())
                         .arg(m_datenfluss.hinweise.front().zeile)
                         .arg(ausStd(m_datenfluss.hinweise.front().text));
+    }
+    if (istLauf())
+    {
+        lage += QStringLiteral(" | run: %1 job(s), %2 stage(s), %3 task(s)")
+                    .arg(m_zeitachse.jobs)
+                    .arg(m_zeitachse.stages)
+                    .arg(m_zeitachse.tasks);
+        if (!m_zeitachse.hinweise.empty())
+            lage += QStringLiteral(" - %1 note(s), first: %2").arg(m_zeitachse.hinweise.size()).arg(ausStd(m_zeitachse.hinweise.front()));
     }
     if (istPlan())
     {
@@ -2028,6 +2048,36 @@ void Hauptfenster::geheZuPlan(std::size_t datei, const QString& wahl, c2d::diagr
     aktualisiereLeiste();
 }
 
+// --- Lauf (Spark Schicht 3) -------------------------------------------------------------------------------------
+
+bool Hauptfenster::istLauf() const
+{
+    return m_gezeigt == QLatin1String(kLauf);
+}
+
+void Hauptfenster::leiteLaufAb()
+{
+    m_zeitachse = {};
+    if (!istLauf() || m_datei >= m_projekt.dateien.size()) return;
+    const std::vector<c2d::modell::Lauf>& laeufe = m_projekt.dateien[m_datei].ergebnis.einheit.laeufe;
+    if (!laeufe.empty()) m_zeitachse = c2d::diagramm::zeitachseVon(laeufe.front());
+}
+
+bool Hauptfenster::zeigeLauf()
+{
+    if (m_datei >= m_projekt.dateien.size() || m_projekt.dateien[m_datei].ergebnis.einheit.laeufe.empty()) return false;
+    if (!istLauf()) return waehleEintrag(QString::fromLatin1(kLauf)) && istLauf();
+    return true;
+}
+
+QStringList Hauptfenster::laufBalken() const
+{
+    QStringList aus;
+    if (istLauf())
+        for (const c2d::diagramm::ZeitBalken& b : m_zeitachse.balken) aus << ausStd(b.titel);
+    return aus;
+}
+
 QStringList Hauptfenster::plaene() const
 {
     QStringList aus;
@@ -2423,6 +2473,7 @@ QString Hauptfenster::markiert() const
     if (istAbfrage()) return k < m_abfrageDiagramm.knoten.size() ? ausStd(m_abfrageDiagramm.knoten[k].titel) : QString();
     if (istDatenfluss()) return k < m_datenfluss.knoten.size() ? datenflussKnoten().value(static_cast<qsizetype>(k)) : QString();
     if (istPlan()) return k < m_planDiagramm.knoten.size() ? ausStd(m_planDiagramm.knoten[k].titel) : QString();
+    if (istLauf()) return k < m_zeitachse.balken.size() ? ausStd(m_zeitachse.balken[k].titel) : QString();
     if (m_gezeigt == QLatin1String(kDatentypen))
         return k < m_struktur.kaesten.size() ? ausStd(m_struktur.kaesten[k].name) : QString();
     if (k >= m_fluss.knoten().size()) return {};
@@ -3155,6 +3206,7 @@ void Hauptfenster::baueNeu()
     leiteDatenflussAb();
     m_planAuswahl->setVisible(istPlan());
     leitePlanAb();
+    leiteLaufAb();
     zeigeNotationsfelder();
     leiteAufrufgraphAb();
     leiteAbhaengigkeitenAb();
@@ -3310,6 +3362,12 @@ void Hauptfenster::zeichne()
     {
         m_vorschau->zeige(m_planDiagramm, nachRechts);
         m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Plan, m_planDiagramm));
+        return;
+    }
+    if (istLauf())
+    {
+        m_vorschau->zeige(m_zeitachse);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Zeitachse, m_zeitachse));
         return;
     }
     if (istAbhaengigkeiten())
@@ -3612,6 +3670,9 @@ bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
     if (istDatenfluss())
         return knoten < m_datenfluss.knoten.size() && m_datenfluss.knoten[knoten].zeile > 0 &&
                zeigeZeile(m_datei, m_datenfluss.knoten[knoten].zeile);
+    if (istLauf())
+        return knoten < m_zeitachse.balken.size() && m_zeitachse.balken[knoten].zeile > 0 &&
+               zeigeZeile(m_datei, m_zeitachse.balken[knoten].zeile);
     if (istPlan())
     {
         // in einer Plan-Datei die Zeile des Operators; aus der Ausgabe einer Zelle ihr explain(), die Zeile der
@@ -3680,6 +3741,11 @@ bool Hauptfenster::klicke(const QString& name)
         // der Name wie datenflussKnoten() ihn nennt
         const QStringList namen = datenflussKnoten();
         const qsizetype k = namen.indexOf(name);
+        return k >= 0 && zeigeStelle(static_cast<c2d::diagramm::KnotenId>(k));
+    }
+    if (istLauf())
+    {
+        const qsizetype k = laufBalken().indexOf(name);
         return k >= 0 && zeigeStelle(static_cast<c2d::diagramm::KnotenId>(k));
     }
     if (istPlan())

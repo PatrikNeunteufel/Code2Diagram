@@ -582,6 +582,90 @@ struct Plan
     int aufruf = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Spark: ein Lauf aus seinem Event-Log (Spark Schicht 3, Entscheide L1-L7) — was der Log sagt, ohne Deutung;
+// Zeiten in Millisekunden seit 1970, wie Spark sie schreibt
+// ---------------------------------------------------------------------------
+
+struct LaufExecutor
+{
+    std::string id;    ///< `6`, `driver`
+    std::string host;
+    int kerne = 0;     ///< `Total Cores`; 0 = der Log nennt sie nicht (der Treiber im lokalen Modus)
+    long long hinzu = 0;
+    long long entfernt = 0;  ///< 0 = nicht entfernt
+    std::string grund;       ///< `Removed Reason`
+    int zeile = 0;           ///< im Log
+};
+
+struct LaufTask
+{
+    long long id = 0;
+    int versuch = 0;
+    int stage = 0;
+    int stageVersuch = 0;
+    std::string executor;
+    long long start = 0;
+    long long ende = 0;     ///< 0 = kein Ende im Log
+    std::string ergebnis;   ///< `Success`, `ExceptionFailure`, `TaskKilled` …; leer = kein Ende
+    std::string grund;      ///< bei einem Fehlschlag: was der Log dazu sagt
+    bool spekulativ = false;
+    long long laufzeit = 0;           ///< `Executor Run Time`
+    long long gc = 0;                 ///< `JVM GC Time`
+    long long shuffleGelesen = 0;     ///< Bytes, entfernt und lokal
+    long long shuffleGeschrieben = 0; ///< Bytes
+    long long spillSpeicher = 0;      ///< `Memory Bytes Spilled`
+    long long spillPlatte = 0;        ///< `Disk Bytes Spilled`
+    long long spitze = 0;             ///< `Peak Execution Memory` bzw. `internal.metrics.peakExecutionMemory`
+    long long eingabe = 0;            ///< `Input Metrics` Bytes Read
+    long long ausgabe = 0;            ///< `Output Metrics` Bytes Written
+    int zeile = 0;                    ///< im Log: das Ende, sonst der Start
+};
+
+struct LaufStage
+{
+    int id = 0;
+    int versuch = 0;
+    std::string name;     ///< `Stage Name`: die Aufrufstelle, `collect at kmeans.scala:62`
+    int tasks = 0;        ///< `Number of Tasks`
+    long long eingereicht = 0;
+    /// Der Log nennt keine `Submission Time` (Spark 2 schreibt sie erst beim Abschluss): `eingereicht` ist der Start ihres
+    /// ersten Tasks, sonst ihres Jobs.
+    bool eingereichtGeschaetzt = false;
+    long long beendet = 0;  ///< 0 = nicht beendet
+    std::string fehler;     ///< `Failure Reason`; leer = keiner
+    std::vector<int> eltern;
+    std::vector<std::string> aufrufe;  ///< die `Callsite` ihrer RDDs, je eine einmal
+    int zeile = 0;
+};
+
+struct LaufJob
+{
+    int id = 0;
+    long long start = 0;
+    long long ende = 0;     ///< 0 = kein Ende im Log
+    std::vector<int> stages;
+    std::string ergebnis;   ///< `JobSucceeded`, `JobFailed`; leer = kein Ende
+    std::string sql;        ///< `spark.sql.execution.id`; leer = keine
+    int zeile = 0;
+};
+
+struct Lauf
+{
+    std::string name;     ///< `App Name`
+    std::string id;       ///< `App ID`
+    std::string version;  ///< `Spark Version`
+    std::string master;   ///< `spark.master`
+    long long start = 0;
+    long long ende = 0;   ///< 0 = kein ApplicationEnd
+    int taskCpus = 1;     ///< `spark.task.cpus`
+    std::vector<LaufExecutor> executoren;  ///< in der Reihenfolge, in der sie dazukommen
+    std::vector<LaufJob> jobs;
+    std::vector<LaufStage> stages;         ///< je Stage und Versuch
+    std::vector<LaufTask> tasks;           ///< je Task und Versuch, in der Reihenfolge des Starts
+    long long letzte = 0;                  ///< der letzte Zeitstempel im Log
+};
+
 /// Eine Uebersetzungseinheit: eine Quelldatei.
 struct Einheit
 {
@@ -602,6 +686,8 @@ struct Einheit
     std::vector<Abfrage> abfragen;
     /// Spark: die Plaene aus `explain()` — einer Plan-Datei oder der Ausgaben eines Notebooks.
     std::vector<Plan> plaene;
+    /// Spark: der Lauf eines Event-Logs (hoechstens einer je Datei).
+    std::vector<Lauf> laeufe;
 };
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Zeitachse.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
 
@@ -244,6 +245,35 @@ struct TabellenAnordnung
     double breite = 0;
     double hoehe = 0;
 };
+
+/// Eine Zeitachse (Lauf von Spark): links die Titel der Bahnen, rechts die Zeit (linear, x), oben die Achse mit
+/// Strichen; je Balken sein Rechteck und der Text, der hineinpasst (leer = keiner). Wer zeichnet, rechnet nichts.
+struct ZeitAnordnung
+{
+    struct Bahn
+    {
+        Rechteck ort;       ///< die ganze Zeile, ueber Titel und Zeit
+        std::string titel;
+        Punkt text;         ///< linker Rand des Titels, Mitte der Zeile
+        bool job = false;   ///< eine Zeile der Jobs (getoent)
+        double entfernt = -1;  ///< x, an dem der Executor entfernt wurde; < 0 = nicht
+    };
+    struct Strich
+    {
+        Linienzug linie;
+        std::string text;  ///< `10 s`
+        Punkt textOrt;     ///< Mitte des Texts
+    };
+    std::vector<Bahn> bahnen;
+    std::vector<Rechteck> balken;     ///< je Balken der Zeitachse
+    std::vector<std::string> texte;   ///< je Balken: was hineinpasst
+    std::vector<Strich> achse;
+    Rechteck zeit;                    ///< die Flaeche der Zeit (unter der Achse)
+    double breite = 0;
+    double hoehe = 0;
+};
+
+[[nodiscard]] ZeitAnordnung ordneAn(const Zeitachse& achse, const AnordnungOptionen& optionen = {});
 
 /// So viele Zeichen zeigt der Kopf eines Atoms; den Rest der Tooltip.
 inline constexpr std::size_t kAtomZeichen = 30;

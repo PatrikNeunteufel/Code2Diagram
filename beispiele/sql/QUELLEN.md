@@ -36,9 +36,11 @@ spark-sql-tests und dbdemos `spark`, wwi-ssdt `tsql`, pagila `postgres`, duckdb-
 Chinook und Sakila tragen mehrere Dialekte und bleiben ohne.
 
 Eigene Event-Logs von Spark: `beispiele/spark/eventlogs_aufnehmen.py` (nach
-`beispiele/spark/fremd/`, unversioniert).
+`beispiele/spark/fremd/eventlogs/`, unversioniert). Eigene Pläne in jedem Modus:
+`beispiele/spark/plaene_aufnehmen.py` (nach `beispiele/spark/fremd/plaene-eigen/`).
 
-Nicht geladen: `log-example/app-20170708141026-0013` aus
-[xiandong79/Spark-Log-Parser](https://github.com/xiandong79/Spark-Log-Parser) (ein Event-Log, 5,8 MB,
-MIT, Spark von 2017) — wartet auf Freigabe; der Zenodo-Datensatz 10516345 lehnt den automatischen
-Abruf ab (403), Grösse und Lizenz ungeprüft.
+Geladen (Stand 2026-11-07): `log-example/app-20170708141026-0013` aus
+[xiandong79/Spark-Log-Parser](https://github.com/xiandong79/Spark-Log-Parser) nach
+`beispiele/spark/fremd/eventlogs-netz/spark-log-parser/` (ein Event-Log, 5,6 MB, 2394 Ereignisse, MIT mit
+`_LIZENZ.txt`, Spark 2.0.0, Scala-Anwendung KMeans: 32 Executoren mit je einem Kern, 33 Stages, 1112 Tasks).
+Nicht geladen: der Zenodo-Datensatz 10516345 lehnt den automatischen Abruf ab (403), Grösse und Lizenz ungeprüft.

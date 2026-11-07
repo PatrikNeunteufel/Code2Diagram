@@ -10,6 +10,8 @@
 
 #include "Text.hpp"
 
+#include <algorithm>
+
 namespace c2d::ausgabe
 {
 
@@ -47,7 +49,29 @@ public:
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
         return art == Diagrammart::Wahrheitstabelle || art == Diagrammart::Entscheidungstabelle || art == Diagrammart::Zuordnung ||
-               art == Diagrammart::Konfiguration || art == Diagrammart::Schaltstellen || art == Diagrammart::Schalteruebersicht;
+               art == Diagrammart::Konfiguration || art == Diagrammart::Schaltstellen || art == Diagrammart::Schalteruebersicht ||
+               art == Diagrammart::Zeitachse;
+    }
+
+    /// Eine Zeitachse: je Task eine Zeile (Entscheid L7) — der Kopf aus den Spalten des ersten Tasks; zuvor eine Zeile
+    /// mit dem Titel. Ueber kHoechstensTasks gibt es keine einzelnen Tasks, dann nur der Titel und ein Hinweis.
+    [[nodiscard]] std::string schreibe(const Zeitachse& z, const Optionen&) const override
+    {
+        std::string aus = zeile({z.titel});
+        const auto erster = std::find_if(z.balken.begin(), z.balken.end(), [](const ZeitBalken& b) { return !b.spalten.empty(); });
+        if (erster == z.balken.end())
+            return aus + zeile({z.zusammengefasst ? "more tasks than drawn singly - no row per task" : "no tasks"});
+        std::vector<std::string> kopf;
+        for (const auto& [name, wert] : erster->spalten) kopf.push_back(name);
+        aus += zeile(kopf);
+        for (const ZeitBalken& b : z.balken)
+        {
+            if (b.spalten.empty()) continue;
+            std::vector<std::string> werte;
+            for (const auto& [name, wert] : b.spalten) werte.push_back(wert);
+            aus += zeile(werte);
+        }
+        return aus;
     }
 
     [[nodiscard]] std::string schreibe(const Flussdiagramm&, const Optionen&) const override { return {}; }

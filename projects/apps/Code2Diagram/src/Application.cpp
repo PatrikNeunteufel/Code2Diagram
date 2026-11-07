@@ -423,6 +423,13 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(fenster.planKnoten().join(QStringLiteral(" | ")));
                      });
 
+    anbindung.aktion(QStringLiteral("lauf_zeigen"),
+                     QStringLiteral("Shows the run of a Spark event log as a timeline (Diagram > Run timeline)"), QString(),
+                     [&fenster](const QJsonObject&) -> st::Ergebnis {
+                         if (!fenster.zeigeLauf()) return st::ungueltig(QStringLiteral("The file is not a Spark event log"));
+                         return st::ok(QStringLiteral("%1 bars").arg(fenster.laufBalken().size()));
+                     });
+
     anbindung.aktion(QStringLiteral("notation_waehlen"),
                      QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
                                     "columns are ellipses in Chen and (min,max)"),

@@ -79,6 +79,46 @@ fs::path oeffenbar(const fs::path& weg)
 #endif
 }
 
+/// Die ersten `n` Bytes einer Datei; leer = sie liess sich nicht oeffnen.
+std::string anfangVon(const fs::path& weg, std::size_t n)
+{
+    std::ifstream strom(oeffenbar(weg), std::ios::binary);
+    if (!strom) return {};
+    std::string aus(n, '\0');
+    strom.read(aus.data(), static_cast<std::streamsize>(n));
+    aus.resize(static_cast<std::size_t>(strom.gcount()));
+    return aus;
+}
+
+/// Ein Name ohne Endung (`app-20170708141026-0013`, `local-1794057617951`) — so heisst ein Event-Log (L1).
+bool ohneEndung(std::string_view name)
+{
+    return name.find('.') == std::string_view::npos;
+}
+
+/// So benennt Spark seine Event-Logs (L1-N): `app-…` (Standalone), `local-…`, `application_…` (YARN), `spark-…`
+/// (Kubernetes), `events_…` (rolling). Nur eine Datei ohne Endung mit so einem Namen wird im Projekt geoeffnet.
+constexpr std::string_view kLogNamen[] = {"app-", "local-", "application_", "spark-", "events_"};
+
+bool logName(std::string_view name)
+{
+    return std::any_of(std::begin(kLogNamen), std::end(kLogNamen), [&](std::string_view v) { return name.starts_with(v); });
+}
+
+/// Die Endungen eines komprimierten Event-Logs (Spark 4 komprimiert vorgegeben, L1).
+constexpr std::string_view kKomprimiert[] = {"zstd", "lz4", "snappy", "lzf"};
+
+/// Ein Name wie ein komprimierter Event-Log: `app-…`, `local-…`, `application_…`, `events_…` mit einer Endung aus
+/// kKomprimiert.
+bool komprimierterLog(std::string_view name)
+{
+    const std::size_t punkt = name.rfind('.');
+    if (punkt == std::string_view::npos) return false;
+    const std::string_view endung = name.substr(punkt + 1);
+    if (std::find(std::begin(kKomprimiert), std::end(kKomprimiert), endung) == std::end(kKomprimiert)) return false;
+    return logName(name);
+}
+
 
 /// Gleichnamiges ersetzt: das Spaetere gilt, an der Stelle des Frueheren (auch innerhalb von `dazu`).
 /// Ueber einen Index nach Namen: die Koepfe eines Projekts bringen Tausende `#define` je Datei.
@@ -699,10 +739,38 @@ public:
                     uebergehe(weg, "\"uebergehen\": \"" + *muster + "\"");
                     continue;
                 }
+                // ein Event-Log mit `spark.eventLog.rolling.enabled`: ein Ordner, ein Lauf (L1)
+                if (name.starts_with("eventlog_v2_"))
+                {
+                    liesRollendenLog(e.path(), weg);
+                    continue;
+                }
                 durchsuche(e.path(), weg);
                 continue;
             }
-            if (!e.is_regular_file(art) || !kannLesen(name)) continue;
+            if (!e.is_regular_file(art)) continue;
+            if (komprimierterLog(name))
+            {
+                projektMeldung(weg, Schwere::Hinweis, "compressed event log - not read (spark.eventLog.compress=false)");
+                continue;
+            }
+            // ohne Endung: ein Event-Log, wenn er heisst, wie Spark Logs benennt, und so beginnt (L1, L1-N) — sonst nichts,
+            // was das Projekt liest (ein Maildir hat Hunderttausende solcher Dateien)
+            if (ohneEndung(name))
+            {
+                if (!logName(name) || !sprache::eventLogText(anfangVon(e.path(), 256))) continue;
+                Datei d;
+                d.pfad = weg;
+                if (!liesDatei(e.path(), d.text))
+                {
+                    projektMeldung(weg, Schwere::Fehler, "cannot read the file");
+                    continue;
+                }
+                d.sprache = &sprache::sparkEventLog();
+                m_p.dateien.push_back(std::move(d));
+                continue;
+            }
+            if (!kannLesen(name)) continue;
             Datei d;
             d.pfad = weg;
             if (!liesDatei(e.path(), d.text))
@@ -711,10 +779,61 @@ public:
                 continue;
             }
             d.sprache = sprache::spracheFuer(name, d.text);  // ein Notebook bekommt sie in liesAlle
-            // eine Textdatei ist nur ein Plan von Spark, wenn einer darin steht (Entscheid P2-3)
+            // eine Textdatei ist nur ein Plan von Spark, wenn einer darin steht (Entscheid P2-3); ein `.inprogress` nur
+            // ein Event-Log, wenn er so beginnt (L1)
             if (d.sprache == &sprache::sparkPlan() && !sprache::plantext(d.text)) continue;
+            if (d.sprache == &sprache::sparkEventLog() && !sprache::eventLogText(d.text)) continue;
             m_p.dateien.push_back(std::move(d));
         }
+    }
+
+    /// Ein rollender Event-Log: seine `events_<n>_…` der Nummer nach aneinander, als eine Datei (L1). Ein
+    /// `appstatus_….inprogress` daneben heisst: der Lauf schreibt noch.
+    void liesRollendenLog(const fs::path& ordner, const std::string& weg)
+    {
+        std::error_code fehler;
+        std::vector<std::pair<long long, fs::path>> teile;
+        bool laeuft = false;
+        for (fs::directory_iterator it(oeffenbar(ordner), fs::directory_options::skip_permission_denied, fehler), ende;
+             !fehler && it != ende; it.increment(fehler))
+        {
+            const std::string n = alsText(it->path().filename());
+            if (n.starts_with("appstatus_") && n.ends_with(".inprogress")) laeuft = true;
+            if (!n.starts_with("events_")) continue;
+            if (komprimierterLog(n))
+            {
+                projektMeldung(weg + "/" + n, Schwere::Hinweis, "compressed event log - not read (spark.eventLog.compress=false)");
+                continue;
+            }
+            const std::size_t strich = n.find('_', 7);
+            long long nummer = 0;
+            try
+            {
+                nummer = std::stoll(n.substr(7, strich == std::string::npos ? std::string::npos : strich - 7));
+            }
+            catch (...)
+            {
+            }
+            teile.emplace_back(nummer, it->path());
+        }
+        if (teile.empty()) return;
+        std::sort(teile.begin(), teile.end());
+        Datei d;
+        d.pfad = laeuft ? weg + ".inprogress" : weg;
+        for (const auto& [nummer, teil] : teile)
+        {
+            std::string text;
+            if (!liesDatei(teil, text))
+            {
+                projektMeldung(weg, Schwere::Fehler, "cannot read " + alsText(teil.filename()));
+                continue;
+            }
+            if (!d.text.empty() && d.text.back() != '\n') d.text.push_back('\n');
+            d.text += text;
+        }
+        if (!sprache::eventLogText(d.text)) return;
+        d.sprache = &sprache::sparkEventLog();
+        m_p.dateien.push_back(std::move(d));
     }
 
     void liesAlle()
@@ -985,6 +1104,7 @@ Projekt liesText(std::string_view text, std::string_view name, const ProjektOpti
     d.pfad = std::string(name);
     d.text = std::string(text);
     d.sprache = sprache::spracheFuer(name, text);
+    if (d.sprache == nullptr && sprache::eventLogText(text)) d.sprache = &sprache::sparkEventLog();  // ohne Endung (L1)
     if (d.sprache == nullptr && !istNotebook(name)) d.sprache = &sprache::c();
     std::optional<Notebook> notebook;
     Meldung fehler;

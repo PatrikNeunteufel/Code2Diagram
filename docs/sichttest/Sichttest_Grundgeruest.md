@@ -1054,3 +1054,28 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: datei_oeffnen pfad=beispiele/notebooks/lager_explain.ipynb` `aktion: plan_zeigen name=<cell 3>@11`
 - [ ] **AF6 Formate und Thema:** Format mermaid (`subgraph` je Rahmen, `{{` Exchange, `[(` Scan, `-.->`), dot, drawio;
       csv sagt `Physical plan is not available in csv`; Left-right ohne Überdeckung; dunkles Thema lesbar.
+
+## AG. Run timeline (Spark Schicht 3)
+
+- [ ] **AG0 Vorbereiten:** File > Open source file… `beispiele/spark/local-1700000000000` (ohne Endung; Dateifilter
+      *All files*), Vorschau. Statuszeile: `read as Spark event log`, `run: 2 job(s), 3 stage(s), 8 task(s) - 4 note(s)`.
+      `aktion: datei_oeffnen pfad=beispiele/spark/local-1700000000000` `aktion: ansicht_waehlen name=preview`
+- [ ] **AG1 Eintrag:** Diagram bietet `Run timeline (1)` und zeigt ihn gleich. Oben die Achse `0 s` … `8 s`.
+      `aktion: lauf_zeigen`
+- [ ] **AG2 Jobs und Stages:** Zeilen `Job 0` und `Job 1` getönt, je mit einem dunklen Balken oben; darin `Stage 0:
+      count at lager_spark.py:24` und `Stage 1` (andere Farbe), `Stage 2: collect at lager_spark.py:31` gestrichelt bis
+      zum Ende. Tooltip von Stage 1: `tasks: 2`, Shuffle read 3.1 MB, Spill memory 67.1 MB / disk 16.8 MB, `peak execution
+      memory: 67.1 MB`, `rdd: groupBy at lager_spark.py:22`. Tooltip von Stage 2: `submission time not in the log - from
+      its first task`.
+- [ ] **AG3 Bahnen:** `executor 1 (knoten-a)` mit zwei Bahnen (`core 2`), `executor 2 (knoten-b)` mit einer; Task `2`
+      dick mit ✗ im Balken (Tooltip `failed: ExceptionFailure - Datei nicht lesbar: teil-0002.csv`), Task `3` (Versuch 1)
+      gleich dahinter auf derselben Bahn; Tasks `6`, `7` gestrichelt bis zum Ende; auf der Bahn von Executor 2 die Marke
+      `removed` bei 7,5 s.
+- [ ] **AG4 Klick:** Ein Klick auf `Stage 0: …` zeigt im Quelltext die Zeile, in der sie zuerst steht (StageSubmitted,
+      7), ein Klick auf Task `4` die Zeile seines TaskEnd (18); Rechtsklick bietet *Show the event in the log*.
+      `aktion: klicken name=4`
+- [ ] **AG5 Formate und Thema:** Format mermaid (`gantt`, `dateFormat x`, `section executor 1 core 2`, `crit` beim
+      Fehlschlag, `active` ohne Ende), drawio, csv (je Task eine Zeile, Kopf `task;attempt;stage;executor;core;…`); dot sagt
+      `Run timeline is not available in dot`; dunkles Thema lesbar; Top-down/Left-right ändert nichts.
+- [ ] **AG6 Großer Lauf:** `beispiele/spark/fremd/eventlogs-netz/spark-log-parser/app-20170708141026-0013` (falls geladen):
+      25 Jobs als Treppe, 32 Executoren mit je einer Bahn, Stage 2 gestrichelt über 24 Executoren bis zum Ende.

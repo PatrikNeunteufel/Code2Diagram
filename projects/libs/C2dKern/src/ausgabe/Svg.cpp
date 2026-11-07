@@ -675,6 +675,52 @@ public:
         return aus;
     }
 
+    /// Eine Zeitachse (Entscheide L3, L4): die Zeilen der Jobs getoent, die Striche der Achse, je Balken ein Rechteck
+    /// in der Farbe seiner Stage (ein Job im Strich), was kein Ende hat gestrichelt, ein Fehlschlag mit ✗; je Balken
+    /// ein Tooltip mit allem, was der Log sagt; ein entfernter Executor mit Marke.
+    [[nodiscard]] std::string schreibe(const Zeitachse& z, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const ZeitAnordnung a = ordneAn(z, o);
+        std::string aus = kopf(z.titel, a.breite, a.hoehe);
+        for (const ZeitAnordnung::Bahn& b : a.bahnen)
+            if (b.job) aus += rechteckMit(b.ort, "getoent", "style=\"fill-opacity:0.45;stroke:none\"");
+        for (const ZeitAnordnung::Strich& s : a.achse)
+        {
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(s.linie) + "\" style=\"stroke-opacity:0.25\"/>\n";
+            aus += textMittig({s.text}, s.textOrt, o.zeilenHoehe);
+        }
+        for (const ZeitAnordnung::Bahn& b : a.bahnen)
+        {
+            aus += textLinks(b.titel, b.text.x, b.text.y - o.zeilenHoehe / 2, o.zeilenHoehe, b.job ? "font-weight=\"bold\"" : "");
+            if (b.entfernt >= 0)
+            {
+                aus += "  <polyline class=\"linie\" points=\"" +
+                       punkte({{b.entfernt, b.ort.y}, {b.entfernt, b.ort.y + b.ort.hoehe}}) + "\" style=\"stroke-width:2.4\"/>\n";
+                aus += textLinks("removed", b.entfernt + 3, b.ort.y + b.ort.hoehe / 2 - o.zeilenHoehe / 2, o.zeilenHoehe, "font-style=\"italic\"");
+            }
+        }
+        for (std::size_t i = 0; i < z.balken.size() && i < a.balken.size(); ++i)
+        {
+            const ZeitBalken& b = z.balken[i];
+            const Rechteck& r = a.balken[i];
+            std::string stil = b.farbe != kKeine ? "fill:" + std::string(rahmenFarbe(b.farbe)) + ";fill-opacity:0.55;" : "";
+            if (b.offen) stil += "stroke-dasharray:4 3;";
+            if (b.fehlgeschlagen) stil += "stroke-width:2.4;";
+            std::string titel;
+            for (const std::string& t : b.angaben) titel += (titel.empty() ? "" : "\n") + t;
+            aus += "  <g>\n  <title>" + xml(titel) + "</title>\n";
+            aus += rechteckMit(r, b.art == ZeitBalkenArt::Job ? "spitze" : "flaeche", "style=\"" + stil + "\"");
+            if (!a.texte[i].empty()) aus += textLinks(a.texte[i], r.x + 3, r.y + r.hoehe / 2 - o.zeilenHoehe / 2, o.zeilenHoehe);
+            // das ✗ im Balken an seinem Ende (dahinter kann schon der naechste Task der Bahn stehen); nur ein schmaler hinter sich
+            if (b.fehlgeschlagen)
+                aus += textLinks("\xE2\x9C\x97", r.breite > 14 ? r.x + r.breite - 11 : r.x + r.breite + 2,
+                                 r.y + r.hoehe / 2 - o.zeilenHoehe / 2, o.zeilenHoehe, "font-weight=\"bold\"");
+            aus += "  </g>\n";
+        }
+        return aus + "</svg>\n";
+    }
+
     /// Ein Plan: hinten die Rahmen (Unterabfragen, Stages, Codegen), dann die Kanten (Fluss durchgezogen,
     /// Unterabfrage gestrichelt, Wiederverwendung gepunktet, je mit Spitze), darauf die Knoten, vorn die Texte.
     [[nodiscard]] std::string schreibe(const Plandiagramm& d, const Optionen& optionen) const override

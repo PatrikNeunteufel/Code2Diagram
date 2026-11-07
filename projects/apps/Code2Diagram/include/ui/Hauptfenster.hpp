@@ -42,6 +42,7 @@
 #include "c2d/diagramm/Flussdiagramm.hpp"
 #include "c2d/diagramm/Konfigurationstabelle.hpp"
 #include "c2d/diagramm/Plan.hpp"
+#include "c2d/diagramm/Zeitachse.hpp"
 #include "c2d/diagramm/Schaltstellen.hpp"
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Entscheidungstabelle.hpp"
@@ -105,6 +106,7 @@ public:
     static constexpr const char* kAbfragen = "queries";
     static constexpr const char* kDatenfluss = "flow";  ///< der Datenfluss; welcher, sagt das zweite Feld
     static constexpr const char* kPlan = "plan";        ///< ein Plan von Spark; welcher, sagt das zweite Feld
+    static constexpr const char* kLauf = "run";         ///< der Lauf eines Event-Logs von Spark als Zeitachse
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
@@ -246,6 +248,10 @@ public:
     [[nodiscard]] QStringList plaene() const;
     /// Je Knoten des gezeigten Plans sein Titel.
     [[nodiscard]] QStringList planKnoten() const;
+    /// Den Lauf des Event-Logs der Datei als Zeitachse zeigen (Spark Schicht 3). false = die Datei ist kein Event-Log.
+    bool zeigeLauf();
+    /// Je Balken der gezeigten Zeitachse sein Titel (`Job 3`, `Stage 2: …`, die Nummer eines Tasks).
+    [[nodiscard]] QStringList laufBalken() const;
     [[nodiscard]] QString diagramm() const;
     /// Zum Diagramm davor, auch in einer anderen Datei; kam man ueber einen
     /// Aufruf, ist dessen Knoten danach hervorgehoben. false = es gibt keines.
@@ -522,6 +528,8 @@ private:
     void datenflussMenue(c2d::diagramm::KnotenId knoten);
     [[nodiscard]] bool istPlan() const;
     void leitePlanAb();
+    [[nodiscard]] bool istLauf() const;
+    void leiteLaufAb();
     /// Zum Plan `wahl` (wie m_planWahl) der Datei `datei`; Back fuehrt zurueck.
     void geheZuPlan(std::size_t datei, const QString& wahl, c2d::diagramm::KnotenId von = c2d::diagramm::kKeine);
     /// Der gewaehlte Plan der Datei (nach m_planWahl) und sein Abschnitt; nullptr = keiner.
@@ -608,6 +616,7 @@ private:
     QComboBox* m_flussAuswahl = nullptr;                     ///< beim Datenfluss: welcher (Daten: der Name, leer = Datei)
     QString m_flussName;                                     ///< der gezeigte; leer = die ganze Datei
     c2d::diagramm::Plandiagramm m_planDiagramm;              ///< der gezeigte Plan
+    c2d::diagramm::Zeitachse m_zeitachse;                    ///< der gezeigte Lauf
     QComboBox* m_planAuswahl = nullptr;                      ///< beim Plan: welcher (Daten: wie m_planWahl)
     /// Der gezeigte Plan: sein Name, mit `\t` und dem Kurznamen eines logischen Abschnitts dahinter.
     QString m_planWahl;

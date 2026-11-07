@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages), Physical plan (Spark: explain()) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages), Physical plan (Spark: explain()), Run timeline (Spark: Event-Log) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg; Notebooks (`.ipynb`, Databricks) je Zelle | |
@@ -432,6 +432,22 @@ Tabelle in `diagramm/Datenfluss.cpp`:
   Ausgabe in der Statuszeile). Beispiele `beispiele/spark/lager_plaene.txt`, `beispiele/notebooks/lager_explain.ipynb`;
   eigene Pläne in jedem Modus erzeugt `beispiele/spark/plaene_aufnehmen.py`.
 
+**Run timeline (Spark, Diagram *Run timeline*)** — der Event-Log eines Laufs (`spark.eventLog.enabled`), gelesen von
+`sprache/eventlog/EventLog.cpp` über den JSON-Leser (`quelle/Json.*`), gezeichnet von `diagramm/Zeitachse.*`:
+- **Quellen:** eine Datei ohne Endung oder auf `.inprogress`, deren erste Zeile `{"Event":"SparkListenerLogStart"` ist;
+  ein Ordner `eventlog_v2_*` (rolling) als ein Lauf; ein komprimierter (`.zstd`, `.lz4`, `.snappy`, `.lzf`) bleibt mit
+  Meldung außen vor.
+- **Oben** je Job eine Zeile mit seinem Balken und den Balken seiner Stages (Aufrufstelle, Tasks, Shuffle
+  gelesen/geschrieben, Spill, Spitze des Ausführungsspeichers im Tooltip); **darunter** je Executor so viele Bahnen wie
+  Plätze (`Total Cores` / `spark.task.cpus`, im lokalen Modus aus `local[n]`), je Task ein Balken in der Farbe seiner
+  Stage. Ein Task kommt auf den Platz, der zuerst frei wird — Überlappungen von Millisekunden (Zeitstempel des
+  Treibers) geben keine zweite Bahn.
+- **Unvollständiges:** ohne Ende gestrichelt bis zum letzten Zeitstempel, `not completed`; ein Fehlschlag dick mit ✗
+  und Grund; ein entfernter Executor mit Marke. Über 20 000 Tasks je Bahn und Stage ein Balken mit der Zahl.
+- **Formate:** SVG, draw.io, Mermaid `gantt`, csv (je Task eine Zeile); DOT sagt ab. Klick → das Ereignis im Log.
+  Beispiel `beispiele/spark/local-1700000000000` (von Hand gesetzt); eigene Logs schreibt
+  `beispiele/spark/eventlogs_aufnehmen.py`.
+
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
 Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
@@ -704,6 +720,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   (`recomputed by …`, ein Parameter, der nicht verfolgt wird) auf stderr; csv sagt ab.
 - `--plan` zeichnet einen **Plan von Spark** (wie `--liste` ihn als `plan` nennt; ohne Namen den ersten der Datei,
   im Projekt mit `--datei`), `--abschnitt optimized|analyzed|parsed` einen logischen; Hinweise auf stderr; csv sagt ab.
+- `--lauf` zeichnet den **Lauf eines Event-Logs** als Zeitachse (`--liste` nennt ihn `run`); svg, drawio, mermaid
+  (`gantt`), csv (je Task eine Zeile); dot sagt ab.
 - `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
   ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
   rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
@@ -948,6 +966,9 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
+- **Run timeline:** noch ohne Verbindung zum Datenfluss (L5) und ohne die Pläne aus den SQL-Ereignissen (L6) — beides
+  wartet auf echte PySpark-Logs; komprimierte Logs werden nicht gelesen; der Kern eines Tasks steht nicht im Log, die
+  Bahn ist gerechnet (der Platz, der zuerst frei wurde).
 - **Physical plan:** kein Operator ist einem Knoten des Datenflusses zugeordnet (P2-2); die Stages sind aus den
   Exchanges gezählt, nicht Sparks Nummern; welche Unterabfrage eine wiederverwendete meint, steht bei maskierten
   Kennungen (`#x`, Sparks sql-tests) nicht im Text (Hinweis); ein Operator führt per Doppelklick nirgends hin.

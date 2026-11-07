@@ -58,6 +58,9 @@ public:
     /// Ein Plan von Spark; ein Knoten ist fuer Klick, Doppelklick, Kontextmenue und markiere() wie ein Knoten
     /// des Flussdiagramms: seine Stelle in Plandiagramm::knoten.
     void zeige(const c2d::diagramm::Plandiagramm& diagramm, bool nachRechts);
+    /// Ein Lauf von Spark als Zeitachse; ein Balken ist fuer Klick und markiere() ein Knoten: seine Stelle in
+    /// Zeitachse::balken. Die Richtung gilt nicht (die Zeit laeuft nach rechts).
+    void zeige(const c2d::diagramm::Zeitachse& achse);
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
     void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},

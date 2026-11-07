@@ -1,9 +1,10 @@
 /**
  * @file Json.hpp
- * @brief Ein kleiner JSON-Leser fuer die Projektdatei — Eigenbau wie Lexer und Leser
+ * @brief Ein kleiner JSON-Leser — Eigenbau wie Lexer und Leser; fuer die Projektdatei, Notebooks und Event-Logs
  *
  * Liest RFC 8259 ohne Erweiterungen (keine Kommentare, kein Komma am Ende).
- * Jeder Wert weiss, wo er stand, damit eine Meldung Zeile und Spalte nennt.
+ * Jeder Wert weiss, wo er stand, damit eine Meldung Zeile und Spalte nennt. Er liegt in der untersten
+ * Schicht, damit auch ein Leser (sprache/) ihn nutzt.
  *
  * Intern (nicht unter include/).
  */
@@ -15,7 +16,7 @@
 #include <string_view>
 #include <vector>
 
-namespace c2d::projekt::json
+namespace c2d::quelle::json
 {
 
 enum class Art
@@ -48,4 +49,4 @@ struct Wert
 /// Wie die Art im Text einer Meldung heisst.
 [[nodiscard]] std::string_view name(Art art);
 
-}  // namespace c2d::projekt::json
+}  // namespace c2d::quelle::json

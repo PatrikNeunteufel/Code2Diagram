@@ -563,6 +563,48 @@ public:
         return aus + std::string(kFuss);
     }
 
+    /// Eine Zeitachse (L7): je Bahn ihr Titel und (Jobs) ein getoenter Streifen, die Striche der Achse mit Zeit, je
+    /// Balken ein Rechteck in der Farbe seiner Stage — ohne Ende gestrichelt, ein Fehlschlag dick mit ✗.
+    [[nodiscard]] std::string schreibe(const Zeitachse& z, const Optionen& optionen) const override
+    {
+        const ZeitAnordnung a = ordneAn(z, anordnung(optionen));
+        std::string aus = kopf(z.titel, a.breite, a.hoehe);
+        const std::string schrift(kSchrift);
+        std::size_t n = 0;
+        const auto id = [&](char art) { return std::string(1, art) + std::to_string(n++); };
+        for (const ZeitAnordnung::Bahn& b : a.bahnen)
+        {
+            if (b.job)
+                aus += ecke(id('z'), "", "rounded=0;strokeColor=none;fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Getoent)) + ";",
+                            "1", b.ort);
+            aus += ecke(id('t'), html(b.titel),
+                        "text;html=1;align=left;verticalAlign=middle;" + std::string(b.job ? "fontStyle=1;" : "") + schrift, "1",
+                        {b.text.x, b.ort.y, a.zeit.x - b.text.x, b.ort.hoehe});
+            if (b.entfernt >= 0)
+                aus += ecke(id('r'), "removed", "rounded=0;fillColor=#000000;strokeColor=none;fontStyle=2;" + schrift, "1",
+                            {b.entfernt - 1, b.ort.y, 2, b.ort.hoehe});
+        }
+        for (const ZeitAnordnung::Strich& s : a.achse)
+        {
+            aus += linie(id('a'), s.linie);
+            aus += ecke(id('s'), html(s.text), "text;html=1;align=center;verticalAlign=middle;" + schrift, "1",
+                        {s.textOrt.x - 30, s.textOrt.y - 8, 60, 16});
+        }
+        for (std::size_t i = 0; i < z.balken.size() && i < a.balken.size(); ++i)
+        {
+            const ZeitBalken& b = z.balken[i];
+            std::string stil = "rounded=0;html=1;align=left;spacingLeft=3;verticalAlign=middle;overflow=hidden;";
+            stil += b.farbe != kKeine ? "fillColor=" + std::string(rahmenFarbe(b.farbe)) + ";opacity=70;"
+                                      : "fillColor=" + std::string(c2d::diagramm::farbe(Farbe::Strich)) + ";";
+            if (b.offen) stil += "dashed=1;";
+            if (b.fehlgeschlagen) stil += "strokeWidth=2.4;";
+            std::string text = html(a.texte[i]);
+            if (b.fehlgeschlagen) text += " \xE2\x9C\x97";
+            aus += ecke(id('b'), text, stil + schrift, "1", a.balken[i]);
+        }
+        return aus + std::string(kFuss);
+    }
+
     /// Ein Plan: je Rahmen (Unterabfrage, Stage, Codegen) ein Behaelter, Scan Zylinder, Exchange Sechseck (Broadcast
     /// gestrichelt), Unterabfrage als Prozess, die Wurzel rund getoent, wiederverwendet gestrichelt; Kanten einer
     /// Unterabfrage gestrichelt, Wiederverwendung gepunktet.

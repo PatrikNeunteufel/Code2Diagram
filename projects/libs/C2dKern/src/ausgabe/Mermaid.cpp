@@ -548,6 +548,53 @@ public:
         return aus;
     }
 
+    /// Eine Zeitachse als `gantt` (Entscheid L7): `dateFormat x` (Millisekunden), ein Abschnitt `Jobs` mit je Job und
+    /// Stage einem Balken, dann je Platz eines Executors ein Abschnitt mit seinen Tasks; ein Fehlschlag `crit`, was
+    /// kein Ende hat `active`. Ein Name traegt kein `:`, `#`, `;` (Mermaid trennt daran).
+    [[nodiscard]] std::string schreibe(const Zeitachse& z, const Optionen& optionen) const override
+    {
+        const auto name = [&](std::string_view t) {
+            std::string aus;
+            for (const char c : kuerze(std::string(t), optionen.maxZeilenLaenge))
+                aus += (c == ':' || c == '#' || c == ';' || c == '\n' || c == '\r') ? ' ' : c;
+            return aus.empty() ? std::string("-") : aus;
+        };
+        std::string aus = kommentar(z.titel);
+        aus += "gantt\n    title " + name(z.titel) + "\n    dateFormat x\n    axisFormat %M:%S\n";
+        std::size_t abschnitt = kKeine;
+        std::size_t nummer = 0;
+        // die Balken nach Bahn: erst die Jobs, dann je Platz
+        std::vector<std::size_t> folge(z.balken.size());
+        for (std::size_t i = 0; i < folge.size(); ++i) folge[i] = i;
+        std::stable_sort(folge.begin(), folge.end(), [&](std::size_t a, std::size_t b) {
+            const bool ja = z.bahnen[z.balken[a].bahn].art == ZeitBahnArt::Job;
+            const bool jb = z.bahnen[z.balken[b].bahn].art == ZeitBahnArt::Job;
+            if (ja != jb) return ja;
+            return ja ? false : z.balken[a].bahn < z.balken[b].bahn;
+        });
+        for (const std::size_t i : folge)
+        {
+            const ZeitBalken& b = z.balken[i];
+            const ZeitBahn& bahn = z.bahnen[b.bahn];
+            const std::size_t neu = bahn.art == ZeitBahnArt::Job ? kKeine - 1 : b.bahn;
+            if (neu != abschnitt)
+            {
+                abschnitt = neu;
+                std::string titel = "Jobs";
+                if (bahn.art == ZeitBahnArt::Executor)
+                    titel = (bahn.executor == "driver" ? std::string("driver") : "executor " + bahn.executor) + " core " +
+                            std::to_string(bahn.platz + 1);
+                aus += "    section " + name(titel) + "\n";
+            }
+            std::string text = b.titel;
+            if (b.art == ZeitBalkenArt::Task) text = "task " + b.titel;
+            const std::string zustand = b.fehlgeschlagen ? "crit, " : b.offen ? "active, " : "";
+            aus += "    " + name(text) + " :" + zustand + "b" + std::to_string(nummer++) + ", " + std::to_string(b.von) + ", " +
+                   std::to_string(std::max(b.bis, b.von + 1)) + "\n";
+        }
+        return aus;
+    }
+
     /// Ein Plan als flowchart: je Rahmen (Unterabfrage, Stage, Codegen) ein subgraph; Scan Zylinder, Exchange
     /// Sechseck (Broadcast gestrichelt), Unterabfrage mit doppelten Seiten, die Wurzel rund, wiederverwendet
     /// gestrichelt; Fluss `-->`, Unterabfrage `-.->`, Wiederverwendung `-.->` gepunktet.

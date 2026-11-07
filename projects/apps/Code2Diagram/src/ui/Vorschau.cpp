@@ -847,6 +847,78 @@ public:
         }
     }
 
+    /// Eine Zeitachse (wie in SVG): die Zeilen der Jobs getoent, die Achse, je Balken ein Rechteck in der Farbe seiner
+    /// Stage (ein Job im Strich), ohne Ende gestrichelt, ein Fehlschlag dick mit ✗; der Tooltip traegt alle Angaben.
+    void zeitachse(const Zeitachse& z, const ZeitAnordnung& a, double zeilenHoehe)
+    {
+        for (const ZeitAnordnung::Bahn& b : a.bahnen)
+            if (b.job)
+            {
+                QColor c = m_getoent;
+                c.setAlphaF(0.45);
+                m_szene.addRect(alsRect(b.ort), Qt::NoPen, c)->setZValue(0);
+            }
+        for (const ZeitAnordnung::Strich& s : a.achse)
+        {
+            QPen stift = m_strich;
+            QColor c = stift.color();
+            c.setAlphaF(0.25);
+            stift.setColor(c);
+            m_szene.addLine(QLineF(alsPunkt(s.linie.front()), alsPunkt(s.linie.back())), stift)->setZValue(1);
+            text(QString::fromStdString(s.text), QRectF(s.textOrt.x - 40, s.textOrt.y - zeilenHoehe / 2, 80, zeilenHoehe));
+        }
+        for (const ZeitAnordnung::Bahn& b : a.bahnen)
+        {
+            QGraphicsSimpleTextItem* t = textLinks(QString::fromStdString(b.titel), QPointF(b.text.x, b.text.y - zeilenHoehe / 2 + 1));
+            if (b.job)
+            {
+                QFont f = t->font();
+                f.setBold(true);
+                t->setFont(f);
+            }
+            if (b.entfernt >= 0)
+            {
+                QPen stift = m_strich;
+                stift.setWidthF(2.4);
+                m_szene.addLine(QLineF(b.entfernt, b.ort.y, b.entfernt, b.ort.y + b.ort.hoehe), stift)->setZValue(3);
+                textLinks(QStringLiteral("removed"), QPointF(b.entfernt + 3, b.ort.y), true);
+            }
+        }
+        for (std::size_t i = 0; i < z.balken.size() && i < a.balken.size(); ++i)
+        {
+            const ZeitBalken& b = z.balken[i];
+            QPen stift = m_strich;
+            if (b.offen) stift.setStyle(Qt::DashLine);
+            if (b.fehlgeschlagen) stift.setWidthF(2.4);
+            QColor pinsel = m_strich.color();
+            if (b.farbe != kKeine)
+            {
+                pinsel = QColor(QString::fromLatin1(rahmenFarbe(b.farbe).data(), static_cast<qsizetype>(rahmenFarbe(b.farbe).size())));
+                pinsel.setAlphaF(0.55);
+            }
+            QGraphicsRectItem* stueck = m_szene.addRect(alsRect(a.balken[i]), stift, pinsel);
+            stueck->setData(kKnoten, static_cast<qulonglong>(i) + 1);
+            stueck->setZValue(2);
+            QStringList ganz;
+            for (const std::string& t : b.angaben) ganz << QString::fromStdString(t);
+            stueck->setToolTip(ganz.join(QLatin1Char('\n')) + QStringLiteral("\n\nClick: show the event in the log."));
+            if (!a.texte[i].empty())
+            {
+                QGraphicsSimpleTextItem* t = textLinks(QString::fromStdString(a.texte[i]),
+                                                       QPointF(a.balken[i].x + 3, a.balken[i].y + a.balken[i].hoehe / 2 - zeilenHoehe / 2 + 1));
+                t->setData(kKnoten, static_cast<qulonglong>(i) + 1);
+            }
+            // das ✗ im Balken an seinem Ende (dahinter kann schon der naechste Task der Bahn stehen); nur ein schmaler hinter sich
+            if (b.fehlgeschlagen)
+            {
+                const Rechteck& r = a.balken[i];
+                textLinks(QStringLiteral("✗"), QPointF(r.breite > 14 ? r.x + r.breite - 11 : r.x + r.breite + 2,
+                                                             r.y + r.hoehe / 2 - zeilenHoehe / 2 + 1))
+                    ->setData(kKnoten, static_cast<qulonglong>(i) + 1);
+            }
+        }
+    }
+
     const QPen& strich() const { return m_strich; }
     const QColor& grund() const { return m_grund; }
     QGraphicsScene& szene() { return m_szene; }
@@ -1235,6 +1307,20 @@ void Vorschau::zeige(const Datenflussdiagramm& diagramm, bool nachRechts)
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.knoten.size());
     m_rahmen = static_cast<int>(a.gruppen.size());
+}
+
+void Vorschau::zeige(const Zeitachse& achse)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const ZeitAnordnung a = ordneAn(achse, optionen);
+    Zeichner z(*scene(), dunkel());
+    z.zeitachse(achse, a, optionen.zeilenHoehe);
+    for (const Rechteck& r : a.balken) m_orte.push_back(alsRect(r));
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.balken.size());
+    m_rahmen = 0;
 }
 
 void Vorschau::zeige(const Plandiagramm& diagramm, bool nachRechts)

@@ -266,6 +266,15 @@ public:
 /// Namen; Zeilen und Meldungen im Text.
 [[nodiscard]] std::vector<modell::Plan> liesPlaene(std::string_view text, std::vector<quelle::Meldung>& meldungen);
 
+/// Der Event-Log von Spark (Spark Schicht 3, Entscheid L1): je Zeile ein JSON-Ereignis; eine Datei ohne Endung
+/// oder auf `.inprogress`, deren erste Zeile `{"Event":"SparkListenerLogStart"` ist (eventLogText). Ein Lauf je
+/// Datei in Einheit::laeufe; eine Zeile, die kein JSON ist, gibt eine Meldung.
+[[nodiscard]] const Sprache& sparkEventLog();
+
+/// Beginnt der Text wie ein Event-Log von Spark (`{"Event":"SparkListenerLogStart"` in der ersten Zeile)?
+/// Es genuegt der Anfang der Datei.
+[[nodiscard]] bool eventLogText(std::string_view anfang);
+
 /// Die Dialekte von SQL, wie LeseOptionen::dialekt und die Projektdatei (`"sql"`) sie nennen: `sqlite`,
 /// `postgres`, `duckdb`, `spark`, `mysql`, `tsql`.
 [[nodiscard]] std::span<const std::string_view> sqlDialekte();

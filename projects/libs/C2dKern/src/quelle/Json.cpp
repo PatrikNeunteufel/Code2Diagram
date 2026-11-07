@@ -6,7 +6,7 @@
 
 #include <cstdio>
 
-namespace c2d::projekt::json
+namespace c2d::quelle::json
 {
 
 namespace
@@ -336,4 +336,4 @@ std::string_view name(Art art)
     return "a value";
 }
 
-}  // namespace c2d::projekt::json
+}  // namespace c2d::quelle::json

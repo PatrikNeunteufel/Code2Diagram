@@ -4,13 +4,15 @@
  */
 #include "Notebook.hpp"
 
-#include "Json.hpp"
 #include "Zeilen.hpp"
+#include "../quelle/Json.hpp"
 
 #include <algorithm>
 
 namespace c2d::projekt
 {
+
+namespace json = quelle::json;
 
 namespace
 {

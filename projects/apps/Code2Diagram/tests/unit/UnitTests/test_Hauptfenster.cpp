@@ -1227,6 +1227,37 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagrammText().contains("plan: &lt;cell 1&gt;@3"));
     }
 
+    TEST_CASE("Run timeline: ein Event-Log ohne Endung, Jobs, Stages, Tasks je Kern, Klick zeigt das Ereignis, Formate")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(
+            R"({"Event":"SparkListenerLogStart","Spark Version":"3.5.1"})" "\n"                                             // 1
+            R"({"Event":"SparkListenerApplicationStart","App Name":"lager","App ID":"local-1","Timestamp":1000})" "\n"     // 2
+            R"({"Event":"SparkListenerExecutorAdded","Timestamp":1010,"Executor ID":"1","Executor Info":{"Host":"a","Total Cores":2}})" "\n"  // 3
+            R"({"Event":"SparkListenerJobStart","Job ID":0,"Submission Time":1100,"Stage IDs":[0]})" "\n"                  // 4
+            R"({"Event":"SparkListenerStageCompleted","Stage Info":{"Stage ID":0,"Stage Attempt ID":0,"Stage Name":"count at lager.py:12","Number of Tasks":2,"Submission Time":1100,"Completion Time":1600}})" "\n"  // 5
+            R"({"Event":"SparkListenerTaskEnd","Stage ID":0,"Stage Attempt ID":0,"Task Info":{"Task ID":0,"Attempt":0,"Executor ID":"1","Launch Time":1100,"Finish Time":1500},"Task End Reason":{"Reason":"Success"}})" "\n"  // 6
+            R"({"Event":"SparkListenerTaskEnd","Stage ID":0,"Stage Attempt ID":0,"Task Info":{"Task ID":1,"Attempt":0,"Executor ID":"1","Launch Time":1100,"Finish Time":1600},"Task End Reason":{"Reason":"Success"}})" "\n"  // 7
+            R"({"Event":"SparkListenerJobEnd","Job ID":0,"Completion Time":1610,"Job Result":{"Result":"JobSucceeded"}})" "\n"  // 8
+            R"({"Event":"SparkListenerApplicationEnd","Timestamp":2000})" "\n",                                             // 9
+            "local-1");
+        CHECK(fenster.diagramme().contains("run"));
+        REQUIRE(fenster.zeigeLauf());
+        CHECK(fenster.diagramm() == "run");
+        CHECK(fenster.laufBalken() == QStringList{"Job 0", "Stage 0: count at lager.py:12", "0", "1"});
+        CHECK(fenster.vorschauFormen() == 4);
+        REQUIRE(fenster.klicke("Stage 0: count at lager.py:12"));
+        CHECK(fenster.gezeigteStelle() == "local-1:5");
+        REQUIRE(fenster.klicke("1"));
+        CHECK(fenster.gezeigteStelle() == "local-1:7");
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        CHECK(fenster.diagrammText().contains("section executor 1 core 2"));
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().contains("task;attempt;stage;executor;core"));
+        REQUIRE(fenster.waehleFormat("dot"));
+        CHECK(fenster.diagrammText().contains("Run timeline is not available in dot"));
+    }
+
     TEST_CASE("Chen in der Vorschau: ein Klick auf Ellipse und Raute trifft Kasten und Glied des Strukturdiagramms")
     {
         using namespace c2d::diagramm;
