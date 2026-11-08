@@ -831,8 +831,22 @@ int main(int argc, char* argv[])
             welche = c2d::projekt::kKeine;
             if (std::all_of(abfrageName.begin(), abfrageName.end(), [](char c) { return c >= '0' && c <= '9'; }))
                 welche = c2d::diagramm::abfrageZurZeile(abfragen, std::stoi(abfrageName));
-            for (std::size_t k = 0; k < abfragen.size() && welche == c2d::projekt::kKeine; ++k)
-                if (abfragen[k].name == abfrageName) welche = k;
+            if (welche == c2d::projekt::kKeine)
+            {
+                // nach Name: mehrere gleichnamige (eine View, die neu angelegt wird) sind mehrdeutig, keine stille Wahl
+                std::vector<std::size_t> treffer;
+                for (std::size_t k = 0; k < abfragen.size(); ++k)
+                    if (abfragen[k].name == abfrageName) treffer.push_back(k);
+                if (treffer.size() > 1)
+                {
+                    std::cerr << "c2d: '" << abfrageName << "' is ambiguous: lines";
+                    for (std::size_t t = 0; t < treffer.size(); ++t)
+                        std::cerr << (t == 0 ? " " : ", ") << abfragen[treffer[t]].zeile;
+                    std::cerr << " - choose one with --abfrage <line>\n";
+                    return 1;
+                }
+                if (treffer.size() == 1) welche = treffer[0];
+            }
         }
         if (welche == c2d::projekt::kKeine && zuordnung && !abfrageName.empty())
         {
