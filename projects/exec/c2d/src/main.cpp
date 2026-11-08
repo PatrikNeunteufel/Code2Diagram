@@ -7,6 +7,7 @@
 //                                            [--ohne-fremde]]
 //                             [--abhaengigkeiten [<objekt>] [--tiefe n] [--hoechstens n] [--aufrufer | --beide]]
 //                             [--abfrage [<name>|<zeile>]] [--datenfluss [<funktion>]]
+//                             [--sequenz [--tiefe n]]
 //                             [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
@@ -45,6 +46,10 @@
 //                  Dateiname, `datei@zeile`) — Operatoren, Exchanges, Stages und Codegen in Rahmen; ohne Namen
 //                  der erste der Datei (im Projekt: --datei); --liste nennt sie "plan"
 //   --abschnitt    mit --plan: physical (Vorgabe), optimized, analyzed, parsed (explain(extended))
+//   --sequenz      im Projekt mit "kerne" in code2diagram.json: der Start der Kerne als Sequenzdiagramm — je Kern
+//                  ab seiner Startfunktion bis in die Hauptschleife, Aufrufe bis --tiefe (Vorgabe 1), Boot, Signale,
+//                  Barrieren (IPC von TI C2000) zwischen den Kernen, je IPC-Handler ein Abschnitt; --liste nennt
+//                  die Kerne ("core"). svg, mermaid, drawio
 //   --lauf         Spark: der Lauf eines Event-Logs (App Name oder ID; ohne: der der Datei) als Zeitachse — Jobs,
 //                  Stages, Tasks je Executor und Kern; svg, drawio, mermaid (gantt), csv (je Task eine Zeile);
 //                  --liste nennt ihn "run"
@@ -107,6 +112,7 @@
 #include "c2d/projekt/Lauf.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Schaltstellen.hpp"
+#include "c2d/projekt/Sequenz.hpp"
 #include "c2d/projekt/Typen.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
@@ -155,6 +161,7 @@ int aufruf()
                  "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
                  "                         [--datenfluss [<function>]]\n"
                  "                         [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]] [--lauf [<name>]]\n"
+                 "                         [--sequenz [--tiefe n]]\n"
                  "formats:";
     for (const c2d::ausgabe::Format* f : c2d::ausgabe::formate()) std::cerr << ' ' << f->name();
     std::cerr << '\n';
@@ -422,6 +429,8 @@ int main(int argc, char* argv[])
     bool plan = false;
     std::string planName;   // --plan <name>
     bool lauf = false;
+    bool sequenz = false;
+    bool tiefeGesetzt = false;  // --tiefe: die Vorgabe ist je Ansicht anders (Aufrufgraph 2, Sequenz 1)
     std::string laufName;   // --lauf <name>
     std::string abschnitt;  // --abschnitt physical|optimized|analyzed|parsed
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
@@ -523,6 +532,7 @@ int main(int argc, char* argv[])
             // der Name darf folgen, wenn das Ziel schon dasteht
             if (!ziel.empty() && i + 1 < argc && argv[i + 1][0] != '-') planName = argv[++i];
         }
+        else if (a == "--sequenz") sequenz = true;
         else if (a == "--lauf")
         {
             lauf = true;
@@ -546,6 +556,7 @@ int main(int argc, char* argv[])
             const std::string t = wert();
             if (t.empty() || !std::all_of(t.begin(), t.end(), [](char c) { return c >= '0' && c <= '9'; })) return aufruf();
             graph.tiefe = std::stoi(t);
+            tiefeGesetzt = true;
         }
         else if (a == "--hoechstens")
         {
@@ -642,6 +653,23 @@ int main(int argc, char* argv[])
             if (ordner) std::cout << "== " << p.dateien[i].pfad << '\n';
             liste(funktionen, i, typen);
         }
+        // die Kerne der Projektdatei (Entscheid SQ2): je Kern seine Dateien und seine Startfunktion
+        if (gewaehlteDatei == c2d::projekt::kKeine)
+            for (const c2d::projekt::KernProjekt& k : c2d::projekt::liesKerne(p, lesen))
+            {
+                const std::size_t starts = c2d::projekt::funktionenNamens(k.projekt, k.kern.start).size();
+                std::cout << "core      " << k.kern.name << " (" << k.projekt.dateien.size() << " files, start " << k.kern.start
+                          << (starts == 1 ? std::string() : starts == 0 ? std::string(" - not found") : " - " + std::to_string(starts) + " qualify")
+                          << ")\n";
+            }
+        // ohne kerne: was beim Einrichten vorgeschlagen wuerde (SQ2)
+        if (gewaehlteDatei == c2d::projekt::kKeine && ordner && p.einstellungen.kerne.empty())
+            for (const c2d::projekt::Kern& k : c2d::projekt::vorschlagKerne(p))
+            {
+                std::string orte;
+                for (const std::string& o : k.ordner) orte += (orte.empty() ? "" : ", ") + o;
+                std::cout << "core?     " << k.name << ": " << orte << " (suggested from names)\n";
+            }
         return 0;
     }
 
@@ -802,6 +830,25 @@ int main(int argc, char* argv[])
             return 1;
         }
         return schreibe(c2d::ausgabe::Diagrammart::Datenfluss, fluss);
+    }
+
+    // --sequenz: der Start der Kerne (Entscheide SQ1-SQ4)
+    if (sequenz)
+    {
+        if (!ordner || p.einstellungen.kerne.empty())
+        {
+            std::cerr << "c2d: --sequenz needs a folder with \"kerne\" in " << c2d::projekt::kProjektdatei << '\n';
+            return 1;
+        }
+        const std::vector<c2d::projekt::KernProjekt> kerne = c2d::projekt::liesKerne(p, lesen);
+        for (const c2d::projekt::KernProjekt& k : kerne)
+            for (const c2d::projekt::Projektmeldung& m : k.projekt.meldungen)
+                if (m.pfad.empty()) std::cerr << "c2d: " << m.meldung.text << '\n';
+        c2d::projekt::SequenzOptionen o;
+        if (tiefeGesetzt) o.tiefe = graph.tiefe;
+        const c2d::diagramm::Sequenzdiagramm d = c2d::projekt::startDerKerne(kerne, o);
+        for (const std::string& h : d.hinweise) std::cerr << "c2d: " << h << '\n';
+        return schreibe(c2d::ausgabe::Diagrammart::Sequenz, d);
     }
 
     // --lauf: ein Lauf von Spark aus seinem Event-Log (Schicht 3) als Zeitachse — nach App Name oder ID, sonst der erste

@@ -1184,3 +1184,31 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       Aufruf; im T-SQL-Beispiel Wahrheitstabelle der Raute `@bestand < @mindest AND NOT EXISTS (…)`: zwei Atome, das
       zweite markiert. Format svg, mermaid, dot, drawio für den Ablauf; dunkles Thema lesbar.
       `aktion: darstellung_waehlen name=decision-table` `aktion: format_waehlen name=mermaid`
+
+## AI. Sequenz: Start der Kerne (Entscheide SQ1–SQ4)
+
+- [ ] **AI0 Vorbereiten:** File > Open folder… `beispiele/kerne`, Vorschau. Diagram bietet in jeder Datei
+      *Sequence: start of the cores (2)*.
+      `aktion: ordner_oeffnen pfad=beispiele/kerne` `aktion: ansicht_waehlen name=preview`
+- [ ] **AI1 Das Diagramm:** *Sequence* wählen. Oben `CPU1` und `CPU2`, darunter ihre Linien gestrichelt. CPU1 ruft
+      `Device_init()` (blass: ohne Rumpf), `init_gemeinsam()`, `starte_cpu2()`, dann ein Pfeil mit offener Spitze
+      `boot (in starte_cpu2)` zu CPU2. Depth steht auf 1.
+      `aktion: sequenz_zeigen`
+- [ ] **AI2 Zugleich und Barrieren:** ein Rahmen `par` mit `[CPU1]` (lade_parameter) und gestrichelt `[CPU2]`
+      (Device_init, init_gemeinsam), dann eine dicke Linie `barrier FLAG 31` über beide Linien; danach `opt
+      [SYNC_BEGRENZT(IPC_FLAG31) == 0U]` (die Barriere kommt aus der Hülle SYNC_BEGRENZT), `barrier FLAG 30`.
+- [ ] **AI3 Hauptschleife und Handler:** je Kern `loop [main loop: for (;;)]`; in CPU1 `FLAG 2 → cpu2_ipc_isr` zu
+      CPU2. Darunter `section [on IPC flag 1 (CPU1): cpu1_ipc_isr]` und `section [on IPC flag 2 (CPU2):
+      cpu2_ipc_isr]` mit `FLAG 1 → cpu1_ipc_isr` zurück. Unten der Hinweis zum gemeinsamen Speicher.
+- [ ] **AI4 Tiefe:** Depth auf 2: unter `init_gemeinsam()` erscheinen `init_takt()`, `init_gpio()` (CPU1) und
+      `warte_auf_takt()` (CPU2) — dieselbe Datei global/gemeinsam.c, je Kern anders gelesen. Depth 0: nur Boot,
+      Barrieren, Signale. Zurück zu einer Funktion: Depth zeigt wieder den Wert des Aufrufgraphs.
+- [ ] **AI5 Klick:** Ein Klick auf `barrier FLAG 30` zeigt `cpu1/main_cpu1.c` Zeile 54 (`IPC_sync`), auf `boot` die
+      Zeile in `starte_cpu2`. Der Tooltip nennt Datei und Zeile. Ein Doppelklick tut nichts.
+      `aktion: klicken name=barrier FLAG 30`
+- [ ] **AI6 Formate:** Format mermaid: `sequenceDiagram` mit `participant`, `par … and … end`, `Note over L0,L1:
+      barrier FLAG 31`, `for (；；)`; draw.io öffnet sich mit Rahmen, Linien und Pfeilen; dot sagt ab. Dunkles Thema lesbar.
+      `aktion: format_waehlen name=mermaid`
+- [ ] **AI7 Vorschlag:** einen Ordner ohne code2diagram.json mit `cpu1/`, `cpu2/` und einem gemeinsamen Ordner mit
+      `#if defined(CPU1)` öffnen, Project > Edit project file…: der Vorschlag trägt `kerne` mit beiden Kernen und dem
+      gemeinsamen Ordner in beiden; der Hinweis oben nennt die Herkunft.

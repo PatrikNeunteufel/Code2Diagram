@@ -87,15 +87,15 @@ std::string kante(const std::string& id, const std::string& inhalt, const std::s
            "        </mxCell>\n";
 }
 
-/// Eine Linie ohne Spitze durch feste Punkte (die Koepfe eines Struktogramms).
-std::string linie(const std::string& id, const Linienzug& l)
+/// Eine Linie mit eigenem Stil durch feste Punkte.
+std::string linie(const std::string& id, const Linienzug& l, std::string_view stil)
 {
     const auto punkt = [](const Punkt& p, std::string_view als) {
         return "<mxPoint x=\"" + zahl(p.x) + "\" y=\"" + zahl(p.y) + "\"" +
                (als.empty() ? std::string() : " as=\"" + std::string(als) + "\"") + "/>";
     };
-    std::string aus = "        <mxCell id=\"" + id +
-                      "\" style=\"endArrow=none;html=1;rounded=0;\" edge=\"1\" parent=\"1\">\n"
+    std::string aus = "        <mxCell id=\"" + id + "\" style=\"" + std::string(stil) +
+                      "\" edge=\"1\" parent=\"1\">\n"
                       "          <mxGeometry relative=\"1\" as=\"geometry\">\n"
                       "            " + punkt(l.front(), "sourcePoint") + "\n"
                       "            " + punkt(l.back(), "targetPoint") + "\n";
@@ -106,6 +106,12 @@ std::string linie(const std::string& id, const Linienzug& l)
         aus += "</Array>\n";
     }
     return aus + "          </mxGeometry>\n        </mxCell>\n";
+}
+
+/// Eine Linie ohne Spitze durch feste Punkte (die Koepfe eines Struktogramms).
+std::string linie(const std::string& id, const Linienzug& l)
+{
+    return linie(id, l, "endArrow=none;html=1;rounded=0;");
 }
 
 /// Knotenart -> Stil der Zelle.
@@ -560,6 +566,57 @@ public:
             aus += kante("e" + std::to_string(e), html(kuerze(k.text, optionen.maxZeilenLaenge)), stil + std::string(kSchrift),
                          "d" + std::to_string(k.von), "d" + std::to_string(k.nach));
         }
+        return aus + std::string(kFuss);
+    }
+
+    /// Ein Sequenzdiagramm nach seiner Anordnung: Fragmente als Rahmen mit Schild und Bedingung, Lebenslinien gestrichelt
+    /// unter ihren Koepfen, Pfeile mit fester Lage (Aufruf und Nachricht voll, Boot und Signal offen), Barrieren dick.
+    [[nodiscard]] std::string schreibe(const Sequenzdiagramm& d, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const SequenzAnordnung a = ordneAn(d, o);
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        const std::string schrift(kSchrift);
+        std::size_t n = 0;
+        const auto id = [&](char art) { return std::string(1, art) + std::to_string(n++); };
+        const auto textBreite = [&](const std::string& t) { return static_cast<double>(t.size()) * o.zeichenBreite + 8; };
+        for (const SequenzAnordnung::Fragment& f : a.fragmente)
+        {
+            aus += ecke(id('f'), "", "rounded=0;fillColor=none;" + schrift, "1", f.ort);
+            aus += ecke(id('w'), html(f.wort), "shape=callout;html=1;fontStyle=1;" + schrift, "1", f.schild);
+            if (!f.titel.empty())
+                aus += ecke(id('t'), html(f.titel), "text;html=1;align=left;verticalAlign=middle;fontStyle=2;" + schrift, "1",
+                            {f.titelOrt.x, f.titelOrt.y - o.zeilenHoehe / 2, textBreite(f.titel), o.zeilenHoehe});
+            for (const SequenzAnordnung::Zweig& z : f.zweige)
+            {
+                aus += linie(id('z'), z.linie, "endArrow=none;html=1;rounded=0;dashed=1;");
+                aus += ecke(id('t'), html(z.text), "text;html=1;align=left;verticalAlign=middle;fontStyle=2;" + schrift, "1",
+                            {z.textOrt.x, z.textOrt.y - o.zeilenHoehe / 2, textBreite(z.text), o.zeilenHoehe});
+            }
+        }
+        for (const Linienzug& l : a.lebenslinien) aus += linie(id('l'), l, "endArrow=none;html=1;rounded=0;dashed=1;");
+        for (const SequenzAnordnung::Kopf& k : a.koepfe)
+            aus += ecke(id('k'), html(k.name), "rounded=0;html=1;fontStyle=1;" + schrift, "1", k.ort);
+        for (const SequenzAnordnung::Barriere& b : a.barrieren)
+        {
+            aus += linie(id('b'), b.linie, "endArrow=none;html=1;rounded=0;strokeWidth=3;");
+            aus += ecke(id('t'), html(b.text), "text;html=1;align=center;verticalAlign=middle;" + schrift, "1",
+                        {b.textOrt.x - textBreite(b.text) / 2, b.textOrt.y - o.zeilenHoehe / 2, textBreite(b.text), o.zeilenHoehe});
+        }
+        for (const SequenzAnordnung::Pfeil& p : a.pfeile)
+        {
+            if (p.linie.size() < 2) continue;
+            std::string stil = "html=1;rounded=0;";
+            stil += p.insLeere ? "endArrow=cross;" : (p.art == NachrichtArt::Boot || p.art == NachrichtArt::Signal) ? "endArrow=open;" : "endArrow=block;";
+            if (p.fremd) stil += "opacity=50;";
+            aus += linie(id('p'), p.linie, stil);
+            aus += ecke(id('t'), html(p.text),
+                        "text;html=1;align=left;verticalAlign=middle;" + std::string(p.art == NachrichtArt::Aufruf ? "" : "fontStyle=1;") + schrift,
+                        "1", {p.textOrt.x, p.textOrt.y - o.zeilenHoehe / 2, textBreite(p.text), o.zeilenHoehe});
+        }
+        for (const auto& [h, ort] : a.hinweise)
+            aus += ecke(id('h'), html(h), "text;html=1;align=left;verticalAlign=middle;fontStyle=2;" + schrift, "1",
+                        {ort.x, ort.y, textBreite(h), o.zeilenHoehe});
         return aus + std::string(kFuss);
     }
 

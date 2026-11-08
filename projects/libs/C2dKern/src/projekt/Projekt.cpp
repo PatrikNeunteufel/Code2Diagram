@@ -750,7 +750,11 @@ std::vector<std::string> includePfadeFuer(const Projektdatei& einstellungen, std
 class Einleser
 {
 public:
-    Einleser(Projekt& projekt, const ProjektOptionen& optionen) : m_p(projekt), m_optionen(optionen) {}
+    /// `zusatz`: Definitionen, die zu denen von Projekt und Abschnitten jeder Datei kommen (die eines Kerns, SQ2).
+    Einleser(Projekt& projekt, const ProjektOptionen& optionen, std::vector<sprache::Definition> zusatz = {})
+        : m_p(projekt), m_optionen(optionen), m_zusatz(std::move(zusatz))
+    {
+    }
 
     void durchsuche(const fs::path& ordner, const std::string& relativ)
     {
@@ -926,6 +930,7 @@ public:
         {
             Datei& d = m_p.dateien[i];
             d.definitionen = definitionenFuer(m_p.einstellungen, d.pfad);
+            fuegeHinzu(d.definitionen, m_zusatz);
             d.ergebnis = liesEinheit(d, notebook(i), nameVon(d.pfad), d.definitionen, m_optionen, m_p.einstellungen.sql);
         }
         // 2. dazu die #define der eingebundenen Koepfe — aus dem ersten Durchgang
@@ -1066,6 +1071,7 @@ private:
 
     Projekt& m_p;
     const ProjektOptionen& m_optionen;
+    std::vector<sprache::Definition> m_zusatz;                 ///< die Definitionen eines Kerns (SQ2); sonst leer
     std::map<std::string, std::size_t> m_index;                // klein(pfad) -> Datei
     std::map<std::string, std::vector<std::size_t>> m_namen;   // klein(Dateiname) -> Dateien
     std::map<std::string, Draussen> m_draussen;
@@ -1156,6 +1162,154 @@ Projekt liesOrdner(const fs::path& wurzel, const ProjektOptionen& optionen)
     einleser.durchsuche(p.wurzel, {});
     einleser.liesAlle();
     return p;
+}
+
+Projekt liesKern(const Projekt& projekt, const Kern& kern, const ProjektOptionen& optionen)
+{
+    Projekt p;
+    p.wurzel = projekt.wurzel;
+    p.einstellungen = projekt.einstellungen;
+    p.mitProjektdatei = projekt.mitProjektdatei;
+    for (const Datei& d : projekt.dateien)
+    {
+        if (!d.zellen.empty() || d.sprache == nullptr) continue;
+        const std::string ordner = ordnerVon(d.pfad);
+        if (std::none_of(kern.ordner.begin(), kern.ordner.end(), [&](const std::string& m) { return liegtIn(m, ordner); }))
+            continue;
+        Datei kopie;
+        kopie.pfad = d.pfad;
+        kopie.text = d.text;
+        kopie.sprache = d.sprache;
+        p.dateien.push_back(std::move(kopie));
+    }
+    if (p.dateien.empty())
+        p.meldungen.push_back({{}, {Schwere::Warnung, kOhneZeile, "core " + kern.name + ": no file of the project lies in its folders"}});
+    Einleser einleser(p, optionen, kern.definitionen);
+    einleser.liesAlle();
+    return p;
+}
+
+namespace
+{
+
+/// Woran ein Name einen Kern zeigt (Entscheid SQ2): das Wort (ohne Gross/klein, als ganzer Teil oder mit `_` davor
+/// bzw. dahinter) und der Kern, den es meint.
+struct KernWort
+{
+    std::string_view wort;
+    std::string_view kern;
+};
+constexpr KernWort kKernWoerter[] = {
+    {"cpu1", "CPU1"}, {"cpu2", "CPU2"}, {"master", "CPU1"}, {"slave", "CPU2"},
+};
+
+/// Der Kern, den ein Teil eines Wegs nennt (`Master_CLA` → CPU1, `Main_CPU2.c` → CPU2); leer = keiner.
+std::string_view kernImNamen(std::string_view teil)
+{
+    const std::string k = klein(teil);
+    for (const KernWort& w : kKernWoerter)
+    {
+        for (std::size_t p = k.find(w.wort); p != std::string::npos; p = k.find(w.wort, p + 1))
+        {
+            const bool links = p == 0 || k[p - 1] == '_' || k[p - 1] == '-' || k[p - 1] == '.';
+            const std::size_t e = p + w.wort.size();
+            const bool rechts = e == k.size() || k[e] == '_' || k[e] == '-' || k[e] == '.';
+            if (links && rechts) return w.kern;
+        }
+    }
+    return {};
+}
+
+}  // namespace
+
+std::vector<Kern> vorschlagKerne(const Projekt& projekt)
+{
+    std::map<std::string, std::set<std::string>> ordnerJeKern;  // Kern -> oberste Ordner mit seinem Namen
+    std::set<std::string> geteilt;                               // Ordner ohne Namen, deren Dateien nach CPU1/CPU2 fragen
+    for (const Datei& d : projekt.dateien)
+    {
+        if (d.sprache == nullptr || !d.sprache->hatPraeprozessor()) continue;
+        // der oberste Teil des Wegs mit einem Kern: bis dorthin der Ordner
+        std::string weg;
+        std::string_view kern;
+        std::size_t anfang = 0;
+        const std::string ordner = ordnerVon(d.pfad);
+        while (anfang <= ordner.size() && !ordner.empty())
+        {
+            const std::size_t strich = std::min(ordner.find('/', anfang), ordner.size());
+            const std::string_view teil = std::string_view(ordner).substr(anfang, strich - anfang);
+            weg = ordner.substr(0, strich);
+            if (kern = kernImNamen(teil); !kern.empty()) break;
+            anfang = strich + 1;
+        }
+        if (kern.empty())
+        {
+            weg = ordner;
+            kern = kernImNamen(nameVon(d.pfad));
+        }
+        if (!kern.empty())
+        {
+            ordnerJeKern[std::string(kern)].insert(weg.empty() ? std::string(".") : weg);
+            continue;
+        }
+        const bool fragt = std::any_of(d.ergebnis.schalter.begin(), d.ergebnis.schalter.end(),
+                                       [](const modell::Schalter& s) { return s.name == "CPU1" || s.name == "CPU2"; });
+        if (fragt) geteilt.insert(ordner);
+    }
+    // ein Paar: der oberste Ordner, in dem Ordner (oder Dateien) mindestens zweier Kerne nebeneinander liegen — ein Repo
+    // traegt oft mehrere Programme (FirmWare: firmware/Master_CLA + Slave, dazu der Bootloader components/sbl/Master + Slave)
+    const auto tiefe = [](const std::string& o) { return o == "." ? 0 : 1 + std::count(o.begin(), o.end(), '/'); };
+    std::map<std::string, std::set<std::string>> kerneJeEltern;
+    for (const auto& [kern, ordner] : ordnerJeKern)
+        for (const std::string& o : ordner) kerneJeEltern[o == "." ? std::string(".") : (ordnerVon(o).empty() ? std::string(".") : ordnerVon(o))].insert(kern);
+    std::string eltern;
+    bool gefunden = false;
+    for (const auto& [e, kerne] : kerneJeEltern)
+        if (kerne.size() >= 2 && (!gefunden || tiefe(e) < tiefe(eltern)))
+        {
+            eltern = e;
+            gefunden = true;
+        }
+    if (!gefunden) return {};
+    const auto unter = [&](const std::string& o) { return eltern == "." || o == eltern || o.starts_with(eltern + "/"); };
+    const auto elternVon = [](const std::string& o) { return ordnerVon(o).empty() ? std::string(".") : ordnerVon(o); };
+    // die geteilten unter ihm, so tief, dass sie keinen Ordner eines Kerns umfassen
+    std::set<std::string> oben;
+    for (const std::string& g : geteilt)
+    {
+        if (!unter(g) || g == eltern) continue;
+        std::size_t strich = eltern == "." ? g.find('/') : g.find('/', eltern.size() + 1);
+        for (;;)
+        {
+            const std::string kandidat = strich == std::string::npos ? g : g.substr(0, strich);
+            const bool umfasst = std::any_of(ordnerJeKern.begin(), ordnerJeKern.end(), [&](const auto& k) {
+                return std::any_of(k.second.begin(), k.second.end(), [&](const std::string& o) { return o.starts_with(kandidat + "/"); });
+            });
+            if (!umfasst || strich == std::string::npos)
+            {
+                oben.insert(kandidat);
+                break;
+            }
+            strich = g.find('/', strich + 1);
+        }
+    }
+    std::vector<Kern> aus;
+    for (const auto& [name, ordner] : ordnerJeKern)
+    {
+        Kern k;
+        k.name = name;
+        // die Ordner dieses Paars, nur die obersten
+        for (const std::string& o : ordner)
+            if (elternVon(o) == eltern &&
+                std::none_of(ordner.begin(), ordner.end(), [&](const std::string& x) { return x != o && o.starts_with(x + "/"); }))
+                k.ordner.push_back(o);
+        if (k.ordner.empty()) continue;
+        for (const std::string& o : oben) k.ordner.push_back(o);
+        k.definitionen.push_back(sprache::definitionAus(name));
+        aus.push_back(std::move(k));
+    }
+    if (aus.size() < 2) return {};
+    return aus;
 }
 
 Projekt liesText(std::string_view text, std::string_view name, const ProjektOptionen& optionen)

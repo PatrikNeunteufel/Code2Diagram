@@ -114,7 +114,8 @@ public:
             else if (name == "uebergehen") aus.uebergehen = texte(wert, name);
             else if (name == "abschnitte") aus.abschnitte = abschnitte(wert);
             else if (name == "sql") aus.sql = dialekt(wert);
-            else unbekannt(wert, name, "definitionen, includePfade, uebergehen, abschnitte, sql");
+            else if (name == "kerne") aus.kerne = kerne(wert);
+            else unbekannt(wert, name, "definitionen, includePfade, uebergehen, abschnitte, kerne, sql");
         }
         return aus;
     }
@@ -217,6 +218,46 @@ private:
         return aus;
     }
 
+    /// `"kerne": [{ "name": …, "ordner": […], "definitionen": […], "start": … }]` (Entscheid SQ2).
+    std::vector<Kern> kerne(const json::Wert& wert)
+    {
+        std::vector<Kern> aus;
+        if (!erwarte(wert, json::Art::Liste, "\"kerne\"")) return aus;
+        for (const json::Wert& e : wert.elemente)
+        {
+            if (!erwarte(e, json::Art::Objekt, "an entry of \"kerne\"")) continue;
+            Kern k;
+            for (std::size_t i = 0; i < e.namen.size(); ++i)
+            {
+                const std::string& name = e.namen[i];
+                const json::Wert& w = e.elemente[i];
+                if (name == "name")
+                {
+                    if (erwarte(w, json::Art::Text, "\"name\"")) k.name = w.text;
+                }
+                else if (name == "ordner") k.ordner = texte(w, name);
+                else if (name == "definitionen") k.definitionen = definitionen(w, name);
+                else if (name == "start")
+                {
+                    if (erwarte(w, json::Art::Text, "\"start\"") && !w.text.empty()) k.start = w.text;
+                }
+                else unbekannt(w, name, "name, ordner, definitionen, start");
+            }
+            if (k.name.empty() || k.ordner.empty())
+            {
+                melde(Schwere::Warnung, e, "a core without \"name\" or \"ordner\" - ignored");
+                continue;
+            }
+            if (std::any_of(aus.begin(), aus.end(), [&](const Kern& x) { return x.name == k.name; }))
+            {
+                melde(Schwere::Warnung, e, "core \"" + k.name + "\" twice - the second is ignored");
+                continue;
+            }
+            aus.push_back(std::move(k));
+        }
+        return aus;
+    }
+
     std::vector<Meldung>& m_meldungen;
 };
 
@@ -268,8 +309,24 @@ std::string schreibe(const Projektdatei& datei)
         aus += "      \"includePfade\": " + liste(a.includePfade, "      ") + "\n";
         aus += "    }";
     }
-    aus += datei.abschnitte.empty() ? "]\n" : "\n  ]\n";
-    return aus + "}\n";
+    aus += datei.abschnitte.empty() ? "]" : "\n  ]";
+    if (!datei.kerne.empty())
+    {
+        aus += ",\n  \"kerne\": [";
+        for (std::size_t i = 0; i < datei.kerne.size(); ++i)
+        {
+            const Kern& k = datei.kerne[i];
+            aus += i == 0 ? "\n" : ",\n";
+            aus += "    {\n";
+            aus += "      \"name\": " + json::zitat(k.name) + ",\n";
+            aus += "      \"ordner\": " + liste(k.ordner, "      ") + ",\n";
+            aus += "      \"definitionen\": " + liste(alsTexte(k.definitionen), "      ") + ",\n";
+            aus += "      \"start\": " + json::zitat(k.start) + "\n";
+            aus += "    }";
+        }
+        aus += "\n  ]";
+    }
+    return aus + "\n}\n";
 }
 
 Projektdatei mitDefinitionen(Projektdatei datei, const std::vector<sprache::Definition>& aussen,

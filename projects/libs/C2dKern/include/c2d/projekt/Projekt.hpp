@@ -144,6 +144,18 @@ struct Projekt
 /// false = sie liess sich nicht oeffnen.
 [[nodiscard]] bool liesDatei(const std::filesystem::path& weg, std::string& text);
 
+/// Die Dateien eines Kerns (Entscheid SQ2): die des Projekts, deren Ordner in einem seiner Ordnermuster liegt (ohne
+/// Notebooks), noch einmal gelesen — mit den Definitionen von Projekt und Abschnitten, dazu denen des Kerns, dann der
+/// Koepfe. Ein Ordner, der in mehreren Kernen steht, wird so je Kern anders gelesen. Das Projekt selbst bleibt, wie es ist.
+[[nodiscard]] Projekt liesKern(const Projekt& projekt, const Kern& kern, const ProjektOptionen& optionen = {});
+
+/// Ein Vorschlag fuer `kerne` beim Einrichten der Projektdatei (Entscheid SQ2), aus Namen: ein Ordner gehoert zu einem
+/// Kern, wenn ein Teil seines Wegs ihn nennt (`CPU1`, `CPU2`, `Master` → CPU1, `Slave` → CPU2; Tabelle im Code), sonst,
+/// wenn ein Dateiname es tut (`Main_CPU1.c`); ein Ordner ohne solchen Namen, dessen Dateien nach `CPU1` oder `CPU2`
+/// fragen (`#if`), laeuft auf jedem Kern. Je Kern die obersten Ordner; Definition: sein Name; Start `main`. Unter zwei
+/// Kernen: kein Vorschlag (leer).
+[[nodiscard]] std::vector<Kern> vorschlagKerne(const Projekt& projekt);
+
 /// Ein Projekt aus einem einzigen Text, ohne Ordner und ohne Projektdatei.
 /// `name` entscheidet ueber die Sprache (wie sprache::spracheFuer); fehlt eine, wird C gelesen.
 [[nodiscard]] Projekt liesText(std::string_view text, std::string_view name, const ProjektOptionen& optionen = {});

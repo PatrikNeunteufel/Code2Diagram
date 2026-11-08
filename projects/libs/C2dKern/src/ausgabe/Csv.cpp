@@ -53,6 +53,8 @@ public:
                art == Diagrammart::Zeitachse;
     }
 
+    [[nodiscard]] std::string schreibe(const Sequenzdiagramm&, const Optionen&) const override { return {}; }
+
     /// Eine Zeitachse: je Task eine Zeile (Entscheid L7) — der Kopf aus den Spalten des ersten Tasks; zuvor eine Zeile
     /// mit dem Titel. Ueber kHoechstensTasks gibt es keine einzelnen Tasks, dann nur der Titel und ein Hinweis.
     [[nodiscard]] std::string schreibe(const Zeitachse& z, const Optionen&) const override

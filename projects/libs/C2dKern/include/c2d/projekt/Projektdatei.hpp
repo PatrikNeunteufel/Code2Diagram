@@ -15,8 +15,16 @@
  *       "uebergehen": ["old", "firmware/bak*"],
  *       "abschnitte": [
  *         { "ordner": "firmware/Slave", "definitionen": ["SLAVE"], "includePfade": ["firmware/Slave/inc"] }
+ *       ],
+ *       "kerne": [
+ *         { "name": "CPU1", "ordner": ["firmware/Master_CLA", "firmware/Global"], "definitionen": ["CPU1"] },
+ *         { "name": "CPU2", "ordner": ["firmware/Slave", "firmware/Global"], "definitionen": ["CPU2"], "start": "main" }
  *       ]
  *     }
+ *
+ * `kerne` (Entscheid SQ2) sagt, welche Ordner auf welchem Kern laufen und mit welchen Definitionen; ein Ordner darf in
+ * mehreren stehen (`Global` wird je Kern mit dessen Definitionen gelesen). Nur die Ansichten ueber Kerne lesen so —
+ * alle uebrigen lesen wie ohne `kerne`.
  *
  * Ordnermuster (`uebergehen`, `abschnitte[].ordner`) gelten fuer Wege relativ
  * zum Wurzelordner, mit `/`: `*` steht fuer beliebig viele Zeichen in einem
@@ -49,12 +57,22 @@ struct Abschnitt
     std::vector<std::string> includePfade;  ///< relativ zum Wurzelordner (oder absolut)
 };
 
+/// Ein Kern eines Geraets mit mehreren (Entscheid SQ2): was auf ihm laeuft und wie es dort uebersetzt wird.
+struct Kern
+{
+    std::string name;                 ///< `CPU1`; so heisst seine Lebenslinie
+    std::vector<std::string> ordner;  ///< Ordnermuster; ein Ordner darf in mehreren Kernen stehen
+    std::vector<sprache::Definition> definitionen;  ///< kommen zu denen von Projekt und Abschnitten dazu
+    std::string start = "main";       ///< die Funktion, mit der er beginnt
+};
+
 struct Projektdatei
 {
     std::vector<sprache::Definition> definitionen;
     std::vector<std::string> includePfade;  ///< relativ zum Wurzelordner (oder absolut)
     std::vector<std::string> uebergehen;    ///< Ordnermuster
     std::vector<Abschnitt> abschnitte;
+    std::vector<Kern> kerne;  ///< leer = ein Kern (das Projekt, wie es ist)
     /// Der Dialekt von SQL im Projekt (`"sql": "duckdb"`, sprache::sqlDialekte) — fuer `.sql`-Dateien und SQL
     /// in Zeichenketten; leer = aus dem Kopf der Datei oder dem Host-Code, sonst der allgemeine Kern.
     std::string sql;

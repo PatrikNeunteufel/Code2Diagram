@@ -441,6 +441,15 @@ void meldeAktionen(c2d::sichttest::Anbindung& anbindung, c2d::ui::Hauptfenster& 
                          return st::ok(QStringLiteral("%1 bars").arg(fenster.laufBalken().size()));
                      });
 
+    anbindung.aktion(QStringLiteral("sequenz_zeigen"),
+                     QStringLiteral("Shows the start of the cores as a sequence diagram (Diagram > Sequence; needs \"kerne\" in "
+                                    "code2diagram.json)"),
+                     QString(),
+                     [&fenster](const QJsonObject&) -> st::Ergebnis {
+                         if (!fenster.zeigeSequenz()) return st::ungueltig(QStringLiteral("The project has no cores (\"kerne\")"));
+                         return st::ok(fenster.diagramm());
+                     });
+
     anbindung.aktion(QStringLiteral("notation_waehlen"),
                      QStringLiteral("How tables are drawn in Data types: Tables, Crow's foot, Chen, (min,max); and which "
                                     "columns are ellipses in Chen and (min,max)"),

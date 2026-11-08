@@ -466,7 +466,7 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
             folgeLauf(knoten);
             return;
         }
-        if (istPlan()) return;  // fuehrt nirgends hin; die Zeile zeigte der Klick
+        if (istPlan() || istSequenz()) return;  // fuehrt nirgends hin; die Zeile zeigte der Klick
         if (istAufrufgraph())
         {
             // eine Funktion: ihr Ablauf; Back fuehrt zurueck in den Graph
@@ -647,9 +647,10 @@ Hauptfenster::Hauptfenster(QWidget* parent) : QMainWindow(parent)
     navigation->addWidget(m_hoechstens);
     navigation->addWidget(m_ohneFremde);
     const auto neuAbleiten = [this] {
-        if (!istAufrufgraph() && !istAbhaengigkeiten()) return;
+        if (!istAufrufgraph() && !istAbhaengigkeiten() && !istSequenz()) return;
         leiteAufrufgraphAb();
         leiteAbhaengigkeitenAb();
+        leiteSequenzAb();
         zeichne();
         zeigeLage();
     };
@@ -1016,6 +1017,10 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         // der Lauf eines Event-Logs (Spark Schicht 3)
         if (!einheit.laeufe.empty())
             m_auswahl->addItem(QStringLiteral("Run timeline (%1)").arg(einheit.laeufe.size()), QString::fromLatin1(kLauf));
+        // der Start der Kerne (SQ1-SQ4): in jeder Datei eines Projekts mit Kernen zur Wahl
+        if (istProjekt() && !m_projekt.einstellungen.kerne.empty())
+            m_auswahl->addItem(QStringLiteral("Sequence: start of the cores (%1)").arg(m_projekt.einstellungen.kerne.size()),
+                               QString::fromLatin1(kSequenz));
         if (const std::size_t n = c2d::diagramm::nachschlagetabellenVon(einheit).size(); n > 0)  // nur die Zahl
             m_auswahl->addItem(QStringLiteral("Lookup tables (%1)").arg(n), QString::fromLatin1(kNachschlagetabellen));
         if (!d.ergebnis.weichen.empty())
@@ -1160,7 +1165,7 @@ void Hauptfenster::zeigeLage()
             eintrag != QLatin1String(kAufrufgraphDatei) && !eintrag.startsWith(QLatin1String(kAufrufgraph)) &&
             eintrag != QLatin1String(kAbhaengigkeitenDatei) && !eintrag.startsWith(QLatin1String(kAbhaengigkeiten)) &&
             eintrag != QLatin1String(kAbfragen) && eintrag != QLatin1String(kDatenfluss) && eintrag != QLatin1String(kPlan) &&
-            eintrag != QLatin1String(kLauf))
+            eintrag != QLatin1String(kLauf) && eintrag != QLatin1String(kSequenz))
             ++funktionen;
     const QString art = d.zellen.empty() ? QString() : QStringLiteral(" notebook (%1 cells)").arg(d.zellen.size());
     QString lage = QStringLiteral("%1, read as %2%3%4: %5 function(s), %6 data type(s)")
@@ -1226,6 +1231,12 @@ void Hauptfenster::zeigeLage()
                     .arg(m_zeitachse.tasks);
         if (!m_zeitachse.hinweise.empty())
             lage += QStringLiteral(" - %1 note(s), first: %2").arg(m_zeitachse.hinweise.size()).arg(ausStd(m_zeitachse.hinweise.front()));
+    }
+    if (istSequenz())
+    {
+        lage += QStringLiteral(" | sequence: %1 core(s), %2 step(s)").arg(m_sequenz.linien.size()).arg(m_sequenz.schritte.size());
+        if (!m_sequenz.hinweise.empty())
+            lage += QStringLiteral(" - %1 note(s), first: %2").arg(m_sequenz.hinweise.size()).arg(ausStd(m_sequenz.hinweise.front()));
     }
     if (istPlan())
     {
@@ -1357,11 +1368,12 @@ QString Hauptfenster::projektdateiText() const
     if (!istProjekt()) return {};
     QFile datei(projektdateiPfad());
     if (datei.open(QIODevice::ReadOnly)) return QString::fromUtf8(datei.readAll());
-    // noch keine: ein Vorschlag, `uebergehen` aus der .gitignore
+    // noch keine: ein Vorschlag, `uebergehen` aus der .gitignore, `kerne` aus Namen (SQ2)
     c2d::projekt::Projektdatei vorschlag;
     QFile gitignore(QDir(m_ordner).filePath(QStringLiteral(".gitignore")));
     if (gitignore.open(QIODevice::ReadOnly))
         vorschlag.uebergehen = c2d::projekt::ausGitignore(gitignore.readAll().toStdString()).uebergehen;
+    vorschlag.kerne = c2d::projekt::vorschlagKerne(m_projekt);
     return ausStd(c2d::projekt::schreibe(vorschlag));
 }
 
@@ -1453,7 +1465,9 @@ void Hauptfenster::bearbeiteProjektdatei()
     const bool gibtEs = QFileInfo::exists(projektdateiPfad());
     QString hinweis = gibtEs ? QStringLiteral("%1").arg(projektdateiPfad())
                              : QStringLiteral("There is no project file yet. This is a suggestion for %1; "
-                                              "\"uebergehen\" comes from the .gitignore of the folder.")
+                                              "\"uebergehen\" comes from the .gitignore of the folder, \"kerne\" (if any) "
+                                              "from folder and file names (CPU1/CPU2, Master/Slave) - check the folders "
+                                              "and definitions of each core.")
                                    .arg(projektdateiPfad());
     if (!gibtEs)
     {
@@ -2113,6 +2127,51 @@ bool Hauptfenster::istLauf() const
     return m_gezeigt == QLatin1String(kLauf);
 }
 
+// --- Start der Kerne (Sequenzdiagramm, SQ1-SQ4) ------------------------------------------------------------------
+
+bool Hauptfenster::istSequenz() const
+{
+    return m_gezeigt == QLatin1String(kSequenz);
+}
+
+void Hauptfenster::leiteSequenzAb()
+{
+    if (!istSequenz())
+    {
+        // das Feld Depth zurueck an den Aufrufgraph
+        if (m_inSequenz)
+        {
+            const QSignalBlocker sperre(m_tiefe);
+            m_tiefeSequenz = m_tiefe->value();
+            m_tiefe->setValue(m_tiefeGraph);
+            m_inSequenz = false;
+        }
+        m_sequenz = {};
+        return;
+    }
+    if (!m_inSequenz)
+    {
+        const QSignalBlocker sperre(m_tiefe);
+        m_tiefeGraph = m_tiefe->value();
+        m_tiefe->setValue(m_tiefeSequenz);
+        m_inSequenz = true;
+    }
+    m_tiefeSequenz = m_tiefe->value();
+    c2d::projekt::ProjektOptionen optionen;
+    optionen.alleZweige = m_alleZweige->isChecked();
+    optionen.definitionen = definitionenImFeld();
+    c2d::projekt::SequenzOptionen o;
+    o.tiefe = m_tiefeSequenz;
+    m_sequenz = c2d::projekt::startDerKerne(c2d::projekt::liesKerne(m_projekt, optionen), o);
+}
+
+bool Hauptfenster::zeigeSequenz()
+{
+    if (!istProjekt() || m_projekt.einstellungen.kerne.empty()) return false;
+    if (!istSequenz()) return waehleEintrag(QString::fromLatin1(kSequenz)) && istSequenz();
+    return true;
+}
+
 bool Hauptfenster::zeigeLogZeile(c2d::diagramm::KnotenId knoten)
 {
     return knoten < m_zeitachse.balken.size() && m_zeitachse.balken[knoten].zeile > 0 &&
@@ -2635,6 +2694,7 @@ QString Hauptfenster::markiert() const
     if (istDatenfluss()) return k < m_datenfluss.knoten.size() ? datenflussKnoten().value(static_cast<qsizetype>(k)) : QString();
     if (istPlan()) return k < m_planDiagramm.knoten.size() ? ausStd(m_planDiagramm.knoten[k].titel) : QString();
     if (istLauf()) return k < m_zeitachse.balken.size() ? ausStd(m_zeitachse.balken[k].titel) : QString();
+    if (istSequenz()) return k < m_sequenz.schritte.size() ? ausStd(m_sequenz.schritte[k].text) : QString();
     if (m_gezeigt == QLatin1String(kDatentypen))
         return k < m_struktur.kaesten.size() ? ausStd(m_struktur.kaesten[k].name) : QString();
     if (k >= m_fluss.knoten().size()) return {};
@@ -3511,6 +3571,7 @@ void Hauptfenster::baueNeu()
     m_planAuswahl->setVisible(istPlan());
     leitePlanAb();
     leiteLaufAb();
+    leiteSequenzAb();
     zeigeNotationsfelder();
     leiteAufrufgraphAb();
     leiteAbhaengigkeitenAb();
@@ -3569,7 +3630,7 @@ void Hauptfenster::baueNeu()
     zeichne();
     aktualisiereLeiste();
     aktualisiereKonfiguration();
-    if (istAufrufgraph() || istAbhaengigkeiten()) zeigeLage();
+    if (istAufrufgraph() || istAbhaengigkeiten() || istSequenz()) zeigeLage();
 }
 
 void Hauptfenster::zeichne()
@@ -3672,6 +3733,12 @@ void Hauptfenster::zeichne()
     {
         m_vorschau->zeige(m_zeitachse);
         m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Zeitachse, m_zeitachse));
+        return;
+    }
+    if (istSequenz())
+    {
+        m_vorschau->zeige(m_sequenz);
+        m_text->setPlainText(alsText(c2d::ausgabe::Diagrammart::Sequenz, m_sequenz));
         return;
     }
     if (istAbhaengigkeiten())
@@ -4004,6 +4071,14 @@ bool Hauptfenster::zeigeStelle(c2d::diagramm::KnotenId knoten)
     if (istDatenfluss())
         return knoten < m_datenfluss.knoten.size() && m_datenfluss.knoten[knoten].zeile > 0 &&
                zeigeZeile(m_datei, m_datenfluss.knoten[knoten].zeile);
+    if (istSequenz())
+    {
+        // ein Pfeil, eine Barriere: die Zeile, an der sie im Code steht (in der Datei des Projekts)
+        if (knoten >= m_sequenz.schritte.size()) return false;
+        const c2d::diagramm::SequenzSchritt& s = m_sequenz.schritte[knoten];
+        const std::size_t datei = m_projekt.finde(s.pfad);
+        return datei != kKeine && s.zeile > 0 && zeigeZeile(datei, s.zeile);
+    }
     if (istLauf())
     {
         if (knoten >= m_zeitachse.balken.size()) return false;
@@ -4139,6 +4214,13 @@ bool Hauptfenster::klicke(const QString& name)
     {
         const qsizetype k = laufBalken().indexOf(name);
         return k >= 0 && zeigeStelle(static_cast<c2d::diagramm::KnotenId>(k));
+    }
+    if (istSequenz())
+    {
+        // der Text eines Pfeils oder einer Barriere (der erste mit ihm)
+        for (std::size_t k = 0; k < m_sequenz.schritte.size(); ++k)
+            if (m_sequenz.schritte[k].text == n) return zeigeStelle(k);
+        return false;
     }
     if (istPlan())
     {

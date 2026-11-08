@@ -6,7 +6,7 @@ Fenster und als Text in einem wählbaren Format.
 | | heute | angelegt für |
 |---|---|---|
 | **Sprachen** | C, C++, Python, JavaScript, TypeScript, C#, Java, Kotlin, SQL (Schema) | weitere: je Sprache eine Tabelle und ein Leser (Rust, Go: erst mit Probecode) |
-| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages), Physical plan (Spark: explain()), Run timeline (Spark: Event-Log) | weitere: je Art ein Modell und eine Ableitung |
+| **Diagrammarten** | Ablauf einer Funktion (Flussdiagramm), Datentypen (struct, union, enum, Klassen mit Methoden, Vererbung und Beziehungen), Zustandsautomaten (im Code erkannt), Abhängigkeiten der Daten (SQL: wer liest, schreibt, ruft), Datenfluss (Spark: Quellen, Shuffles, Jobs, Stages), Physical plan (Spark: explain()), Run timeline (Spark: Event-Log), Sequence (Start der Kerne: Aufrufe, IPC, Barrieren) | weitere: je Art ein Modell und eine Ableitung |
 | **Formate** | SVG (das eigene, die Vorgabe), Mermaid, Graphviz DOT, draw.io | weitere: je Format eine Klasse |
 | **Ansehen** | Vorschau im Fenster, mit Sprung zur gerufenen Funktion und Einbetten ihres Ablaufs | |
 | **Einlesen** | eine Datei, oder einen Ordner als Projekt (mit Unterordnern; Projektparameter in `code2diagram.json`) — Sprung und Einbetten auch über Dateien hinweg; Notebooks (`.ipynb`, Databricks) je Zelle | |
@@ -456,6 +456,27 @@ Tabelle in `diagramm/Datenfluss.cpp`:
   Beispiel `beispiele/spark/local-1700000000000` (von Hand gesetzt); eigene Logs schreibt
   `beispiele/spark/eventlogs_aufnehmen.py`.
 
+**Sequence (Start der Kerne, Diagram *Sequence: start of the cores*)** — für Geräte mit mehreren Kernen (TI C2000:
+CPU1, CPU2). Welche Ordner auf welchem Kern laufen, sagt `kerne` in der Projektdatei (unten); ein Ordner, der auf beiden
+läuft (`Global`), wird je Kern mit dessen Definitionen gelesen (`projekt::liesKern`), nur für diese Ansicht. Abgeleitet in
+`projekt/Sequenz.*`, Modell `diagramm/Sequenz.hpp`:
+- **Je Kern** ab seiner Startfunktion (Vorgabe `main`) bis in die Hauptschleife (`for (;;)`, einmal als `loop`); die
+  Aufrufe bis zur Tiefe (Feld *Depth*, für die Sequenz Vorgabe 1; 0 = nur IPC) als Schlaufe an der eigenen Linie;
+  `if`, Schleifen, `switch` als `opt`/`alt`/`loop`.
+- **IPC** (Tabelle im Code, TI driverlib): `IPC_setBootMode` (+ FLAG 0) ist der Boot, `IPC_sync` eine Barriere über beide
+  Kerne, `IPC_setFlagLtoR` ein Signal an den anderen Kern, `IPC_sendCommand` u. ä. eine Nachricht; Quittung, Löschen und
+  Prüfen gehören dazu. Die IPC wird in jeder Tiefe gefunden (tiefer: `(in f)` am Pfeil). Eine eigene Hülle, deren Rumpf eine
+  IPC mit einem ihrer Parameter als Flag ruft, gilt selbst als diese IPC (FirmWare: `MAIN_IPC_SYNC_BOUNDED(IPC_FLAG31)` ist
+  die Barriere 31).
+- **Zusammengelegt** an Boot und Barrieren: ein gebooteter Kern beginnt nach dem Boot (steht er in einem `if`, nach diesem),
+  was die Kerne zwischen zwei Barrieren tun, steht als `par`; eine Barriere ohne Partner und ein Signal ohne Empfänger
+  geben einen Hinweis.
+- **Je IPC-Handler** (`IPC_registerInterrupt`, oder ein Eintrag in die Vektortabelle nach `INT_CIPCn`) ein Abschnitt
+  *on IPC flag n*; ein Signal nennt seinen Empfänger (`FLAG 2 → cpu2_isr`). Andere Interrupts nicht; gemeinsamer Speicher
+  ist keine Nachricht (Hinweis).
+- **Formate:** SVG, draw.io, Mermaid `sequenceDiagram` (geprüft in 10.9.1; `;` wird `；`); DOT und csv sagen ab. Klick auf
+  einen Pfeil oder eine Barriere → seine Zeile. Beispiel `beispiele/kerne/`.
+
 Ein Name, den die Datei nicht kennt, gilt vor einem Bezeichner als Typ — ein `typedef` aus einer
 anderen Datei muss also nicht bekannt sein. Was der Leser nicht versteht, übergeht er **mit einer
 Meldung** (Zeile, Spalte); das Ergebnis bleibt brauchbar.
@@ -493,12 +514,16 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   - `definitionen` wie `-D` (`"CPU1"`, `"TAKT=10"`), `"!NAME"` hebt auf wie `-U`; in einer
     Liste gilt der spätere Eintrag; `includePfade` wie `-I` (relativ zum Ordner),
   - `abschnitte`: je Ordner (`"ordner": "firmware/Slave"`) eigene Definitionen und Include-Pfade,
-  - `uebergehen`: Ordnermuster, die nicht gelesen werden (`old`, `firmware/bak*`, `**/test`).
+  - `uebergehen`: Ordnermuster, die nicht gelesen werden (`old`, `firmware/bak*`, `**/test`),
+  - `kerne`: je Kern eines Geräts `name`, `ordner` (Muster; ein Ordner darf in mehreren stehen), `definitionen`, `start`
+    (Vorgabe `main`) — für die Ansicht *Sequence*; die übrigen Ansichten lesen wie ohne.
   Immer übergangen werden Ordner, die mit `.` beginnen, und `out`, `build`, `node_modules`, `bin`,
   `obj`; neben ihrem Kennzeichen auch die Ordner eines Werkzeugs: Unity (`Library`, `Temp`, `Logs`,
   `UserSettings` neben `ProjectSettings/ProjectVersion.txt`), Maven (`target` neben `pom.xml`).
   Project > Edit project file… bearbeitet sie; gibt es noch keine, steht ein Vorschlag da,
-  `uebergehen` aus der `.gitignore` des Ordners. Was nicht passt, wird nicht gespeichert.
+  `uebergehen` aus der `.gitignore` des Ordners, `kerne` aus Namen (`CPU1`/`CPU2`, `Master`/`Slave` in Ordnern oder
+  Dateien; ein Ordner ohne solchen Namen, dessen Dateien nach `CPU1`/`CPU2` fragen, auf jedem Kern; je Repo das oberste
+  Paar). `c2d <ordner> --liste` nennt ihn ohne `kerne` als `core?`. Was nicht passt, wird nicht gespeichert.
   Project > Show project messages nennt übergangene Ordner und Köpfe, die sich nicht finden.
 - **Gelesen** wird jede Datei mit den Definitionen aus Projekt, Abschnitten und den `#define`
   der Köpfe, die sie einbindet (auch mittelbar); das Spätere ersetzt Gleichnamiges, auch ein
@@ -733,6 +758,8 @@ c2d <datei|ordner> [--liste] [--datei <pfad>] [--funktion <name>] [--einbetten <
   im Projekt mit `--datei`), `--abschnitt optimized|analyzed|parsed` einen logischen; Hinweise auf stderr; csv sagt ab.
 - `--lauf` zeichnet den **Lauf eines Event-Logs** als Zeitachse (`--liste` nennt ihn `run`); svg, drawio, mermaid
   (`gantt`), csv (je Task eine Zeile); dot sagt ab.
+- `--sequenz [--tiefe n]` zeichnet im Projekt mit `kerne` den **Start der Kerne** (Vorgabe Tiefe 1); Hinweise auf stderr;
+  svg, drawio, mermaid; dot und csv sagen ab. `--liste` nennt die Kerne als `core`.
 - `--abhaengigkeiten` zeichnet die **Abhängigkeiten der Daten** einer Datei (im Projekt mit `--datei`):
   ihre Tabellen, Views, Trigger, Routinen und Funktionen mit SQL und was sie direkt lesen, schreiben,
   rufen. `--abhaengigkeiten <objekt>` ab einem Objekt (eine Tabelle, View, Routine, ein Trigger als
@@ -977,6 +1004,11 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   (`c2d --struktur` auf einen Ordner: alle zusammen, ohne Beziehungen zwischen Dateien zu
   prüfen). Ein Ordner wird bei jeder Änderung der Defines oder der Projektdatei ganz neu gelesen
   (EtherCAT, 1438 Dateien: rund 5 s). Ordnermuster unterscheiden Groß und Klein.
+- **Sequence:** nur die Ansicht „Start der Kerne“; „ab einer Funktion“ (Lebenslinie je Datei bzw. Klasse, SQ1) fehlt
+  noch. IPC nur von TI C2000 (driverlib); andere Hersteller erst mit Probecode. Eine Barriere in einer Schleife oder einem
+  `if` wird nicht über die Kerne abgeglichen (Hinweis). Ob ein `if` zur Laufzeit zutrifft, weiß die Ableitung nicht (ein
+  Boot in `if (CPU2 im Reset)` gilt als geschehen). Der Vorschlag für `kerne` sieht nur Namen, nicht den Bau (ein Ordner,
+  der nur auf CPU1 läuft und nicht nach `CPU1` fragt, fehlt darin).
 - **Run timeline:** eine Aktion ohne Python-Stelle im Log, die nicht eindeutig zwischen zwei mit Stelle liegt, bleibt
   ohne Code (Hinweis); Logs aus Databricks sind nicht geprüft; komprimierte Logs werden nicht gelesen; der Kern eines Tasks steht nicht im Log, die
   Bahn ist gerechnet (der Platz, der zuerst frei wurde).

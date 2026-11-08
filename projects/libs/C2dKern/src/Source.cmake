@@ -54,6 +54,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Plan.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Zeitachse.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/ZeitAnordnung.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/diagramm/SequenzAnordnung.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/ErDiagramm.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Aufrufgraph.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/diagramm/Farben.cpp"
@@ -80,6 +81,7 @@ set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projekt.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Projektdatei.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Schaltstellen.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/projekt/Sequenz.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Typen.cpp"
 )
 
@@ -93,6 +95,7 @@ set(_local_headers
     "${_c2d_inc}/diagramm/Datenfluss.hpp"
     "${_c2d_inc}/diagramm/Plan.hpp"
     "${_c2d_inc}/diagramm/Zeitachse.hpp"
+    "${_c2d_inc}/diagramm/Sequenz.hpp"
     "${_c2d_inc}/diagramm/Entscheidungstabelle.hpp"
     "${_c2d_inc}/diagramm/Anordnung.hpp"
     "${_c2d_inc}/diagramm/Aufrufgraph.hpp"
@@ -115,6 +118,7 @@ set(_local_headers
     "${_c2d_inc}/projekt/Projekt.hpp"
     "${_c2d_inc}/projekt/Projektdatei.hpp"
     "${_c2d_inc}/projekt/Schaltstellen.hpp"
+    "${_c2d_inc}/projekt/Sequenz.hpp"
     "${_c2d_inc}/projekt/Typen.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/quelle/Json.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/projekt/Notebook.hpp"

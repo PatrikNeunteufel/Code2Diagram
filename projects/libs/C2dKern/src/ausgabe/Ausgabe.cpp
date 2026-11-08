@@ -35,6 +35,7 @@ std::string_view nameVon(Diagrammart art)
         case Diagrammart::Datenfluss: return "Data flow";
         case Diagrammart::Plan: return "Physical plan";
         case Diagrammart::Zeitachse: return "Run timeline";
+        case Diagrammart::Sequenz: return "Sequence";
         case Diagrammart::Struktogramm: return "Nassi-Shneiderman";
         case Diagrammart::Wahrheitstabelle: return "Truth table";
         case Diagrammart::Entscheidungstabelle: return "Decision table";

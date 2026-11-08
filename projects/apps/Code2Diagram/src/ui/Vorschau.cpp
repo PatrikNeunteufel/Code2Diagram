@@ -847,6 +847,88 @@ public:
         }
     }
 
+    /// Ein Sequenzdiagramm (wie in SVG): Fragmente mit Schild und Bedingung, Lebenslinien gestrichelt, Aufrufe als
+    /// Schlaufe (fremd blass), Boot und Signal mit offener Spitze, ins Leere mit Kreuz, Barrieren dick; je Pfeil und
+    /// Barriere ein Knoten (sein Schritt) mit Tooltip: Text ganz und Stelle.
+    void sequenz(const Sequenzdiagramm& d, const SequenzAnordnung& a, double zeilenHoehe)
+    {
+        QPen gestrichelt = m_strich;
+        gestrichelt.setStyle(Qt::DashLine);
+        for (const SequenzAnordnung::Fragment& f : a.fragmente)
+        {
+            m_szene.addRect(alsRect(f.ort), m_rahmen, Qt::NoBrush)->setZValue(0);
+            m_szene.addRect(alsRect(f.schild), m_strich, m_grund)->setZValue(1);
+            text(QString::fromStdString(f.wort), alsRect(f.schild), true);
+            if (!f.titel.empty()) textLinks(QString::fromStdString(f.titel), QPointF(f.titelOrt.x, f.titelOrt.y - zeilenHoehe / 2 + 1), true);
+            for (const SequenzAnordnung::Zweig& z : f.zweige)
+            {
+                m_szene.addLine(QLineF(alsPunkt(z.linie.front()), alsPunkt(z.linie.back())), gestrichelt)->setZValue(1);
+                textLinks(QString::fromStdString(z.text), QPointF(z.textOrt.x, z.textOrt.y - zeilenHoehe / 2 + 1), true);
+            }
+        }
+        for (const Linienzug& l : a.lebenslinien) m_szene.addLine(QLineF(alsPunkt(l.front()), alsPunkt(l.back())), gestrichelt)->setZValue(1);
+        for (const SequenzAnordnung::Kopf& k : a.koepfe)
+        {
+            m_szene.addRect(alsRect(k.ort), m_strich, m_flaeche)->setZValue(2);
+            text(QString::fromStdString(k.name), alsRect(k.ort), true);
+        }
+        const auto tipp = [&](std::size_t schritt) {
+            if (schritt >= d.schritte.size()) return QString();
+            const SequenzSchritt& s = d.schritte[schritt];
+            QString t = QString::fromStdString(s.text);
+            if (!s.pfad.empty()) t += QStringLiteral("\n%1:%2 (click)").arg(QString::fromStdString(s.pfad)).arg(s.zeile);
+            return t;
+        };
+        for (const SequenzAnordnung::Barriere& b : a.barrieren)
+        {
+            QPen dick = m_strich;
+            dick.setWidthF(3);
+            m_szene.addLine(QLineF(alsPunkt(b.linie.front()), alsPunkt(b.linie.back())), dick)->setZValue(3);
+            QGraphicsSimpleTextItem* t = text(QString::fromStdString(b.text), QRectF(b.treffer.x, b.treffer.y, b.treffer.breite, zeilenHoehe));
+            QGraphicsRectItem* treffer = m_szene.addRect(alsRect(b.treffer), Qt::NoPen, Qt::NoBrush);
+            treffer->setData(kKnoten, static_cast<qulonglong>(b.schritt) + 1);
+            treffer->setToolTip(tipp(b.schritt));
+            treffer->setZValue(4);
+            t->setData(kKnoten, static_cast<qulonglong>(b.schritt) + 1);
+        }
+        for (const SequenzAnordnung::Pfeil& p : a.pfeile)
+        {
+            if (p.linie.size() < 2) continue;
+            QPen stift = m_strich;
+            if (p.fremd)
+            {
+                QColor c = stift.color();
+                c.setAlphaF(0.5);
+                stift.setColor(c);
+            }
+            for (std::size_t i = 0; i + 1 < p.linie.size(); ++i)
+                m_szene.addLine(QLineF(alsPunkt(p.linie[i]), alsPunkt(p.linie[i + 1])), stift)->setZValue(3);
+            const QPointF ende = alsPunkt(p.linie.back());
+            if (p.insLeere)
+            {
+                m_szene.addLine(QLineF(ende + QPointF(-5, -5), ende + QPointF(5, 5)), m_strich)->setZValue(3);
+                m_szene.addLine(QLineF(ende + QPointF(-5, 5), ende + QPointF(5, -5)), m_strich)->setZValue(3);
+            }
+            else
+                spitze(alsPunkt(p.linie[p.linie.size() - 2]), ende, p.art == NachrichtArt::Aufruf || p.art == NachrichtArt::Nachricht);
+            QGraphicsSimpleTextItem* t = textLinks(QString::fromStdString(p.text), QPointF(p.textOrt.x, p.textOrt.y - zeilenHoehe / 2 + 1));
+            if (p.art != NachrichtArt::Aufruf)
+            {
+                QFont f = t->font();
+                f.setBold(true);
+                t->setFont(f);
+            }
+            if (p.fremd) t->setOpacity(0.6);
+            t->setData(kKnoten, static_cast<qulonglong>(p.schritt) + 1);
+            t->setToolTip(tipp(p.schritt));
+            QGraphicsRectItem* treffer = m_szene.addRect(alsRect(p.treffer), Qt::NoPen, Qt::NoBrush);
+            treffer->setData(kKnoten, static_cast<qulonglong>(p.schritt) + 1);
+            treffer->setToolTip(tipp(p.schritt));
+            treffer->setZValue(4);
+        }
+        for (const auto& [h, ort] : a.hinweise) textLinks(QString::fromStdString(h), QPointF(ort.x, ort.y), true);
+    }
+
     /// Eine Zeitachse (wie in SVG): die Zeilen der Jobs getoent, die Achse, je Balken ein Rechteck in der Farbe seiner
     /// Stage (ein Job im Strich), ohne Ende gestrichelt, ein Fehlschlag dick mit ✗; der Tooltip traegt alle Angaben.
     void zeitachse(const Zeitachse& z, const ZeitAnordnung& a, double zeilenHoehe)
@@ -1338,6 +1420,25 @@ void Vorschau::zeige(const Zeitachse& achse)
     scene()->setSceneRect(0, 0, a.breite, a.hoehe);
     m_formen = static_cast<int>(a.balken.size());
     m_rahmen = 0;
+}
+
+void Vorschau::zeige(const Sequenzdiagramm& diagramm)
+{
+    leere();
+    AnordnungOptionen optionen;
+    optionen.maxZeilenLaenge = static_cast<std::size_t>(kMaxZeichen);
+    const SequenzAnordnung a = ordneAn(diagramm, optionen);
+    Zeichner z(*scene(), dunkel());
+    z.sequenz(diagramm, a, optionen.zeilenHoehe);
+    // je Schritt sein Ort (fuer markiere): Pfeile und Barrieren, die uebrigen leer
+    m_orte.assign(diagramm.schritte.size(), QRectF());
+    for (const SequenzAnordnung::Pfeil& p : a.pfeile)
+        if (p.schritt < m_orte.size()) m_orte[p.schritt] = alsRect(p.treffer);
+    for (const SequenzAnordnung::Barriere& b : a.barrieren)
+        if (b.schritt < m_orte.size()) m_orte[b.schritt] = alsRect(b.treffer);
+    scene()->setSceneRect(0, 0, a.breite, a.hoehe);
+    m_formen = static_cast<int>(a.pfeile.size() + a.barrieren.size());
+    m_rahmen = static_cast<int>(a.fragmente.size());
 }
 
 void Vorschau::zeige(const Plandiagramm& diagramm, bool nachRechts)

@@ -55,6 +55,7 @@
 #include "c2d/projekt/Datenfluss.hpp"
 #include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Lauf.hpp"
+#include "c2d/projekt/Sequenz.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Typen.hpp"
 
@@ -111,6 +112,7 @@ public:
     static constexpr const char* kDatenfluss = "flow";  ///< der Datenfluss; welcher, sagt das zweite Feld
     static constexpr const char* kPlan = "plan";        ///< ein Plan von Spark; welcher, sagt das zweite Feld
     static constexpr const char* kLauf = "run";         ///< der Lauf eines Event-Logs von Spark als Zeitachse
+    static constexpr const char* kSequenz = "seq";      ///< der Start der Kerne als Sequenzdiagramm (Entscheide SQ1-SQ4)
     /// Wie eine Funktion gezeigt wird (das Feld neben Diagram): ihr Ablauf oder ihr Struktogramm.
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
@@ -255,6 +257,8 @@ public:
     [[nodiscard]] QStringList planKnoten() const;
     /// Den Lauf des Event-Logs der Datei als Zeitachse zeigen (Spark Schicht 3). false = die Datei ist kein Event-Log.
     bool zeigeLauf();
+    /// Den Start der Kerne als Sequenzdiagramm zeigen (Projektdatei mit `kerne`). false = das Projekt hat keine Kerne.
+    bool zeigeSequenz();
     /// Je Balken der gezeigten Zeitachse sein Titel (`Job 3`, `Stage 2: …`, die Nummer eines Tasks).
     [[nodiscard]] QStringList laufBalken() const;
     [[nodiscard]] QString diagramm() const;
@@ -563,6 +567,10 @@ private:
     [[nodiscard]] bool istPlan() const;
     void leitePlanAb();
     [[nodiscard]] bool istLauf() const;
+    [[nodiscard]] bool istSequenz() const;
+    /// Leitet den Start der Kerne ab (liest dazu je Kern seine Dateien); die Tiefe steht im Feld Depth — fuer die
+    /// Sequenz mit eigenem Wert (Vorgabe 1), beim Wechsel getauscht.
+    void leiteSequenzAb();
     /// Die gezeigte Datei ist ein Event-Log (seine Plaene stammen aus den SQL-Ereignissen, L6).
     [[nodiscard]] bool imLog() const;
     /// Zeitachse: das Ereignis eines Balkens im Log.
@@ -668,6 +676,10 @@ private:
     QString m_flussName;                                     ///< der gezeigte; leer = die ganze Datei
     c2d::diagramm::Plandiagramm m_planDiagramm;              ///< der gezeigte Plan
     c2d::diagramm::Zeitachse m_zeitachse;                    ///< der gezeigte Lauf
+    c2d::diagramm::Sequenzdiagramm m_sequenz;                ///< der gezeigte Start der Kerne
+    bool m_inSequenz = false;   ///< das Feld Depth traegt gerade die Tiefe der Sequenz
+    int m_tiefeSequenz = 1;     ///< die Tiefe der Sequenz (Entscheid SQ4: Vorgabe 1)
+    int m_tiefeGraph = 2;       ///< die Tiefe des Aufrufgraphs, solange die Sequenz das Feld hat
     c2d::projekt::Laufverbindung m_laufCode;                 ///< wo seine Aktionen und Stages im Code stehen (L5)
     QComboBox* m_planAuswahl = nullptr;                      ///< beim Plan: welcher (Daten: wie m_planWahl)
     /// Der gezeigte Plan: sein Name, mit `\t` und dem Kurznamen eines logischen Abschnitts dahinter.

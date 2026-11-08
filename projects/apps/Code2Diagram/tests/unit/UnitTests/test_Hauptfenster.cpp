@@ -15,6 +15,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QStatusBar>
 #include <QMouseEvent>
 #include <QTemporaryDir>
 
@@ -243,6 +244,51 @@ TEST_SUITE("Hauptfenster")
         CHECK_FALSE(fenster.oeffne(QDir(ordner.path()).filePath("fehlt.c"), &fehler));
         CHECK(fehler.contains("fehlt.c"));
         CHECK(fenster.diagramme().size() == 4);
+    }
+
+    TEST_CASE("Start der Kerne (SQ1-SQ4): in jeder Datei zur Wahl, Depth mit eigener Vorgabe, Klick zeigt die Zeile")
+    {
+        QTemporaryDir ordner;
+        REQUIRE(ordner.isValid());
+        const QDir wurzel(ordner.path());
+        const auto lege = [&](const QString& relativ, const QByteArray& inhalt) {
+            const QString pfad = wurzel.filePath(relativ);
+            REQUIRE(QDir().mkpath(QFileInfo(pfad).absolutePath()));
+            QFile datei(pfad);
+            REQUIRE(datei.open(QIODevice::WriteOnly));
+            datei.write(inhalt);
+        };
+        lege("code2diagram.json", R"({"kerne": [{"name": "CPU1", "ordner": ["a"]}, {"name": "CPU2", "ordner": ["b"]}]})");
+        lege("a/a.c", "void starte(void) { IPC_setBootMode(IPC_CPU1_L_CPU2_R, 1); }\n"  // 1
+                      "void main(void)\n"                                                // 2
+                      "{\n"                                                             // 3
+                      "    starte();\n"                                                  // 4
+                      "    lade();\n"                                                    // 5
+                      "    IPC_sync(IPC_CPU1_L_CPU2_R, IPC_FLAG31);\n"                   // 6
+                      "    for (;;) { arbeite(); }\n"                                    // 7
+                      "}\n");
+        lege("b/b.c", "void main(void) { IPC_sync(IPC_CPU2_L_CPU1_R, IPC_FLAG31); for (;;) { warte(); } }\n");
+
+        Hauptfenster fenster;
+        REQUIRE(fenster.oeffneOrdner(ordner.path()));
+        CHECK(fenster.diagramme().contains("seq"));
+        fenster.setzeTiefe(3);  // der Aufrufgraph
+        REQUIRE(fenster.zeigeSequenz());
+        CHECK(fenster.diagramm() == "seq");
+        CHECK(fenster.tiefe() == 1);  // die Sequenz hat ihre eigene Vorgabe (SQ4)
+        CHECK(fenster.statusBar()->currentMessage().contains("sequence: 2 core(s)"));
+        REQUIRE(fenster.waehleFormat("mermaid"));
+        const QString text = fenster.diagrammText();
+        CHECK(text.contains("L0-)L1: boot (in starte)"));
+        CHECK(text.contains("Note over L0,L1: barrier FLAG 31"));
+        CHECK(text.contains("loop main loop: for (\uFF1B\uFF1B)"));  // `;` beendet in Mermaid die Zeile
+        CHECK(fenster.vorschauFormen() > 0);
+        // Klick auf die Barriere: ihre Zeile in a/a.c
+        REQUIRE(fenster.klicke("barrier FLAG 31"));
+        CHECK(fenster.gezeigteStelle() == "a/a.c:6");
+        // zurueck zum Aufrufgraph: Depth wieder wie vorher
+        REQUIRE(fenster.waehleDiagramm("main"));
+        CHECK(fenster.tiefe() == 3);
     }
 
     TEST_CASE("Ein Ordner als Projekt: Dateien, Spruenge ueber Dateien, Mehrdeutiges, Projektdatei")

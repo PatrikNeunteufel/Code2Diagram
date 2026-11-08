@@ -61,6 +61,9 @@ public:
     /// Ein Lauf von Spark als Zeitachse; ein Balken ist fuer Klick und markiere() ein Knoten: seine Stelle in
     /// Zeitachse::balken. Die Richtung gilt nicht (die Zeit laeuft nach rechts).
     void zeige(const c2d::diagramm::Zeitachse& achse);
+    /// Ein Sequenzdiagramm; ein Pfeil und eine Barriere sind fuer Klick und markiere() ein Knoten: ihr Schritt
+    /// (Sequenzdiagramm::schritte). Die Richtung gilt nicht (die Zeit laeuft nach unten).
+    void zeige(const c2d::diagramm::Sequenzdiagramm& diagramm);
     /// Ein Struktogramm; ein Block ist fuer Klick, Doppelklick, Kontextmenue und markiere() ein
     /// Knoten (seine Stelle in bloeckeVon()). `links[b]`: die Namen in Block b, die weiterfuehren.
     void zeige(const c2d::diagramm::Struktogramm& diagramm, const std::vector<std::vector<std::string>>& links = {},

@@ -285,15 +285,17 @@ public:
         return aus + "}\n";
     }
 
-    // Bloecke, Tabellen und eine Zeitachse sind kein Graph: hier nicht richtig darstellbar (DOT ordnet selbst, ohne Zeit)
+    // Bloecke, Tabellen, eine Zeitachse und ein Sequenzdiagramm sind kein Graph: hier nicht richtig darstellbar (DOT
+    // ordnet selbst, ohne Zeit und ohne Folge)
     [[nodiscard]] bool kann(Diagrammart art) const override
     {
         return art != Diagrammart::Struktogramm && art != Diagrammart::Wahrheitstabelle &&
                art != Diagrammart::Entscheidungstabelle && art != Diagrammart::Zuordnung &&
                art != Diagrammart::Konfiguration && art != Diagrammart::Schaltstellen && art != Diagrammart::Schalteruebersicht &&
-               art != Diagrammart::Zeitachse;
+               art != Diagrammart::Zeitachse && art != Diagrammart::Sequenz;
     }
     [[nodiscard]] std::string schreibe(const Zeitachse&, const Optionen&) const override { return {}; }
+    [[nodiscard]] std::string schreibe(const Sequenzdiagramm&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Schaltstellen&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Schalteruebersicht&, const Optionen&) const override { return {}; }
     [[nodiscard]] std::string schreibe(const Struktogramm&, const Optionen&) const override { return {}; }

@@ -721,6 +721,58 @@ public:
         return aus + "</svg>\n";
     }
 
+    /// Ein Sequenzdiagramm: hinten die Fragmente (Rahmen, Schild mit dem Wort, Bedingung, gestrichelte Zweige), die
+    /// Lebenslinien gestrichelt unter ihren Koepfen, je Aufruf eine Schlaufe (fremd grau), Boot und Signal mit offener
+    /// Spitze, eine Nachricht mit voller, ins Leere mit Kreuz; eine Barriere als dicke Linie; die Hinweise darunter.
+    [[nodiscard]] std::string schreibe(const Sequenzdiagramm& d, const Optionen& optionen) const override
+    {
+        const AnordnungOptionen o = anordnung(optionen);
+        const SequenzAnordnung a = ordneAn(d, o);
+        std::string aus = kopf(d.titel, a.breite, a.hoehe);
+        for (const SequenzAnordnung::Fragment& f : a.fragmente)
+        {
+            aus += rechteck(f.ort, "rahmen");
+            aus += rechteck(f.schild, "schild");
+            aus += textLinks(f.wort, f.schild.x + 8, f.schild.y + (f.schild.hoehe - o.zeilenHoehe) / 2, o.zeilenHoehe, "font-weight=\"bold\"");
+            if (!f.titel.empty()) aus += textLinks(f.titel, f.titelOrt.x, f.titelOrt.y - o.zeilenHoehe / 2, o.zeilenHoehe, "font-style=\"italic\"");
+            for (const SequenzAnordnung::Zweig& z : f.zweige)
+            {
+                aus += "  <polyline class=\"linie\" points=\"" + punkte(z.linie) + "\" style=\"stroke-dasharray:6 4\"/>\n";
+                aus += textLinks(z.text, z.textOrt.x, z.textOrt.y - o.zeilenHoehe / 2, o.zeilenHoehe, "font-style=\"italic\"");
+            }
+        }
+        for (const Linienzug& l : a.lebenslinien)
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(l) + "\" style=\"stroke-dasharray:4 4\"/>\n";
+        for (const SequenzAnordnung::Kopf& k : a.koepfe)
+        {
+            aus += rechteck(k.ort, "flaeche");
+            aus += textMittig({k.name}, k.ort.mitte(), o.zeilenHoehe, "font-weight=\"bold\"");
+        }
+        for (const SequenzAnordnung::Barriere& b : a.barrieren)
+        {
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(b.linie) + "\" style=\"stroke-width:3\"/>\n";
+            aus += textMittig({b.text}, b.textOrt, o.zeilenHoehe);
+        }
+        for (const SequenzAnordnung::Pfeil& p : a.pfeile)
+        {
+            if (p.linie.size() < 2) continue;
+            const std::string stil = p.fremd ? " style=\"stroke-opacity:0.5\"" : "";
+            aus += "  <polyline class=\"linie\" points=\"" + punkte(p.linie) + "\"" + stil + "/>\n";
+            const Punkt& ende = p.linie.back();
+            if (p.insLeere)
+            {
+                aus += "  <polyline class=\"linie\" points=\"" + punkte({{ende.x - 5, ende.y - 5}, {ende.x + 5, ende.y + 5}}) + "\"/>\n";
+                aus += "  <polyline class=\"linie\" points=\"" + punkte({{ende.x - 5, ende.y + 5}, {ende.x + 5, ende.y - 5}}) + "\"/>\n";
+            }
+            else
+                aus += spitze(p.linie[p.linie.size() - 2], ende, p.art == NachrichtArt::Aufruf || p.art == NachrichtArt::Nachricht);
+            aus += textLinks(p.text, p.textOrt.x, p.textOrt.y - o.zeilenHoehe / 2, o.zeilenHoehe,
+                             p.fremd ? "fill-opacity=\"0.6\"" : p.art == NachrichtArt::Aufruf ? "" : "font-weight=\"bold\"");
+        }
+        for (const auto& [h, ort] : a.hinweise) aus += textLinks(h, ort.x, ort.y, o.zeilenHoehe, "font-style=\"italic\"");
+        return aus + "</svg>\n";
+    }
+
     /// Ein Plan: hinten die Rahmen (Unterabfragen, Stages, Codegen), dann die Kanten (Fluss durchgezogen,
     /// Unterabfrage gestrichelt, Wiederverwendung gepunktet, je mit Spitze), darauf die Knoten, vorn die Texte.
     [[nodiscard]] std::string schreibe(const Plandiagramm& d, const Optionen& optionen) const override

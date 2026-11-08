@@ -28,6 +28,7 @@
 #include "c2d/diagramm/Strukturdiagramm.hpp"
 #include "c2d/diagramm/Struktogramm.hpp"
 #include "c2d/diagramm/Wahrheitstabelle.hpp"
+#include "c2d/diagramm/Sequenz.hpp"
 #include "c2d/diagramm/Zeitachse.hpp"
 #include "c2d/diagramm/Zuordnung.hpp"
 #include "c2d/diagramm/Zustandsdiagramm.hpp"
@@ -274,6 +275,65 @@ struct ZeitAnordnung
 };
 
 [[nodiscard]] ZeitAnordnung ordneAn(const Zeitachse& achse, const AnordnungOptionen& optionen = {});
+
+/// Ein Sequenzdiagramm: oben je Lebenslinie ein Kopf, darunter ihre Linie; je Schritt eine Zeile — ein Aufruf als
+/// Schlaufe rechts an der eigenen Linie (je Tiefe weiter eingerueckt), eine Nachricht als Pfeil zwischen zwei Linien,
+/// eine Barriere als dicke Linie ueber die Beteiligten; Fragmente als Rahmen ueber die ganze Breite (je Ebene
+/// eingerueckt) mit Wort und Bedingung, weitere Zweige mit gestrichelter Linie. Die Texte sind schon gekuerzt; wer
+/// zeichnet, rechnet nichts. Ein Pfeil und eine Barriere sind fuer Klick und markiere() ein Knoten: ihr Schritt.
+struct SequenzAnordnung
+{
+    struct Kopf
+    {
+        Rechteck ort;
+        std::string name;
+    };
+    struct Pfeil
+    {
+        Linienzug linie;  ///< vom Absender zum Empfaenger; ins Leere endet er mit einem Kreuz bei `linie.back()`
+        NachrichtArt art = NachrichtArt::Aufruf;
+        bool fremd = false;
+        bool insLeere = false;
+        std::string text;
+        Punkt textOrt;  ///< links, Mitte der Zeile
+        Rechteck treffer;  ///< wo ein Klick ihn trifft (Linie und Text)
+        std::size_t schritt = 0;
+    };
+    struct Barriere
+    {
+        Linienzug linie;
+        std::string text;
+        Punkt textOrt;  ///< Mitte des Texts
+        Rechteck treffer;
+        std::size_t schritt = 0;
+    };
+    struct Zweig
+    {
+        Linienzug linie;  ///< gestrichelt, quer durch den Rahmen
+        std::string text;  ///< `[else]`
+        Punkt textOrt;     ///< links, Mitte der Zeile
+    };
+    struct Fragment
+    {
+        Rechteck ort;
+        std::string wort;   ///< `loop`, `alt` … (im Schild links oben)
+        Rechteck schild;    ///< das Schild mit dem Wort
+        std::string titel;  ///< `[main loop: for (;;)]`
+        Punkt titelOrt;     ///< links, Mitte der Zeile
+        std::vector<Zweig> zweige;
+        std::size_t schritt = 0;
+    };
+    std::vector<Kopf> koepfe;
+    std::vector<Linienzug> lebenslinien;
+    std::vector<Fragment> fragmente;  ///< aeussere vor inneren
+    std::vector<Pfeil> pfeile;
+    std::vector<Barriere> barrieren;
+    std::vector<std::pair<std::string, Punkt>> hinweise;  ///< Text, links oben
+    double breite = 0;
+    double hoehe = 0;
+};
+
+[[nodiscard]] SequenzAnordnung ordneAn(const Sequenzdiagramm& diagramm, const AnordnungOptionen& optionen = {});
 
 /// So viele Zeichen zeigt der Kopf eines Atoms; den Rest der Tooltip.
 inline constexpr std::size_t kAtomZeichen = 30;

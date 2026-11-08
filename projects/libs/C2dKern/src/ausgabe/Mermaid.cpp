@@ -548,6 +548,99 @@ public:
         return aus;
     }
 
+    /// Ein Sequenzdiagramm als `sequenceDiagram`: je Lebenslinie ein `participant`, ein Aufruf `->>` auf sich selbst (je
+    /// Tiefe mit `·` davor), Boot und Signal `-)`, eine Nachricht `->>`; ein Pfeil ins Leere und eine Barriere als `Note`;
+    /// Fragmente `loop`, `alt`/`else`, `opt`, `par`/`and`, ein Abschnitt als `rect` mit `Note`. Ein Text traegt kein `#`;
+    /// `;` beendet in Mermaid die Zeile und wird `；` (U+FF1B: `for (；；)`); Leerraum einfach — zwei Leerzeichen hintereinander
+    /// laesst Mermaid 10.9.1 beim Zeichnen scheitern (`svg element not in render tree`, geprueft).
+    [[nodiscard]] std::string schreibe(const Sequenzdiagramm& d, const Optionen& optionen) const override
+    {
+        const auto text = [&](std::string_view t) {
+            std::string aus;
+            for (const char c : kuerze(std::string(t), optionen.maxZeilenLaenge))
+            {
+                if (c == ';')
+                    aus += "\xEF\xBC\x9B";
+                else if (c == '#' || c == '\n' || c == '\r' || c == '\t' || c == ' ')
+                {
+                    if (!aus.empty() && aus.back() != ' ') aus += ' ';
+                }
+                else
+                    aus += c;
+            }
+            while (!aus.empty() && aus.back() == ' ') aus.pop_back();
+            return aus;
+        };
+        const auto wer = [](std::size_t k) { return "L" + std::to_string(k); };
+        std::string aus = kommentar(d.titel);
+        aus += "sequenceDiagram\n";
+        for (std::size_t k = 0; k < d.linien.size(); ++k) aus += "    participant " + wer(k) + " as " + text(d.linien[k].name) + "\n";
+        std::vector<FragmentArt> offen;
+        std::string einzug = "    ";
+        for (const SequenzSchritt& s : d.schritte)
+        {
+            switch (s.art)
+            {
+                case SequenzSchritt::Art::FragmentAnfang:
+                    offen.push_back(s.fragment);
+                    if (s.fragment == FragmentArt::Abschnitt)
+                    {
+                        aus += einzug + "rect rgba(128, 128, 128, 0.08)\n";
+                        aus += einzug + "    Note over " + wer(0) + (d.linien.size() > 1 ? "," + wer(d.linien.size() - 1) : "") +
+                               ": " + text(s.text) + "\n";
+                    }
+                    else
+                        aus += einzug + fragmentWort(s.fragment) + " " + text(s.text) + "\n";
+                    einzug += "    ";
+                    break;
+                case SequenzSchritt::Art::Sonst:
+                    if (offen.empty()) break;
+                    aus += einzug.substr(4) + (offen.back() == FragmentArt::Parallel ? "and " : "else ") + text(s.text) + "\n";
+                    break;
+                case SequenzSchritt::Art::FragmentEnde:
+                    if (offen.empty()) break;
+                    offen.pop_back();
+                    einzug.resize(einzug.size() - 4);
+                    aus += einzug + "end\n";
+                    break;
+                case SequenzSchritt::Art::Barriere:
+                {
+                    std::size_t links = s.beteiligt.empty() ? s.von : s.beteiligt.front();
+                    std::size_t rechts = links;
+                    for (const std::size_t b : s.beteiligt) links = std::min(links, b), rechts = std::max(rechts, b);
+                    aus += einzug + "Note over " + wer(links) + (rechts != links ? "," + wer(rechts) : "") + ": " + text(s.text) + "\n";
+                    break;
+                }
+                case SequenzSchritt::Art::Nachricht:
+                {
+                    if (s.nach == kKeinZiel)
+                    {
+                        aus += einzug + "Note right of " + wer(s.von) + ": " + text(s.text) + " (no receiver)\n";
+                        break;
+                    }
+                    std::string t = text(s.text);
+                    if (s.nachricht == NachrichtArt::Aufruf && s.tiefe > 1)
+                    {
+                        std::string vorn;
+                        for (int i = 1; i < s.tiefe; ++i) vorn += "\xC2\xB7 ";
+                        t = vorn + t;
+                    }
+                    const char* pfeil = s.nachricht == NachrichtArt::Boot || s.nachricht == NachrichtArt::Signal ? "-)" : "->>";
+                    aus += einzug + wer(s.von) + pfeil + wer(s.nach) + ": " + t + "\n";
+                    break;
+                }
+            }
+        }
+        while (!offen.empty())
+        {
+            offen.pop_back();
+            einzug.resize(einzug.size() - 4);
+            aus += einzug + "end\n";
+        }
+        for (const std::string& h : d.hinweise) aus += "%% " + text(h) + "\n";
+        return aus;
+    }
+
     /// Eine Zeitachse als `gantt` (Entscheid L7): `dateFormat x` (Millisekunden), ein Abschnitt `Jobs` mit je Job und
     /// Stage einem Balken, dann je Platz eines Executors ein Abschnitt mit seinen Tasks; ein Fehlschlag `crit`, was
     /// kein Ende hat `active`. Ein Name traegt kein `:`, `#`, `;` (Mermaid trennt daran).
