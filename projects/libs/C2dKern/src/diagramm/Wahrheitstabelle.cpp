@@ -269,18 +269,69 @@ std::vector<int> zeilenMitWahrheitstabelle(const modell::Funktion& funktion)
     return aus;
 }
 
+std::vector<Tabellenstelle> stellenMitWahrheitstabelle(const modell::Funktion& funktion)
+{
+    return nummeriere(zeilenMitWahrheitstabelle(funktion));
+}
+
 std::vector<Wahrheitstabelle> wahrheitstabellenVon(const modell::Funktion& funktion)
 {
     std::vector<Wahrheitstabelle> aus;
     if (funktion.rumpf) sammleTabellen(*funktion.rumpf, funktion.vollerName(), funktion.namenOhneFall, aus);
+    std::vector<int> zeilen;
+    for (const Wahrheitstabelle& t : aus) zeilen.push_back(t.quellZeile);
+    const std::vector<Tabellenstelle> stellen = nummeriere(zeilen);
+    for (std::size_t i = 0; i < aus.size(); ++i) aus[i].nummer = stellen[i].nummer;
     return aus;
 }
 
-std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funktion, int zeile)
+std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funktion, Tabellenstelle stelle)
 {
     for (Wahrheitstabelle& t : wahrheitstabellenVon(funktion))
-        if (t.quellZeile == zeile) return std::move(t);
+        if (t.quellZeile == stelle.zeile && (stelle.nummer == 0 || t.nummer == stelle.nummer)) return std::move(t);
     return std::nullopt;
+}
+
+std::string stellenText(Tabellenstelle stelle)
+{
+    return std::to_string(stelle.zeile) + (stelle.nummer > 0 ? ":" + std::to_string(stelle.nummer) : std::string());
+}
+
+std::optional<Tabellenstelle> stelleAusText(std::string_view text)
+{
+    const auto zahl = [](std::string_view s) -> int {
+        if (s.empty() || s.size() > 9) return 0;
+        int n = 0;
+        for (const char c : s)
+        {
+            if (c < '0' || c > '9') return 0;
+            n = n * 10 + (c - '0');
+        }
+        return n;
+    };
+    const std::size_t doppel = text.find(':');
+    Tabellenstelle s;
+    s.zeile = zahl(text.substr(0, doppel));
+    if (s.zeile <= 0) return std::nullopt;
+    if (doppel != std::string_view::npos)
+    {
+        s.nummer = zahl(text.substr(doppel + 1));
+        if (s.nummer <= 0) return std::nullopt;
+    }
+    return s;
+}
+
+std::vector<Tabellenstelle> nummeriere(const std::vector<int>& zeilen)
+{
+    std::vector<Tabellenstelle> aus;
+    aus.reserve(zeilen.size());
+    for (std::size_t i = 0; i < zeilen.size(); ++i)
+    {
+        const auto gleich = std::count(zeilen.begin(), zeilen.end(), zeilen[i]);
+        const auto davor = std::count(zeilen.begin(), zeilen.begin() + static_cast<std::ptrdiff_t>(i), zeilen[i]);
+        aus.push_back({zeilen[i], gleich > 1 ? static_cast<int>(davor) + 1 : 0});
+    }
+    return aus;
 }
 
 namespace

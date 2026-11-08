@@ -10,7 +10,7 @@
 //                             [--plan [<name>] [--abschnitt physical|optimized|analyzed|parsed]]
 //                             [--alle-zweige | --varianten | --rahmen]
 //                             [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]
-//                             [--wahrheitstabelle [<zeile>]] [--entscheidungstabelle]
+//                             [--wahrheitstabelle [<zeile>[:<n>]]] [--entscheidungstabelle]
 //                             [--zuordnung [<zeile>]] [--nachschlagetabellen] [--konfiguration]
 //                             [--schaltet <name>] [--schalter] [--breite]
 //
@@ -70,7 +70,8 @@
 //   --wahrheitstabelle  mit --funktion: die Wahrheitstabelle (samt MC/DC) der Bedingung in dieser
 //                  Zeile; ohne Zeile alle der Funktion untereinander. svg, drawio, csv. Mit --abfrage
 //                  die Tabellen ihrer Bedingungen (dreiwertig, wo NULL moeglich), auf Wunsch nur
-//                  `where`, `having` oder `on`; --liste nennt sie "truth"
+//                  `where`, `having` oder `on` oder die einer Zeile; --liste nennt sie "truth".
+//                  Stehen in einer Zeile mehrere, waehlt `<zeile>:<n>` eine (ohne: mehrdeutig, 1)
 //   --entscheidungstabelle  mit --funktion: die Entscheidungstabelle (DIN 66241) der Funktion;
 //                  svg, drawio, csv
 //   --zuordnung    mit --funktion: die Zuordnungstabelle des switch in dieser Zeile (ohne Zeile: alle
@@ -148,7 +149,7 @@ int aufruf()
                  "                                        [--ohne-fremde]]\n"
                  "                         [--alle-zweige | --varianten | --rahmen]\n"
                  "                         [--format <name>] [--richtung TD|LR] [--roh] [--struktogramm]\n"
-                 "                         [--wahrheitstabelle [<line>]] [--entscheidungstabelle]\n"
+                 "                         [--wahrheitstabelle [<line>[:<n>]]] [--entscheidungstabelle]\n"
                  "                         [--zuordnung [<line>]] [--nachschlagetabellen] [--konfiguration]\n"
                  "                         [--schaltet <name>] [--schalter] [--breite]\n"
                  "                         [--abhaengigkeiten [<object>]] [--abfrage [<name>|<line>]]\n"
@@ -229,7 +230,7 @@ void liste(const c2d::projekt::Funktionsverzeichnis& funktionen, std::size_t i, 
             for (const c2d::diagramm::Wahrheitstabelle& t : c2d::diagramm::wahrheitstabellenVon(q, suche))
             {
                 const auto nullbar = std::count_if(t.atome.begin(), t.atome.end(), [](const auto& a) { return a.kannNull; });
-                std::cout << "truth     " << q.name << ' ' << t.klausel << " line " << t.quellZeile << " (" << t.atome.size()
+                std::cout << "truth     " << q.name << ' ' << t.klausel << " line " << c2d::diagramm::stellenText(t.stelle()) << " (" << t.atome.size()
                           << " conditions, " << nullbar << " may be NULL, " << t.zeilen.size() << " rows"
                           << (t.gekuerzt ? ", shortened" : "") << ")\n";
             }
@@ -379,6 +380,27 @@ bool istAutomat(const c2d::diagramm::Zustandsdiagramm& z, const std::string& nam
     return punkt != std::string::npos && z.variable.substr(punkt + 1) == name;
 }
 
+/// Laesst von `tabellen` die an dieser Stelle (Entscheid L2). Ohne Nummer die der Zeile; sind es dort mehrere, ist die
+/// Zeile mehrdeutig: eine Meldung mit ihren Stellen (wie bei `--abfrage <name>`), false.
+bool waehleTabelle(std::vector<c2d::diagramm::Wahrheitstabelle>& tabellen, c2d::diagramm::Tabellenstelle stelle,
+                   const std::string& wo, const std::string& wie)
+{
+    std::erase_if(tabellen, [&](const c2d::diagramm::Wahrheitstabelle& t) {
+        return t.quellZeile != stelle.zeile || (stelle.nummer > 0 && t.nummer != stelle.nummer);
+    });
+    if (stelle.nummer > 0 || tabellen.size() < 2) return true;
+    std::cerr << "c2d: line " << stelle.zeile << " of " << wo << " has " << tabellen.size() << " conditions: ";
+    for (std::size_t i = 0; i < tabellen.size(); ++i)
+    {
+        const c2d::diagramm::Wahrheitstabelle& t = tabellen[i];
+        std::string text = t.bedingung.size() > 30 ? t.bedingung.substr(0, 29) + "..." : t.bedingung;
+        std::cerr << (i > 0 ? ", " : "") << c2d::diagramm::stellenText(t.stelle()) << " ("
+                  << (t.klausel.empty() ? std::string() : t.klausel + ": ") << text << ")";
+    }
+    std::cerr << " - choose one with " << wie << "--wahrheitstabelle <line>:<n>\n";
+    return false;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -403,6 +425,7 @@ int main(int argc, char* argv[])
     std::string laufName;   // --lauf <name>
     std::string abschnitt;  // --abschnitt physical|optimized|analyzed|parsed
     int tabellenZeile = 0;  // 0 = alle Tabellen der Funktion
+    int tabellenNummer = 0;  // --wahrheitstabelle <zeile>:<n> (Entscheid L2); 0 = keine genannt
     c2d::projekt::AufrufgraphOptionen graph;
     c2d::diagramm::ErNotation notation = c2d::diagramm::ErNotation::Tabellen;  // --notation (Entscheid N5)
     c2d::diagramm::ErAttribute attribute = c2d::diagramm::ErAttribute::Alle;
@@ -433,8 +456,18 @@ int main(int argc, char* argv[])
         else if (a == "--wahrheitstabelle")
         {
             wahrheitstabelle = true;
-            // die Zeile darf folgen; mit --abfrage die Bedingung: where, having, on (Entscheid W6)
-            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') tabellenZeile = std::atoi(argv[++i]);
+            // die Zeile darf folgen, mit `:n` die n-te in ihr (L2); mit --abfrage die Bedingung: where, having, on (W6)
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+            {
+                const std::optional<c2d::diagramm::Tabellenstelle> s = c2d::diagramm::stelleAusText(argv[++i]);
+                if (!s)
+                {
+                    std::cerr << "c2d: --wahrheitstabelle expects <line> or <line>:<n>, not '" << argv[i] << "'\n";
+                    return 2;
+                }
+                tabellenZeile = s->zeile;
+                tabellenNummer = s->nummer;
+            }
             else if (i + 1 < argc && (std::string_view(argv[i + 1]) == "where" || std::string_view(argv[i + 1]) == "having" ||
                                       std::string_view(argv[i + 1]) == "on"))
                 klauselWahl = argv[++i];
@@ -891,10 +924,14 @@ int main(int argc, char* argv[])
                 for (char& c : gross) c = static_cast<char>(c - 'a' + 'A');
                 std::erase_if(tabellen, [&](const c2d::diagramm::Wahrheitstabelle& t) { return t.klausel != gross; });
             }
+            if (tabellenZeile > 0 &&
+                !waehleTabelle(tabellen, {tabellenZeile, tabellenNummer}, abfragen[welche].name, "--abfrage <name> "))
+                return 1;
             if (tabellen.empty())
             {
                 std::cerr << "c2d: no " << (klauselWahl.empty() ? std::string("condition") : klauselWahl)
-                          << " with two or more parts in " << abfragen[welche].name << '\n';
+                          << " with two or more parts in " << abfragen[welche].name
+                          << (tabellenZeile == 0 ? std::string() : " at line " + std::to_string(tabellenZeile)) << '\n';
                 return 1;
             }
             return schreibe(c2d::ausgabe::Diagrammart::Wahrheitstabelle,
@@ -1064,11 +1101,10 @@ int main(int argc, char* argv[])
         }
         if (wahrheitstabelle)
         {
-            std::vector<Wahrheitstabelle> tabellen;
-            if (tabellenZeile == 0)
-                tabellen = wahrheitstabellenVon(wahl);
-            else if (std::optional<Wahrheitstabelle> t = wahrheitstabelleVon(wahl, tabellenZeile))
-                tabellen.push_back(std::move(*t));
+            std::vector<Wahrheitstabelle> tabellen = wahrheitstabellenVon(wahl);
+            if (tabellenZeile > 0 &&
+                !waehleTabelle(tabellen, {tabellenZeile, tabellenNummer}, wahl.name + "()", "--funktion <f> "))
+                return 1;
             if (tabellen.empty())
             {
                 std::cerr << "c2d: no condition with two or more parts in " << wahl.name << "()"

@@ -212,8 +212,9 @@ TEST_SUITE("SQL-Wahrheitstabelle")
         bool quelle = false;
         for (const diagramm::AbfrageKnoten& k : d.knoten)
         {
-            if (k.art == diagramm::AbfrageKnotenArt::Ergebnis && k.tabellen == std::vector<int>{5}) ergebnis = true;
-            if (k.titel == "auftrag a" && k.tabellen == std::vector<int>{4}) quelle = true;
+            using S = std::vector<diagramm::Tabellenstelle>;
+            if (k.art == diagramm::AbfrageKnotenArt::Ergebnis && k.tabellen == S{{5, 0}}) ergebnis = true;
+            if (k.titel == "auftrag a" && k.tabellen == S{{4, 0}}) quelle = true;
         }
         CHECK(ergebnis);
         CHECK(quelle);
@@ -228,5 +229,54 @@ TEST_SUITE("SQL-Wahrheitstabelle")
         CHECK(std::any_of(a.zellen.begin(), a.zellen.end(), [](const auto& z) {
             return !z.zeilen.empty() && z.zeilen.front() == "Row kept";
         }));
+    }
+
+    TEST_CASE("Mehrere Bedingungen in einer Zeile (L2): je eine Nummer, an Ergebnis und Quelle ihre eigene")
+    {
+        const auto e = tabellen("SELECT * FROM kunde k JOIN auftrag a ON a.kunde_id = k.id OR a.summe > 0 "
+                                "WHERE k.land = 'AT' AND k.aktiv;\n"  // 4
+                                "SELECT * FROM kunde WHERE id = 1 OR id = 2;\n");  // 5
+        // in Zeile 4 ON und WHERE: 4:1 und 4:2 in der Folge der Ableitung (ON, dann WHERE); in Zeile 5 allein
+        const Wahrheitstabelle* on = tabelle(e, "ON", 4);
+        const Wahrheitstabelle* wo = tabelle(e, "WHERE", 4);
+        const Wahrheitstabelle* fuenf = tabelle(e, "WHERE", 5);
+        REQUIRE(on != nullptr);
+        REQUIRE(wo != nullptr);
+        REQUIRE(fuenf != nullptr);
+        CHECK(on->nummer == 1);
+        CHECK(wo->nummer == 2);
+        CHECK(fuenf->nummer == 0);
+        CHECK(diagramm::stellenText(on->stelle()) == "4:1");
+        CHECK(diagramm::stellenText(wo->stelle()) == "4:2");
+        CHECK(diagramm::stellenText(fuenf->stelle()) == "5");
+        CHECK(diagramm::stellenMitWahrheitstabelle(e.p.dateien[0].ergebnis.einheit.abfragen[0]) ==
+              std::vector<diagramm::Tabellenstelle>{{4, 1}, {4, 2}});
+        // das Diagramm traegt am Ergebnis WHERE, an der Quelle ON, je mit Nummer
+        const diagramm::Abfragediagramm d = projekt::abfrageIn(e.p, 0, 0);
+        bool ergebnis = false;
+        bool quelle = false;
+        for (const diagramm::AbfrageKnoten& k : d.knoten)
+        {
+            using S = std::vector<diagramm::Tabellenstelle>;
+            if (k.art == diagramm::AbfrageKnotenArt::Ergebnis && k.tabellen == S{{4, 2}}) ergebnis = true;
+            if (k.titel == "auftrag a" && k.tabellen == S{{4, 1}}) quelle = true;
+        }
+        CHECK(ergebnis);
+        CHECK(quelle);
+    }
+
+    TEST_CASE("Die Stelle als Text (L2): 12 und 12:2 hin und zurueck, anderes nicht")
+    {
+        using diagramm::stelleAusText;
+        using diagramm::Tabellenstelle;
+        CHECK(stelleAusText("12") == Tabellenstelle{12, 0});
+        CHECK(stelleAusText("12:2") == Tabellenstelle{12, 2});
+        CHECK_FALSE(stelleAusText(""));
+        CHECK_FALSE(stelleAusText("0"));
+        CHECK_FALSE(stelleAusText("12:"));
+        CHECK_FALSE(stelleAusText("12:0"));
+        CHECK_FALSE(stelleAusText("a"));
+        CHECK_FALSE(stelleAusText("12:x"));
+        CHECK(diagramm::nummeriere({3, 4, 3, 5}) == std::vector<Tabellenstelle>{{3, 1}, {4, 0}, {3, 2}, {5, 0}});
     }
 }

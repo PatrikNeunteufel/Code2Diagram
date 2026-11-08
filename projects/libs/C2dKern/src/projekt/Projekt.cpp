@@ -566,8 +566,8 @@ void fuegeEin(modell::Einheit& in, modell::Einheit&& von)
 }
 
 /// In einem Notebook gehoert, was SQL ausserhalb einer Funktion liest, schreibt, ruft, der Funktion seiner
-/// Zelle (Entscheide N3, A4) — `<cell n>`, ohne Rumpf, wenn die Zelle keinen Code einer Sprache mit Ablauf
-/// traegt (ihr SQL zeigt der Ablauf erst mit S2); eine Abfrage auf oberster Ebene heisst nach ihr.
+/// Zelle (Entscheide N3, A4) — `<cell n>`; eine SQL-Zelle hat ihren Ablauf vom Leser (L1), ohne Rumpf bleibt
+/// sie nur, wenn ihr Leser keinen Ablauf kennt. Eine Abfrage auf oberster Ebene heisst nach ihr.
 /// Die Funktionen stehen danach in der Reihenfolge des Texts.
 void ordneZellenZu(modell::Einheit& e, const std::vector<Zelle>& zellen)
 {

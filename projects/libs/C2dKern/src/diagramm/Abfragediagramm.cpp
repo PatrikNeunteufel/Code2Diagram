@@ -56,7 +56,20 @@ struct Stelle
 class Bau
 {
 public:
-    Bau(const Abfrage& ab, const DatenquellenSuche& suche) : m_ab(ab), m_suche(suche) {}
+    Bau(const Abfrage& ab, const DatenquellenSuche& suche) : m_ab(ab), m_suche(suche)
+    {
+        // die Stellen der Bedingungen mit Tabelle, in der Folge von wahrheitstabellenVon (Entscheid L2)
+        std::vector<const Klausel*> klauseln;
+        for (const AbfrageBlock& x : m_ab.bloecke)
+        {
+            for (const AbfrageQuelle& q : x.quellen)
+                if (q.bedingungGanz.logik) klauseln.push_back(&q.bedingungGanz);
+            if (x.woGanz.logik) klauseln.push_back(&x.woGanz);
+            if (x.habenGanz.logik) klauseln.push_back(&x.habenGanz);
+        }
+        const std::vector<Tabellenstelle> stellen = stellenMitWahrheitstabelle(m_ab);
+        for (std::size_t i = 0; i < klauseln.size() && i < stellen.size(); ++i) m_stellen[klauseln[i]] = stellen[i];
+    }
 
     Abfragediagramm baue()
     {
@@ -161,7 +174,7 @@ private:
                     break;
                 }
             }
-            if (q.bedingungGanz.logik) k.tabellen.push_back(q.bedingungGanz.zeile);  // ihr ON hat eine Tabelle (W6)
+            if (q.bedingungGanz.logik) k.tabellen.push_back(stelleDer(q.bedingungGanz));  // ihr ON hat eine Tabelle (W6)
             m_knoten[b].push_back(neu(std::move(k)));
         }
         AbfrageKnoten e;
@@ -178,8 +191,8 @@ private:
             e.titel = "result";
         }
         // WHERE vor HAVING: ein Klick auf das Symbol zeigt die erste (W6)
-        if (x.woGanz.logik) e.tabellen.push_back(x.woGanz.zeile);
-        if (x.habenGanz.logik) e.tabellen.push_back(x.habenGanz.zeile);
+        if (x.woGanz.logik) e.tabellen.push_back(stelleDer(x.woGanz));
+        if (x.habenGanz.logik) e.tabellen.push_back(stelleDer(x.habenGanz));
         m_ergebnis[b] = neu(std::move(e));
     }
 
@@ -451,6 +464,13 @@ private:
     std::vector<std::vector<std::size_t>> m_knoten;    ///< je Block je Quelle ihr Knoten
     std::vector<std::vector<std::string>> m_ohne;      ///< je Block die Spalten, die keiner Quelle sicher gehoeren
     std::map<std::tuple<std::size_t, std::size_t, int, std::string>, std::size_t> m_paare;
+    std::map<const Klausel*, Tabellenstelle> m_stellen;  ///< je Bedingung mit Tabelle ihre Stelle
+
+    [[nodiscard]] Tabellenstelle stelleDer(const Klausel& k) const
+    {
+        const auto s = m_stellen.find(&k);
+        return s != m_stellen.end() ? s->second : Tabellenstelle{k.zeile, 0};
+    }
 };
 
 }  // namespace
@@ -553,6 +573,7 @@ NullFaehig nullFaehigAtom(const Logik& atom, const Abfrage& abfrage, std::size_t
 
 std::vector<Wahrheitstabelle> wahrheitstabellenVon(const Abfrage& abfrage, const DatenquellenSuche& suche)
 {
+    const std::vector<Tabellenstelle> stellen = stellenMitWahrheitstabelle(abfrage);
     std::vector<Wahrheitstabelle> aus;
     for (std::size_t b = 0; b < abfrage.bloecke.size(); ++b)
     {
@@ -568,7 +589,13 @@ std::vector<Wahrheitstabelle> wahrheitstabellenVon(const Abfrage& abfrage, const
         tabelle(x.woGanz, "WHERE", kKeine);
         tabelle(x.habenGanz, "HAVING", kKeine);
     }
+    for (std::size_t i = 0; i < aus.size() && i < stellen.size(); ++i) aus[i].nummer = stellen[i].nummer;
     return aus;
+}
+
+std::vector<Tabellenstelle> stellenMitWahrheitstabelle(const Abfrage& abfrage)
+{
+    return nummeriere(zeilenMitWahrheitstabelle(abfrage));
 }
 
 std::vector<int> zeilenMitWahrheitstabelle(const Abfrage& abfrage)

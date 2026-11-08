@@ -46,9 +46,9 @@ struct AbfrageKnoten
     std::size_t gruppe = kKeine;      ///< der innerste Rahmen
     std::string name;                 ///< Tabelle, View, Name des WITH (fuer Doppelklick); sonst leer
     int zeile = 0;                    ///< im Quelltext; 0 = keine
-    /// Die Zeilen ihrer Bedingungen mit Wahrheitstabelle (Entscheid W6): am Ergebnis WHERE, dann HAVING; an einer
+    /// Die Stellen ihrer Bedingungen mit Wahrheitstabelle (Entscheide W6, L2): am Ergebnis WHERE, dann HAVING; an einer
     /// Quelle ihr ON. Leer = keine.
-    std::vector<int> tabellen;
+    std::vector<Tabellenstelle> tabellen;
     /// Am Ergebnis: die CASE-Ausdruecke des Blocks mit Zuordnung (Entscheid Z4), je ihr Name hinter `mapping:`.
     std::vector<std::string> faelle;
 };
@@ -113,5 +113,8 @@ using DatenquellenSuche = std::function<Datenquelle(std::string_view name)>;
 
 /// Die Zeilen der Bedingungen einer Abfrage mit Tabelle — ohne sie auszurechnen.
 [[nodiscard]] std::vector<int> zeilenMitWahrheitstabelle(const modell::Abfrage& abfrage);
+
+/// Ihre Stellen (Entscheid L2), in derselben Folge wie wahrheitstabellenVon — ohne sie auszurechnen.
+[[nodiscard]] std::vector<Tabellenstelle> stellenMitWahrheitstabelle(const modell::Abfrage& abfrage);
 
 }  // namespace c2d::diagramm

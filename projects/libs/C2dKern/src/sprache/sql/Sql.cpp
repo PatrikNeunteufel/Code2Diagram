@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
@@ -433,13 +434,16 @@ void ergaenzeKlauseln(modell::Einheit& e, const lexer::Sprachtabelle& tabelle, c
 class SqlLeser final : public Leser, public sqlteile::Rumpfquelle
 {
 public:
-    SqlLeser(std::string_view text, const Dialekt& dialekt, std::string platzhalter, Ergebnis& aus)
-        : Leser(text, *dialekt.tabelle, aus), m_dialekt(dialekt), m_platzhalter(std::move(platzhalter))
+    SqlLeser(std::string_view text, const Dialekt& dialekt, std::string platzhalter, Ergebnis& aus,
+             std::vector<Abschnitt> abschnitte = {})
+        : Leser(text, *dialekt.tabelle, aus), m_dialekt(dialekt), m_platzhalter(std::move(platzhalter)),
+          m_abschnitte(std::move(abschnitte))
     {
     }
 
     void liesAlles()
     {
+        std::vector<AnweisungPtr> code;  // mit Abschnitten: die Anweisungen auf oberster Ebene, fuer die Zellen
         while (!amEnde(m_p))
         {
             const std::size_t a = m_p;
@@ -455,11 +459,21 @@ public:
             }
             const std::size_t b = anweisungsEnde(a);
             const std::size_t trenner = trennerLaenge(b);  // vor dem Lesen: SET TERM setzt einen neuen
-            if (b > a) liesAnweisung(a, b);
+            if (b > a)
+            {
+                const std::size_t vorher = m_aus.einheit.funktionen.size();
+                liesAnweisung(a, b);
+                if (!m_abschnitte.empty()) zellAblauf(a, b, vorher, code);
+            }
             m_p = b + trenner;
             if (m_p == a) ++m_p;  // nicht stehen bleiben
         }
         loeseVerweiseAuf();
+        if (m_abschnitte.empty()) return;
+        // je Zelle mit einer Anweisung eine Funktion `<cell n>` (Entscheid L1, wie N2 in Python)
+        const std::size_t vorher = m_aus.einheit.funktionen.size();
+        legeModulAn(std::move(code), true, m_abschnitte.back().bisZeile, {}, m_abschnitte);
+        for (std::size_t i = vorher; i < m_aus.einheit.funktionen.size(); ++i) m_aus.einheit.funktionen[i].namenOhneFall = true;
     }
 
     /// Nur die Zugriffe aller Anweisungen, nach `zugriffe` (fuer den Rumpf einer Routine in `$$…$$`):
@@ -507,6 +521,36 @@ public:
     }
 
 private:
+    /// Die Anweisung [a, b) im Ablauf ihrer Zelle (Entscheid L1), nach `code`: was eine eigene Funktion anlegt
+    /// (CREATE FUNCTION/PROCEDURE/TRIGGER, ein DO-Block — seit `vorher`), ist dort eine Anweisung, die zu ihr
+    /// fuehrt (wie `def` in einer Python-Zelle); sonst wie im Rumpf einer Routine (R2), ein Block als Block.
+    void zellAblauf(std::size_t a, std::size_t b, std::size_t vorher, std::vector<AnweisungPtr>& code)
+    {
+        if (m_aus.einheit.funktionen.size() > vorher)
+        {
+            auto an = std::make_unique<Anweisung>();
+            an->art = AnweisungArt::Einfach;
+            an->zeile = tok(a).ort.zeile;
+            an->text = textVon(a, b);
+            for (std::size_t i = vorher; i < m_aus.einheit.funktionen.size(); ++i)
+                an->innere.push_back(m_aus.einheit.funktionen[i].vollerName());
+            code.push_back(std::move(an));
+            return;
+        }
+        AnweisungPtr ablauf = ablaufVon(a, b, false);
+        if (!ablauf) return;
+        for (AnweisungPtr& k : ablauf->kinder)
+            if (k) code.push_back(std::move(k));
+    }
+
+    /// Die erste Zeile der Zelle nach der, in der die Zeile z steht; ohne Abschnitte oder in der letzten: keine.
+    [[nodiscard]] int naechsteZelle(int z) const
+    {
+        for (const Abschnitt& x : m_abschnitte)
+            if (x.zeile > z) return x.zeile;
+        return std::numeric_limits<int>::max();
+    }
+
     /// Jede Abfrage in [a, b) (eine Anweisung, ein Rumpf) nach Einheit::abfragen, je `vorn@zeile`.
     void abfragenIn(std::size_t a, std::size_t b, const std::string& vorn)
     {
@@ -803,10 +847,12 @@ private:
     /// ab, ausser es schliesst eine Schleife (schliesstSchleife) — samt dem Wort dahinter in seiner Zeile
     /// (`END IF`, `END marke`); ein Trenner auf einer Stufe darueber trennt nicht. In einer Klammer steht
     /// in SQL kein Trenner: einer dort beendet die Anweisung trotzdem, mit einer Meldung — sonst liefe
-    /// eine offene Klammer bis ans Ende des Texts.
+    /// eine offene Klammer bis ans Ende des Texts. Eine neue Zelle eines Notebooks (LeseOptionen::abschnitte)
+    /// beendet sie immer — Databricks fuehrt jede fuer sich aus.
     std::size_t anweisungsEnde(std::size_t a)
     {
         const bool bloecke = mitBloecken(a);
+        const int zelle = naechsteZelle(tok(a).ort.zeile);
         int tiefe = 0;
         std::vector<std::size_t> klammern;  // die offenen, innen zuletzt
         const auto ende = [&](std::size_t j) {
@@ -818,6 +864,7 @@ private:
         while (!amEnde(j))
         {
             if (j > a && goZeile(j)) return ende(j);
+            if (j > a && tok(j).ort.zeile >= zelle) return ende(j);
             if (tiefe == 0 && trennerLaenge(j) > 0) return ende(j);
             // T-SQL braucht kein `;`: CREATE, ALTER, DROP am Anfang einer Zeile beginnen eine neue Anweisung
             if (j > a && tiefe == 0 && klammern.empty() && tok(j - 1).ort.zeile != tok(j).ort.zeile &&
@@ -949,7 +996,7 @@ private:
         if ((t.art == TokenArt::Schluesselwort || t.art == TokenArt::Bezeichner) &&
             (block || enthaelt(kOhneSchema, klein(t.text))))
         {
-            if (block)
+            if (block && m_abschnitte.empty())  // in einer Zelle ist er ihr Ablauf (Entscheid L1)
                 legeFunktionAn("<block:" + std::to_string(t.ort.zeile) + ">", t.ort.zeile, tok(b > a ? b - 1 : a).ort.zeile,
                                {}, {}, ablaufVon(a, b, false));
             // eine Anweisung ausserhalb der Objekte (ein Skript, eine Abfrage in einer Zeichenkette); die
@@ -963,8 +1010,9 @@ private:
                 gibZugriffe(gefunden[i], leser.bereiche[i].first, leser.bereiche[i].second, eigene);
             // die CASE-Ausdruecke (Z3): dem Block, sonst der Abfrage, in der sie stehen, sonst `query@zeile`
             const std::size_t vorher = m_aus.einheit.faelle.size();
-            sammleFaelle(a, b, block ? "<block:" + std::to_string(t.ort.zeile) + ">" : "query@" + std::to_string(t.ort.zeile));
-            for (std::size_t f = vorher; f < m_aus.einheit.faelle.size() && !block; ++f)
+            const bool eigen = block && m_abschnitte.empty();
+            sammleFaelle(a, b, eigen ? "<block:" + std::to_string(t.ort.zeile) + ">" : "query@" + std::to_string(t.ort.zeile));
+            for (std::size_t f = vorher; f < m_aus.einheit.faelle.size() && !eigen; ++f)
                 for (const Abfrage& x : gefunden)
                     if (x.zeile <= m_aus.einheit.faelle[f].zeile && m_aus.einheit.faelle[f].zeile <= x.bisZeile)
                         m_aus.einheit.faelle[f].besitzer = x.name;
@@ -1954,6 +2002,7 @@ private:
     bool m_imRumpf = false;     ///< liest den Rumpf einer Routine in `$$…$$` (PL/pgSQL)
     std::string m_routine;      ///< die Routine, deren Rumpf gelesen wird (Name ihrer Abfragen)
     std::string m_trenner = ";";
+    std::vector<Abschnitt> m_abschnitte;  ///< LeseOptionen::abschnitte: die Zellen eines Notebooks
 };
 
 class Sql final : public Sprache
@@ -1986,7 +2035,7 @@ public:
         else
             ergebnis.meldungen.push_back({quelle::Schwere::Hinweis, {},
                                           "SQL dialect not known - read as common SQL (\"sql\" in code2diagram.json sets it)"});
-        SqlLeser(text, *dialekt, optionen.platzhalter, ergebnis).liesAlles();
+        SqlLeser(text, *dialekt, optionen.platzhalter, ergebnis, optionen.abschnitte).liesAlles();
         ergaenzeLogik(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);      // Bedingungen der Routinen (Entscheid R6)
         ergaenzeKlauseln(ergebnis.einheit, *dialekt->tabelle, kRegelnSql);   // WHERE, HAVING, ON (Entscheid W1)
         // die Atome der Bedingungen der Routinen: ihre Form, Spalten, Variablen (dreiwertig, Entscheid R7)

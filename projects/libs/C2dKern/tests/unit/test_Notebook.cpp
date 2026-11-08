@@ -8,6 +8,7 @@
 
 #include <doctest.h>
 
+#include "c2d/diagramm/Wahrheitstabelle.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/sprache/Sprache.hpp"
 
@@ -190,10 +191,14 @@ TEST_SUITE("Notebook")
         REQUIRE(e.typen.size() == 1);
         CHECK(e.typen[0].name == "kunde");
         CHECK(e.typen[0].zeile == 3);
-        // was die Zelle liest, gehoert <cell 1> (ohne Rumpf); ihre Abfrage heisst nach ihr
+        // was die Zelle liest, gehoert <cell 1>, mit ihren Anweisungen als Ablauf (L1); ihre Abfrage heisst nach ihr
         const modell::Funktion* eins = funktion(e, "<cell 1>");
         REQUIRE(eins != nullptr);
-        CHECK_FALSE(eins->rumpf);
+        REQUIRE(eins->rumpf);
+        REQUIRE(eins->rumpf->kinder.size() == 2);
+        CHECK(eins->rumpf->kinder[0]->zeile == 3);
+        CHECK(eins->rumpf->kinder[1]->zeile == 4);
+        CHECK(eins->namenOhneFall);
         CHECK(liest(*eins, "kunde"));
         CHECK(e.zugriffe.empty());
         REQUIRE(e.abfragen.size() == 1);
@@ -314,6 +319,65 @@ TEST_SUITE("Notebook")
         CHECK(scala->ort.zeile == 19);
         CHECK(scala->ort.spalte == 10);
         CHECK(namen(e) == std::vector<std::string>{"<cell 2>", "<cell 3>"});
+    }
+
+    TEST_CASE("Databricks-Notebook in SQL: je Zelle ein Ablauf, das Ende der Zelle beendet die Anweisung (L1)")
+    {
+        const std::string text = "-- Databricks notebook source\n"                   // 1
+                                 "CREATE TABLE t (a INT)\n"                          // 2
+                                 "\n"                                                // 3
+                                 "-- COMMAND ----------\n"                           // 4
+                                 "\n"                                                // 5
+                                 "SELECT a FROM t\n"                                 // 6
+                                 "\n"                                                // 7
+                                 "-- COMMAND ----------\n"                           // 8
+                                 "\n"                                                // 9
+                                 "BEGIN\n"                                           // 10
+                                 "  DECLARE n INT DEFAULT 0;\n"                      // 11
+                                 "  IF n > 0 AND n < 9 THEN\n"                       // 12
+                                 "    SET n = 1;\n"                                  // 13
+                                 "  END IF;\n"                                       // 14
+                                 "END;\n"                                            // 15
+                                 "\n"                                                // 16
+                                 "-- COMMAND ----------\n"                           // 17
+                                 "\n"                                                // 18
+                                 "CREATE PROCEDURE p(IN x INT)\n"                    // 19
+                                 "LANGUAGE SQL\n"                                    // 20
+                                 "AS BEGIN\n"                                        // 21
+                                 "  SELECT x;\n"                                     // 22
+                                 "END;\n";                                           // 23
+        const projekt::Projekt p = projekt::liesText(text, "nb.sql");
+        REQUIRE(p.dateien.size() == 1);
+        const modell::Einheit& e = p.dateien.front().ergebnis.einheit;
+        // eine Zelle nur mit DDL ist eine Funktion, die Abfrage ohne `;` endet mit ihrer Zelle
+        const modell::Funktion* eins = funktion(e, "<cell 1>");
+        REQUIRE(eins != nullptr);
+        REQUIRE(eins->rumpf);
+        CHECK(eins->rumpf->kinder.size() == 1);
+        REQUIRE(e.abfragen.size() >= 1);
+        CHECK(e.abfragen[0].name == "<cell 2>@6");
+        CHECK(e.abfragen[0].bisZeile == 6);
+        const modell::Funktion* zwei = funktion(e, "<cell 2>");
+        REQUIRE(zwei != nullptr);
+        REQUIRE(zwei->rumpf);
+        CHECK(zwei->rumpf->kinder.size() == 1);
+        // der Block ist der Ablauf der Zelle, keine Funktion <block:n>
+        const modell::Funktion* drei = funktion(e, "<cell 3>");
+        REQUIRE(drei != nullptr);
+        REQUIRE(drei->rumpf);
+        REQUIRE(drei->rumpf->kinder.size() == 1);
+        CHECK(drei->rumpf->kinder[0]->zeile == 10);
+        CHECK(drei->namenOhneFall);
+        for (const modell::Funktion& f : e.funktionen) CHECK_FALSE(f.name.starts_with("<block:"));
+        CHECK(diagramm::zeilenMitWahrheitstabelle(*drei) == std::vector<int>{12});
+        // eine Routine bleibt eine eigene Funktion; in der Zelle fuehrt eine Anweisung zu ihr
+        const modell::Funktion* vier = funktion(e, "<cell 4>");
+        REQUIRE(vier != nullptr);
+        REQUIRE(vier->rumpf);
+        REQUIRE(vier->rumpf->kinder.size() == 1);
+        CHECK(vier->rumpf->kinder[0]->innere == std::vector<std::string>{"p"});
+        CHECK(funktion(e, "p") != nullptr);
+        CHECK(namen(e) == std::vector<std::string>{"<cell 1>", "<cell 2>", "<cell 3>", "p", "<cell 4>"});  // beide ab Zeile 19
     }
 
     TEST_CASE("Databricks-Notebook in Python: je Zelle <cell n>, eine %sql-Zelle gehoert ihr")

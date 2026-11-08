@@ -115,7 +115,8 @@ public:
     static constexpr const char* kFlussdiagramm = "flowchart";
     static constexpr const char* kStruktogramm = "nassi-shneiderman";
     static constexpr const char* kEntscheidungstabelle = "decision-table";
-    /// So beginnt der Name einer Wahrheitstabelle: `truth:<Funktion>@<Zeile>`.
+    /// So beginnt der Name einer Wahrheitstabelle: `truth:<Funktion>@<Zeile>`, bei mehreren in der Zeile
+    /// `@<Zeile>:<n>` (Entscheid L2).
     static constexpr const char* kWahrheitstabelle = "truth:";
     /// So beginnt der Name einer Zuordnungstabelle (ein switch): `mapping:<Funktion>@<Zeile>`.
     static constexpr const char* kZuordnung = "mapping:";
@@ -432,12 +433,13 @@ private:
     bool geheZuFall(std::size_t datei, const QString& name, c2d::diagramm::KnotenId von);
     /// Steht in dieser Zeile eine Bedingung einer Abfrage mit Wahrheitstabelle (WHERE, HAVING, ON — Entscheid W1)?
     [[nodiscard]] bool hatAbfrageTabelle(std::size_t datei, int zeile) const;
-    /// Die Tabelle der Bedingung einer Abfrage (`abfrage`: ihr Name, leer = jede) in dieser Zeile — WHERE vor HAVING
-    /// vor ON; nullopt = keine.
+    /// Die Tabelle der Bedingung einer Abfrage (`abfrage`: ihr Name, leer = jede) an dieser Stelle; ohne Nummer die
+    /// der Zeile, WHERE vor HAVING vor ON (Entscheide W6, L2); nullopt = keine.
     [[nodiscard]] std::optional<c2d::diagramm::Wahrheitstabelle> abfrageTabelle(std::size_t datei, const QString& abfrage,
-                                                                                int zeile) const;
-    /// Zur Tabelle der Bedingung in dieser Zeile der Abfrage (kKeine: der ersten mit ihr); `von` wie bei gehe().
-    bool geheZuAbfrageTabelle(std::size_t datei, std::size_t abfrage, int zeile, c2d::diagramm::KnotenId von);
+                                                                                c2d::diagramm::Tabellenstelle stelle) const;
+    /// Zur Tabelle der Bedingung an dieser Stelle der Abfrage (kKeine: der ersten mit ihr); `von` wie bei gehe().
+    bool geheZuAbfrageTabelle(std::size_t datei, std::size_t abfrage, c2d::diagramm::Tabellenstelle stelle,
+                              c2d::diagramm::KnotenId von);
     /// Steht in dieser Zeile eine Abfrage (Entscheid R4: ein Knoten mit ihr traegt das Symbol)?
     [[nodiscard]] bool hatAbfrage(std::size_t datei, int zeile) const;
     /// Zur Tabelle einer Zeile: ihre Wahrheitstabelle, sonst ihre Zuordnung, sonst das Diagramm ihrer Abfrage.
@@ -447,8 +449,10 @@ private:
     [[nodiscard]] std::vector<int> tabellenZeilen(c2d::diagramm::KnotenId knoten) const;
     /// Der Tooltip des Tabellensymbols am Knoten: welche Tabelle ein Klick zeigt; leer = keine.
     [[nodiscard]] QString tabellenHinweis(c2d::diagramm::KnotenId knoten) const;
-    /// Zur Wahrheitstabelle der Zeile; `von` wie bei gehe(). false = dort keine.
-    bool geheZuWahrheitstabelle(std::size_t datei, int zeile, c2d::diagramm::KnotenId von);
+    /// Zur Wahrheitstabelle an dieser Stelle (ohne Nummer: der ersten der Zeile); `von` wie bei gehe(). false = keine.
+    bool geheZuWahrheitstabelle(std::size_t datei, c2d::diagramm::Tabellenstelle stelle, c2d::diagramm::KnotenId von);
+    /// Die Stellen der Wahrheitstabellen der Funktion in dieser Zeile (mehrere: je eine Nummer, Entscheid L2).
+    [[nodiscard]] std::vector<c2d::diagramm::Tabellenstelle> wahrheitsStellen(std::size_t datei, int zeile) const;
     /// Was mit Farben der Palette gezeichnet ist, neu: Vorschau, Marke, Zeile im Quelltext.
     void farbenNeu();
     /// Die Hinterlegung der gezeigten Zeile: Highlight, halb durchsichtig — hell wie dunkel lesbar.

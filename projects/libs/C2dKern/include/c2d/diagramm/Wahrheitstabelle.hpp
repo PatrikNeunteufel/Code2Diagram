@@ -32,11 +32,30 @@ enum class Wert
     Unbekannt,  ///< SQL: NULL im Vergleich (Entscheid W3, Kleene)
 };
 
+/// Wo eine Wahrheitstabelle steht (Entscheid L2): ihre Zeile und, wenn in dieser Zeile derselben Funktion bzw.
+/// Abfrage mehrere stehen, ihre Nummer unter ihnen (1 …, in der Folge der Ableitung); 0 = sie steht dort allein
+/// (oder, beim Suchen: die erste der Zeile).
+struct Tabellenstelle
+{
+    int zeile = 0;
+    int nummer = 0;
+    bool operator==(const Tabellenstelle&) const = default;
+};
+
+/// Der Teil hinter `@` im Namen einer Tabelle: `12`, bei mehreren in der Zeile `12:2` (wie `mapping:`, Z3).
+[[nodiscard]] std::string stellenText(Tabellenstelle stelle);
+/// Liest `12` oder `12:2`; nullopt = keine Zeile.
+[[nodiscard]] std::optional<Tabellenstelle> stelleAusText(std::string_view text);
+/// Je Zeile ihre Stelle: steht eine Zeile mehrmals in `zeilen`, zaehlen ihre Eintraege 1, 2, … in dieser Folge.
+[[nodiscard]] std::vector<Tabellenstelle> nummeriere(const std::vector<int>& zeilen);
+
 struct Wahrheitstabelle
 {
     std::string funktion;   ///< ihr voller Name (in SQL: der Name der Abfrage)
     std::string bedingung;  ///< der Text der Bedingung
     int quellZeile = 0;
+    int nummer = 0;  ///< unter mehreren Tabellen derselben Zeile (Tabellenstelle); 0 = allein
+    [[nodiscard]] Tabellenstelle stelle() const { return {quellZeile, nummer}; }
     /// SQL: welche Bedingung der Abfrage (`WHERE`, `HAVING`, `ON`); leer = eine Bedingung einer Funktion.
     std::string klausel;
 
@@ -114,10 +133,17 @@ enum class NullFaehig
 /// Die Zeilen der Funktion, in denen eine Bedingung mit Tabelle steht — ohne sie auszurechnen.
 [[nodiscard]] std::vector<int> zeilenMitWahrheitstabelle(const modell::Funktion& funktion);
 
-/// Alle Tabellen einer Funktion, in der Reihenfolge ihrer Bedingungen.
+/// Die Stellen dieser Tabellen, in derselben Folge wie zeilenMitWahrheitstabelle — ohne sie auszurechnen.
+[[nodiscard]] std::vector<Tabellenstelle> stellenMitWahrheitstabelle(const modell::Funktion& funktion);
+
+/// Alle Tabellen einer Funktion, in der Reihenfolge ihrer Bedingungen, mit ihrer Nummer in der Zeile.
 [[nodiscard]] std::vector<Wahrheitstabelle> wahrheitstabellenVon(const modell::Funktion& funktion);
 
-/// Die Tabelle der Bedingung in dieser Zeile der Funktion; nullopt = dort steht keine.
-[[nodiscard]] std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funktion, int zeile);
+/// Die Tabelle an dieser Stelle der Funktion (Nummer 0: die erste der Zeile); nullopt = dort steht keine.
+[[nodiscard]] std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funktion, Tabellenstelle stelle);
+[[nodiscard]] inline std::optional<Wahrheitstabelle> wahrheitstabelleVon(const modell::Funktion& funktion, int zeile)
+{
+    return wahrheitstabelleVon(funktion, Tabellenstelle{zeile, 0});
+}
 
 }  // namespace c2d::diagramm

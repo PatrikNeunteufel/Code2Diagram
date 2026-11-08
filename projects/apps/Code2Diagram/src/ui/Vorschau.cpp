@@ -1277,7 +1277,7 @@ void Vorschau::zeige(const Abfragediagramm& diagramm, bool nachRechts)
     for (std::size_t i = 0; i < a.knoten.size(); ++i)
     {
         // dazu die Zuordnungen seiner CASE (Entscheid Z4): ein Klick zeigt die erste Tabelle, die uebrigen im Kontextmenue
-        const std::vector<int>& t = diagramm.knoten[i].tabellen;
+        const std::vector<Tabellenstelle>& t = diagramm.knoten[i].tabellen;
         const std::size_t faelle = diagramm.knoten[i].faelle.size();
         if (t.empty() && faelle == 0) continue;
         const QString art = t.empty() ? QStringLiteral("Mapping table") : QStringLiteral("Truth table");

@@ -984,6 +984,14 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `beispiele/sql/routinen/tsql` im Ablauf `dbo.PruefeBestand` am Knoten mit `DECLARE c CURSOR FOR SELECT …` bleibt das
       Symbol das der Abfrage, das Kontextmenü bietet *Query diagram* und, wo es eine gibt, *Truth table (WHERE, line n)*.
 
+- [ ] **AC-W5 Zwei Tabellen in einer Zeile (L2):** `beispiele/notebooks/bestand_databricks.sql`, Queries `<cell 4>@17`:
+      ON und WHERE stehen in Zeile 17. Das Symbol an `lager l` zeigt `truth:<cell 4>@17@17:1` (ON), das am Ergebnis
+      `…@17:2` (WHERE); der Rechtsklick nennt *Truth table (ON, line 17:1)* bzw. *(WHERE, line 17:2)*. Im Quelltext
+      *Truth table of line 17* zeigt die WHERE. In einer C-Datei mit `if (a && b) x = c || d;`: Kontextmenü am Knoten
+      *Truth table (line n:1)* und *(line n:2)*, beide erreichbar. `c2d <datei> --abfrage "<cell 4>@17"
+      --wahrheitstabelle 17` meldet die zwei Stellen (Rückgabe 1), mit `17:2` die WHERE.
+      `aktion: wahrheitstabelle_zeigen zeile=17`
+
 - [ ] **AC-Z1 CASE als Zuordnung:** eine Datei mit `SELECT id, CASE s WHEN 'a' THEN 1 WHEN 'b' THEN 2 END AS n FROM t`:
       am Ergebnis im Query diagram das Tabellensymbol (Tooltip `Mapping table - click to show it`; mit WHERE `Truth table …`
       und im Kontextmenü zusätzlich *Mapping table (CASE, line n)*). Klick: Titel `query@n: CASE s`, Spalten `s` und
@@ -1003,10 +1011,11 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
       `aktion: datei_oeffnen pfad=beispiele/notebooks/lager.ipynb` `aktion: ansicht_waehlen name=preview`
 - [ ] **AD1 Das Skript:** Links steht kein JSON, sondern je Zelle eine Kopfzeile `# %% [1] markdown`, `# %% [2]` …;
       die Markdown-Zelle als Kommentar (`# # Lager`), `%pip install pandas` und `!ls -l lager.db`, wie sie in der
-      Zelle stehen. Statuszeile `lager.ipynb, read as Python notebook (6 cells): 4 function(s), 2 data type(s) -
+      Zelle stehen. Statuszeile `lager.ipynb, read as Python notebook (6 cells): 5 function(s), 2 data type(s) -
       2 message(s), first in cell 2, line 1: IPython magic %pip is not read`.
-- [ ] **AD2 Je Zelle eine Funktion:** Diagram bietet `<cell 2>`, `fehlt`, `<cell 5>`, `<cell 6>`, kein `<module>`.
-      `<cell 5>` zeigt den Ablauf ab `zeilen = db.execute(…)` mit der Schleife und `print(f"…")` am Ende.
+- [ ] **AD2 Je Zelle eine Funktion:** Diagram bietet `<cell 2>`, `<cell 3>`, `fehlt`, `<cell 5>`, `<cell 6>`, kein
+      `<module>`. `<cell 5>` zeigt den Ablauf ab `zeilen = db.execute(…)` mit der Schleife und `print(f"…")` am Ende;
+      `<cell 3>` (die Zelle `%%sql`) ihre beiden `CREATE TABLE`, die Namen der Tabellen als Links.
       `aktion: diagramm_waehlen name=<cell 5>`
 - [ ] **AD3 Klick zeigt die Zelle:** Ein Klick auf `menge = fehlt(bestand)` hebt die Zeile hervor und hinterlegt
       schwach die ganze Zelle 5 vom Kopf `# %% [5]` bis zu `print(…)`.
@@ -1017,11 +1026,20 @@ Am Beispielprojekt `beispiele/projekt`: `MOTOREN` legt der Abschnitt `antrieb` d
 - [ ] **AD5 Aufrufgraph:** Call graph (file): `<cell 5>` ruft `fehlt`, die Zellen sind Knoten.
       `aktion: aufrufgraph_zeigen`
 - [ ] **AD6 Databricks:** `beispiele/notebooks/kunden_databricks.py` öffnen. Statuszeile `read as Python notebook
-      (5 cells)`, `first in cell 2, line 1: %run is not followed`. Diagram bietet `<cell 3>` und `<cell 5>`;
+      (5 cells)`, `first in cell 2, line 1: %run is not followed`. Diagram bietet `<cell 3>`, `<cell 4>` (die Zelle
+      `%sql` mit Ablauf) und `<cell 5>`;
       Queries `<cell 4>@19` (die Zelle `%sql`, `create table gold.kunden_je_land`) und `<cell 5>@27`.
       `aktion: datei_oeffnen pfad=beispiele/notebooks/kunden_databricks.py`
-- [ ] **AD7 Ordner:** File > Open folder… `beispiele/notebooks`: beide im Dateibaum, File > Open recent nennt sie.
+- [ ] **AD7 Ordner:** File > Open folder… `beispiele/notebooks`: alle im Dateibaum, File > Open recent nennt sie.
       `aktion: ordner_oeffnen pfad=beispiele/notebooks`
+- [ ] **AD8 SQL-Zellen mit Ablauf (L1):** `beispiele/notebooks/bestand_databricks.sql` öffnen. Diagram bietet `<cell 2>`
+      bis `<cell 6>` und `nachbestellen`, kein `<block:…>`. `<cell 5>` zeigt `DECLARE`, die Schleife `n < 10`, darin das
+      IF, dessen `yes` (`ITERATE`) an den Kopf der Schleife zurückführt, dann `VALUES (n)`. `<cell 6>` ist ein Knoten
+      `CREATE OR REPLACE PROCEDURE nachbestellen…`; Doppelklick führt zum Ablauf von `nachbestellen`, Back zurück.
+      `aktion: datei_oeffnen pfad=beispiele/notebooks/bestand_databricks.sql` `aktion: diagramm_waehlen name=<cell 5>`
+- [ ] **AD9 Das Ende der Zelle beendet die Anweisung:** Queries bietet `<cell 4>@17`; die Abfrage endet in Zeile 17
+      (ohne `;`) und hat zwei Quellen — nichts aus Zelle 5. Data dependencies: `<cell 4>` liest `artikel` und `lager`.
+      `aktion: diagramm_waehlen name=queries`
 
 ## AE. Datenfluss (Spark Schicht 1)
 

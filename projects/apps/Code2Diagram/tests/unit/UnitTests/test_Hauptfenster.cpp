@@ -681,6 +681,59 @@ TEST_SUITE("Hauptfenster")
         CHECK(fenster.diagramm() == "truth:f@5");
     }
 
+    TEST_CASE("Wahrheitstabelle: zwei Bedingungen in einer Zeile heissen @zeile:n, jede erreichbar (L2)")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("int f(int a, int b, int c, int d)\n"  // 1
+                                     "{\n"                                  // 2
+                                     "    if (a && b) x = c || d;\n"        // 3
+                                     "    return a || d;\n"                 // 4
+                                     "}\n"),
+                      QStringLiteral("t.c"));
+        REQUIRE(fenster.waehleDiagramm("f"));
+        // aus dem Quelltext die erste der Zeile, mit ihrer Nummer im Namen
+        REQUIRE(fenster.zeigeWahrheitstabelle(3));
+        CHECK(fenster.diagramm() == "truth:f@3:1");
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().startsWith("f(): line 3;a && b\n"));
+        // die zweite ueber ihren Namen
+        REQUIRE(fenster.waehleDiagramm("truth:f@3:2"));
+        CHECK(fenster.diagrammText().startsWith("f(): line 3;c || d\n"));
+        CHECK_FALSE(fenster.waehleDiagramm("truth:f@3:3"));
+        // allein in ihrer Zeile ohne Nummer
+        REQUIRE(fenster.zeigeWahrheitstabelle(4));
+        CHECK(fenster.diagramm() == "truth:f@4");
+    }
+
+    TEST_CASE("SQL-Notebook (L1, L2): die Zelle hat ihren Ablauf; ON und WHERE in einer Zeile, je erreichbar")
+    {
+        Hauptfenster fenster;
+        fenster.zeige(QStringLiteral("-- Databricks notebook source\n"                                         // 1
+                                     "CREATE TABLE a (id INT NOT NULL, b INT)\n"                              // 2
+                                     "\n"                                                                      // 3
+                                     "-- COMMAND ----------\n"                                                 // 4
+                                     "\n"                                                                      // 5
+                                     "SELECT * FROM a x JOIN a y ON x.id = y.id AND y.b > 0 WHERE x.b < 5 OR x.b > 9\n"  // 6
+                                     "\n"                                                                      // 7
+                                     "-- COMMAND ----------\n"                                                 // 8
+                                     "\n"                                                                      // 9
+                                     "SELECT 1 FROM a\n"),                                                    // 10
+                      QStringLiteral("nb.sql"));
+        // die Zellen sind Funktionen mit Ablauf; die Abfrage ohne `;` endet mit ihrer Zelle
+        REQUIRE(fenster.waehleDiagramm("<cell 1>"));
+        REQUIRE(fenster.waehleDiagramm("<cell 2>"));
+        CHECK(fenster.diagramme().contains("<cell 3>"));
+        // aus dem Quelltext: WHERE vor ON, der Name traegt die Nummer
+        REQUIRE(fenster.zeigeWahrheitstabelle(6));
+        CHECK(fenster.diagramm() == "truth:<cell 2>@6@6:2");
+        REQUIRE(fenster.waehleFormat("csv"));
+        CHECK(fenster.diagrammText().startsWith("<cell 2>@6 WHERE: line 6;"));
+        // das ON ueber seinen Namen
+        REQUIRE(fenster.waehleDiagramm("truth:<cell 2>@6@6:1"));
+        CHECK(fenster.diagrammText().startsWith("<cell 2>@6 ON: line 6;"));
+        CHECK_FALSE(fenster.waehleDiagramm("truth:<cell 2>@6@6:3"));
+    }
+
     TEST_CASE("Entscheidungstabelle: dritte Darstellung; Zeilen sind Knoten — Klick, Show in diagram, Formate")
     {
         Hauptfenster fenster;

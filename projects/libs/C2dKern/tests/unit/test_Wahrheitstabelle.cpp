@@ -119,6 +119,24 @@ TEST_SUITE("Wahrheitstabelle")
         CHECK(zeilenMitWahrheitstabelle(f) == std::vector<int>{3});
     }
 
+    TEST_CASE("Zwei Bedingungen in einer Zeile (L2): je eine Nummer, gesucht mit oder ohne")
+    {
+        const c2d::modell::Funktion f = funktion("void f(int a, int b, int c, int d)\n{\n  if (a && b) x = c || d;\n"
+                                                 "  y = a || d;\n}\n");
+        const std::vector<Wahrheitstabelle> alle = wahrheitstabellenVon(f);
+        REQUIRE(alle.size() == 3);
+        CHECK(alle[0].bedingung == "a && b");
+        CHECK(alle[0].nummer == 1);
+        CHECK(alle[1].bedingung == "c || d");
+        CHECK(alle[1].nummer == 2);
+        CHECK(alle[2].nummer == 0);
+        CHECK(stellenMitWahrheitstabelle(f) == std::vector<Tabellenstelle>{{3, 1}, {3, 2}, {4, 0}});
+        CHECK(wahrheitstabelleVon(f, Tabellenstelle{3, 2})->bedingung == "c || d");
+        CHECK(wahrheitstabelleVon(f, 3)->bedingung == "a && b");  // ohne Nummer: die erste der Zeile
+        CHECK_FALSE(wahrheitstabelleVon(f, Tabellenstelle{3, 3}).has_value());
+        CHECK_FALSE(wahrheitstabelleVon(f, Tabellenstelle{4, 1}).has_value());
+    }
+
     TEST_CASE("MC/DC: (a && b) || c braucht vier Zeilen; ein Atom ohne Paar gibt einen Hinweis")
     {
         const Wahrheitstabelle t = wahrheitstabellenVon(funktion("void f(void) { if ((a && b) || c) x(); }")).front();

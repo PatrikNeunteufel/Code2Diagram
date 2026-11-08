@@ -379,8 +379,10 @@ C++ ist `__cplusplus` definiert. Zeilen und Spalten bleiben die der Datei.
   `<module>`. Im Aufrufgraph der Datei sind die Zellen Knoten. Meldungen und `c2d` nennen die Stelle
   `cell n, line m`; ein Klick hinterlegt im Fenster die ganze Zelle.
 - **Zellen in anderer Sprache** (`%%sql`, Databricks `%python`, `%sql`) liest deren Leser, das Ergebnis
-  steht in der Einheit des Notebooks (Tabellen in *Data types*). Was eine SQL-Zelle liest und schreibt,
-  gehört `<cell n>` (*Data dependencies*), ihre Abfragen heißen `<cell n>@zeile`. Der Dialekt: Projektdatei,
+  steht in der Einheit des Notebooks (Tabellen in *Data types*). Eine SQL-Zelle ist `<cell n>` mit Ablauf (ihre
+  Anweisungen, ein `BEGIN … END` als Block; eine Routine bleibt eine eigene Funktion, die Zelle führt zu ihr); was sie
+  liest und schreibt, gehört ihr (*Data dependencies*), ihre Abfragen heißen `<cell n>@zeile`. Eine Anweisung endet
+  spätestens mit ihrer Zelle (Databricks führt jede für sich aus). Der Dialekt: Projektdatei,
   sonst Databricks → spark, sonst die Bibliothek, die das Notebook einbindet (`import sqlite3`).
 - **Magie** (`%pip`, `%time`, `%%time`, `!ls`) steht im Skript, wie sie dasteht, und wird als Leerraum
   gelesen, je Zeile mit Hinweis; `%run` wird nicht verfolgt (Hinweis); eine Zelle in einer Sprache ohne
@@ -571,9 +573,12 @@ Code2Diagram [--testing] [datei|ordner] [--datei <pfad>] [-D NAME[=wert] | -D !N
   die kleinste Menge davon ist getönt, darunter stehen die Paare. Bis 6 Atome jede Kombination,
   darüber nur die MC/DC-Zeilen. Knoten und Blöcke mit Tabelle tragen ein kleines Tabellensymbol
   (Klick öffnet sie), das Kontextmenü *Truth table (line n)*, im Quelltext *Truth table of line n*.
-  Die Tabelle ist ein eigenes Diagramm (Back zurück); ein Klick darin zeigt die Bedingung. SVG und
+  Die Tabelle ist ein eigenes Diagramm `truth:f@n` (Back zurück); stehen in einer Zeile mehrere
+  (`if (a && b) x = c || d;`), heißt jede `truth:f@n:1`, `:2` …, das Symbol zeigt die erste, das
+  Kontextmenü jede. Ein Klick darin zeigt die Bedingung. SVG und
   draw.io zeichnen sie, **csv** schreibt sie für Testpläne (Trenner `;`); Mermaid und DOT nicht.
-  `c2d --funktion f --wahrheitstabelle [<zeile>]`. Beispiel: `beispiele/bedingungen.c`.
+  `c2d --funktion f --wahrheitstabelle [<zeile>[:<n>]]` (eine Zeile mit mehreren ohne `:n` ist mehrdeutig,
+  Rückgabe 1). Beispiel: `beispiele/bedingungen.c`.
 - **Entscheidungstabelle** einer Funktion (DIN 66241): die dritte Darstellung im Feld neben
   Diagram (*Decision table*). Je Weg durch `if`/`else`, `switch`-Fälle und `?:` eine Regel R1, R2 …
   (Spalten); oben die Bedingungen (Y/N, bei `switch` der Wert des Falls, `–` = nicht gefragt), nach
@@ -979,7 +984,7 @@ Den Tester danach schliessen — offen sperrt er den nächsten Bau.
   Exchanges gezählt, nicht Sparks Nummern; welche Unterabfrage eine wiederverwendete meint, steht bei maskierten
   Kennungen (`#x`, Sparks sql-tests) nicht im Text (Hinweis); ein Operator führt per Doppelklick nirgends hin.
 - **Notebooks:** von den Ausgaben der Zellen werden nur die Pläne von `explain()` gelesen; `%run` wird nicht
-  verfolgt; eine SQL-Zelle hat als `<cell n>` keinen Ablauf (nur Zugriffe und Abfragen); dass Zellen in
+  verfolgt; dass Zellen in
   anderer Reihenfolge laufen können als im Notebook, sieht das Diagramm nicht. Eine Zeile mit `%` oder `!`
   vorn gilt als Magie, auch mitten in einem Ausdruck über mehrere Zeilen.
 - **Datenfluss (Spark):** nur PySpark. Verfolgt wird von einer Sitzung aus; was eine Bibliothek liefert
