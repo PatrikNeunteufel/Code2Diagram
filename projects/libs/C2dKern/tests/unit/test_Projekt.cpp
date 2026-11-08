@@ -6,6 +6,7 @@
 
 #include <doctest.h>
 
+#include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Projektdatei.hpp"
 #include "c2d/sprache/Sprache.hpp"
@@ -174,28 +175,29 @@ TEST_SUITE("Projekt")
         {
             const std::size_t m = p.finde("main.c");
             const std::size_t mo = p.finde("motor/motor.c");
-            const std::vector<Fundstelle> eigene = kandidaten(p, m, "hilf");
+            const c2d::projekt::Funktionsverzeichnis v(p);
+            const std::vector<Fundstelle> eigene = v.kandidaten(m, "hilf");
             REQUIRE(eigene.size() == 1);
             CHECK(eigene[0].datei == m);
             CHECK(funktion(p, eigene[0]).intern);
-            REQUIRE(kandidaten(p, mo, "hilf").size() == 1);
-            CHECK(kandidaten(p, mo, "hilf")[0].datei == mo);
-            CHECK(kandidaten(p, p.finde("slave/s.c"), "hilf").empty());  // beide static, in fremden Dateien
-            const std::vector<Fundstelle> zwei = kandidaten(p, m, "starte");
+            REQUIRE(v.kandidaten(mo, "hilf").size() == 1);
+            CHECK(v.kandidaten(mo, "hilf")[0].datei == mo);
+            CHECK(v.kandidaten(p.finde("slave/s.c"), "hilf").empty());  // beide static, in fremden Dateien
+            const std::vector<Fundstelle> zwei = v.kandidaten(m, "starte");
             REQUIRE(zwei.size() == 2);
             CHECK(zwei[0].datei == mo);
             CHECK(zwei[1].datei == p.finde("slave/s.c"));
             // die Umkehrung: wer ruft? Auch ein mehrdeutiger Aufruf zaehlt fuer jeden seiner Kandidaten
-            const std::vector<Fundstelle> rufenStarte = aufrufer(p, zwei[0]);
+            const std::vector<Fundstelle> rufenStarte = v.aufrufer(zwei[0]);
             REQUIRE(rufenStarte.size() == 1);
             CHECK(rufenStarte[0].datei == m);
             CHECK(funktion(p, rufenStarte[0]).name == "main");
-            CHECK(aufrufer(p, zwei[1]) == rufenStarte);
-            const std::vector<Fundstelle> rufenHilf = aufrufer(p, kandidaten(p, mo, "hilf")[0]);
+            CHECK(v.aufrufer(zwei[1]) == rufenStarte);
+            const std::vector<Fundstelle> rufenHilf = v.aufrufer(v.kandidaten(mo, "hilf")[0]);
             REQUIRE(rufenHilf.size() == 1);  // nur starte in motor.c, nicht main: das meint seine eigene
             CHECK(funktion(p, rufenHilf[0]).name == "starte");
-            CHECK(aufrufer(p, eigene[0]).size() == 1);
-            CHECK(funktion(p, aufrufer(p, eigene[0])[0]).name == "main");
+            CHECK(v.aufrufer(eigene[0]).size() == 1);
+            CHECK(funktion(p, v.aufrufer(eigene[0])[0]).name == "main");
             CHECK(funktionenNamens(p, "hilf").size() == 2);
             CHECK(funktionenNamens(p, "gibt_es_nicht").empty());
         }

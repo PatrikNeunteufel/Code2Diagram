@@ -53,6 +53,7 @@
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Datenfluss.hpp"
+#include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Lauf.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Typen.hpp"
@@ -64,7 +65,9 @@
 #include <QString>
 #include <QStringList>
 
+#include <map>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -621,6 +624,7 @@ private:
     QString m_gelesenMit;  ///< der Text des Felds Defines beim letzten Lesen
     c2d::projekt::Projekt m_projekt;
     c2d::projekt::Typverzeichnis m_typen;      ///< zu m_projekt
+    c2d::projekt::Funktionsverzeichnis m_funktionen;  ///< zu m_projekt: welche Funktion ein Aufruf meint
     c2d::diagramm::Strukturdiagramm m_struktur;  ///< das gezeigte Strukturdiagramm
     QString m_typ;                             ///< der Typ im zweiten Feld; `*` = alle
     std::size_t m_datei = c2d::projekt::kKeine;        ///< die gewaehlte Datei
@@ -639,6 +643,12 @@ private:
     c2d::diagramm::Schaltstellen m_schaltstellen;   ///< die gezeigte Tabelle `switch:`
     c2d::diagramm::Schalteruebersicht m_uebersicht;  ///< die gezeigte Tabelle `ifnames`
     std::size_t m_schalterZahl = 0;                  ///< wie viele Namen die Dateien des Projekts fragen
+    /// `ifnames` und `switch:NAME` haengen am ganzen Projekt und am Feld Defines, nicht an der gezeigten Datei:
+    /// einmal gerechnet (UART: vorher 2,8–4,9 s bei jedem Wechsel auf einen Header), verworfen beim Lesen und wenn
+    /// sich Defines aendert
+    std::optional<c2d::diagramm::Schalteruebersicht> m_uebersichtGemerkt;
+    std::map<std::string, c2d::diagramm::Schaltstellen> m_schaltstellenGemerkt;
+    QString m_schalterGemerktMit;  ///< das Feld Defines, mit dem beide gerechnet sind
     bool m_textVerfuegbar = true;  ///< kann das gewaehlte Format das gezeigte Diagramm (sonst steht eine Meldung da)
     QComboBox* m_darstellung = nullptr;
     QComboBox* m_notation = nullptr;   ///< bei Data types mit Tabellen: Tables, Crow's foot, Chen, (min,max)

@@ -2,7 +2,7 @@
  * @file Aufrufgraph.hpp
  * @brief Der Aufrufgraph eines Projekts: ab einer Funktion, oder einer Datei
  *
- * Hier wird entschieden, was ein Aufruf meint (kandidaten in Projekt.hpp: erst
+ * Hier wird entschieden, was ein Aufruf meint (Funktionsverzeichnis::kandidaten: erst
  * die eigene Datei, dann was nicht `static` ist). Das Modell des Graphen
  * (diagramm/Aufrufgraph.hpp) kennt kein Projekt; die Ableitung steht deshalb
  * hier und nicht in diagramm/Ableitung.hpp.
@@ -21,6 +21,7 @@
 #pragma once
 
 #include "c2d/diagramm/Aufrufgraph.hpp"
+#include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Projekt.hpp"
 
 #include <cstddef>
@@ -67,13 +68,13 @@ struct AufrufgraphErgebnis
 
 /// Der Graph ab der Funktion an `wurzel`, in `optionen.richtung`, bis `optionen.tiefe`.
 /// Eine Fundstelle, die keine Funktion mit Rumpf benennt, gibt einen leeren Graphen.
-[[nodiscard]] AufrufgraphErgebnis aufrufgraphAb(const Projekt& projekt, const Fundstelle& wurzel,
+[[nodiscard]] AufrufgraphErgebnis aufrufgraphAb(const Funktionsverzeichnis& funktionen, const Fundstelle& wurzel,
                                                 const AufrufgraphOptionen& optionen = {});
 
 /// Der Graph einer Datei: jede ihrer Funktionen mit Rumpf und was sie rufen. Ein Aufruf in
 /// eine andere Datei endet am Knoten der gerufenen Funktion (die `weiter` traegt, wenn sie
 /// selbst ruft). Richtung und Tiefe gelten nicht.
-[[nodiscard]] AufrufgraphErgebnis aufrufgraphDerDatei(const Projekt& projekt, std::size_t datei,
+[[nodiscard]] AufrufgraphErgebnis aufrufgraphDerDatei(const Funktionsverzeichnis& funktionen, std::size_t datei,
                                                       const AufrufgraphOptionen& optionen = {});
 
 }  // namespace c2d::projekt

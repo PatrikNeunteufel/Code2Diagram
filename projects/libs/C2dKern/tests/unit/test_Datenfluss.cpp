@@ -138,10 +138,31 @@ TEST_SUITE("Datenfluss")
         CHECK(innen.glieder[0].name == "b");
     }
 
+    TEST_CASE("Ketten: ein Name allein in Klammern - `f((a))` und `(a).count()`")
+    {
+        // stuerzte ab (Fundgrube `props.py`, Volltest C2D_Session14): die innere Kette entfernte sich als Name allein
+        const projekt::Projekt p = projekt::liesText("def f(a, h):\n"
+                                                     "    box((a), (-(h) / 2.0, 0.0))\n"
+                                                     "    n = (a).count()\n",
+                                                     "k.py");
+        const modell::Funktion& f = funktion(p, "f");
+        REQUIRE(f.rumpf);
+        REQUIRE(f.rumpf->kinder.size() == 2);
+        const modell::Anweisung& erste = *f.rumpf->kinder[0];
+        REQUIRE(erste.ketten.size() == 1);  // box(…); `(a)` ist keine eigene Kette
+        CHECK(erste.ketten[0].glieder[0].argumente == std::vector<std::string>{"(a)", "(-(h) / 2.0, 0.0)"});
+        const modell::Anweisung& zweite = *f.rumpf->kinder[1];
+        REQUIRE(zweite.ketten.size() == 1);
+        CHECK(zweite.ketten[0].ziel == "n");
+        REQUIRE(zweite.ketten[0].glieder.size() == 2);
+        CHECK(zweite.ketten[0].glieder[0].name == "a");
+        CHECK(zweite.ketten[0].glieder[1].name == "count");
+    }
+
     TEST_CASE("Ein Job: Quelle, Schritte zusammen, Shuffle mit Partitionen, Jobs, Stages, same path, Session")
     {
         const projekt::Projekt p = projekt::liesText(kJob, "job.py");
-        const Datenflussdiagramm d = projekt::datenflussIn(p, 0, "main");
+        const Datenflussdiagramm d = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "main");
         // Session: appName, master, config
         const std::size_t s = knoten(d, DatenflussKnotenArt::Sitzung, "Session");
         REQUIRE(s != projekt::kKeine);
@@ -181,7 +202,7 @@ TEST_SUITE("Datenfluss")
         CHECK(d.knoten[g].gruppe == d.knoten[w].gruppe);
         CHECK(d.knoten[g].gruppe != d.knoten[sch].gruppe);
         CHECK(d.knoten[s].gruppe == projekt::kKeine);  // der Kopf steht in keiner Stage
-        CHECK(projekt::datenfluesseIn(p, 0) == std::vector<std::string>{"main"});
+        CHECK(projekt::datenfluesseIn(c2d::projekt::Funktionsverzeichnis(p), 0) == std::vector<std::string>{"main"});
     }
 
     TEST_CASE("Zweige, RDD, cache und neu gerechnet, Views und spark.sql, eine Funktion liefert die Sitzung")
@@ -209,7 +230,7 @@ TEST_SUITE("Datenfluss")
             "    df.count()\n"
             "    df.collect()\n",
             "rdd.py");
-        const Datenflussdiagramm w = projekt::datenflussIn(p, 0, "woerter");
+        const Datenflussdiagramm w = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "woerter");
         const std::size_t q = knoten(w, DatenflussKnotenArt::Quelle, "textFile");
         REQUIRE(q != projekt::kKeine);
         const std::size_t probe = schritte(w, "sample(False, 0.1)");
@@ -231,7 +252,7 @@ TEST_SUITE("Datenfluss")
         REQUIRE(kopf != projekt::kKeine);
         CHECK(hatZeile(w.knoten[kopf], "master: \"local[2]\""));
 
-        const Datenflussdiagramm b = projekt::datenflussIn(p, 0, "berichte");
+        const Datenflussdiagramm b = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "berichte");
         const std::size_t range = knoten(b, DatenflussKnotenArt::Quelle, "range(10)");
         const std::size_t sql = knoten(b, DatenflussKnotenArt::Sql, "spark.sql");
         REQUIRE(range != projekt::kKeine);
@@ -266,7 +287,7 @@ TEST_SUITE("Datenfluss")
                                                      "spark.table(\"gold.kunden\").count()\n",
                                                      "nb.py");
         REQUIRE_FALSE(p.dateien[0].zellen.empty());
-        const Datenflussdiagramm alle = projekt::datenflussIn(p, 0, "");
+        const Datenflussdiagramm alle = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "");
         const std::size_t roh = knoten(alle, DatenflussKnotenArt::Quelle, "read table");
         REQUIRE(roh != projekt::kKeine);
         CHECK(alle.knoten[roh].tabelle == "roh.kunden");
@@ -277,11 +298,11 @@ TEST_SUITE("Datenfluss")
         CHECK(kante(alle, schreib, gold, DatenflussKantenArt::Pfad));
         CHECK(alle.jobs == 2);
 
-        const Datenflussdiagramm zelle = projekt::datenflussIn(p, 0, "<cell 2>");
+        const Datenflussdiagramm zelle = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "<cell 2>");
         CHECK(knoten(zelle, DatenflussKnotenArt::Quelle, "read table") != projekt::kKeine);  // aus Zelle 1 gelesen
         CHECK(knoten(zelle, DatenflussKnotenArt::Aktion, "Job 1: write") != projekt::kKeine);
         CHECK(knoten(zelle, DatenflussKnotenArt::Aktion, "Job 2") == projekt::kKeine);         // Zelle 3
-        const std::vector<std::string> mit = projekt::datenfluesseIn(p, 0);
+        const std::vector<std::string> mit = projekt::datenfluesseIn(c2d::projekt::Funktionsverzeichnis(p), 0);
         CHECK(mit == std::vector<std::string>{"<cell 1>", "<cell 2>", "<cell 3>"});
     }
 
@@ -302,7 +323,7 @@ TEST_SUITE("Datenfluss")
             "    spark = sitzung()\n"
             "    spark.read.json(a).distinct().show()\n",
             "an.py");
-        const Datenflussdiagramm d = projekt::datenflussIn(p, 0, "");
+        const Datenflussdiagramm d = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "");
         // die Funktion, die nur die Sitzung baut, hat keinen Rahmen
         CHECK(std::none_of(d.rahmen.begin(), d.rahmen.end(), [](const diagramm::DatenflussRahmen& r) { return r.titel == "sitzung"; }));
         for (const bool nachRechts : {false, true})
@@ -361,10 +382,10 @@ TEST_SUITE("Datenfluss")
             "    df = spark.read.json(\"/e\").withColumn(\"n\", s(\"name\"))\n"
             "    speichere(df)\n",
             "u.py");
-        const Datenflussdiagramm param = projekt::datenflussIn(p, 0, "speichere");
+        const Datenflussdiagramm param = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "speichere");
         CHECK(param.knoten.empty());
         CHECK(meldet(param, "parameter 'df' is used like a DataFrame"));
-        const Datenflussdiagramm d = projekt::datenflussIn(p, 0, "lauf");
+        const Datenflussdiagramm d = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), 0, "lauf");
         CHECK(zahl(d, DatenflussKnotenArt::Shuffle) == 0);  // pandas groupby zaehlt nicht
         CHECK(zahl(d, DatenflussKnotenArt::Aktion) == 0);
         const std::size_t sch = schritte(d, "withColumn(\"n\", s(\"name\"))");
@@ -374,6 +395,6 @@ TEST_SUITE("Datenfluss")
         REQUIRE(r != projekt::kKeine);
         CHECK(d.knoten[r].ziele == std::vector<std::string>{"speichere"});
         CHECK(kante(d, sch, r));
-        CHECK(projekt::datenfluesseIn(p, 0) == std::vector<std::string>{"lauf"});
+        CHECK(projekt::datenfluesseIn(c2d::projekt::Funktionsverzeichnis(p), 0) == std::vector<std::string>{"lauf"});
     }
 }

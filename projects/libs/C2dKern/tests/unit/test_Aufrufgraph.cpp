@@ -166,7 +166,7 @@ TEST_SUITE("Aufrufgraph")
         TempOrdner t;
         legeProjekt(t);
         const Projekt p = liesOrdner(t.weg());
-        const AufrufgraphErgebnis e = aufrufgraphAb(p, finde(p, "main.c", "main"), optionen(0));
+        const AufrufgraphErgebnis e = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), optionen(0));
         const Aufrufgraph& g = e.graph;
         CHECK(g.titel == "calls from main()");
         REQUIRE(g.knoten.size() == e.stellen.size());
@@ -221,18 +221,18 @@ TEST_SUITE("Aufrufgraph")
         const Projekt p = liesOrdner(t.weg());
         const Fundstelle main = finde(p, "main.c", "main");
 
-        const Aufrufgraph eins = aufrufgraphAb(p, main, optionen(1)).graph;
+        const Aufrufgraph eins = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), main, optionen(1)).graph;
         CHECK(knoten(eins, "takt") == kKeine);
         CHECK(eins.knoten[knoten(eins, "motor_starte")].weiter);
         CHECK(knotenText(eins.knoten[knoten(eins, "motor_starte")]) == "motor_starte \xE2\x80\xA6");
         CHECK_FALSE(eins.knoten[knoten(eins, "regle", "sim/sim.c")].weiter);  // ruft nichts
         CHECK(eins.knoten[knoten(eins, "hilfe", "main.c")].weiter);          // ruft sich selbst
 
-        const Aufrufgraph zwei = aufrufgraphAb(p, main, optionen(2)).graph;
+        const Aufrufgraph zwei = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), main, optionen(2)).graph;
         CHECK(knoten(zwei, "takt") != kKeine);
         CHECK_FALSE(zwei.knoten[knoten(zwei, "motor_starte")].weiter);
 
-        const AufrufgraphErgebnis ohne = aufrufgraphAb(p, main, optionen(0, AufrufRichtung::Gerufene, true));
+        const AufrufgraphErgebnis ohne = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), main, optionen(0, AufrufRichtung::Gerufene, true));
         CHECK(knoten(ohne.graph, "memcpy") == kKeine);
         CHECK(knoten(ohne.graph, "PRUEFE") == kKeine);
         CHECK(ohne.ausgelassen == 2);
@@ -247,13 +247,13 @@ TEST_SUITE("Aufrufgraph")
         const Projekt p = liesOrdner(t.weg());
         const Fundstelle motor = finde(p, "antrieb/motor.c", "motor_starte");
 
-        const Aufrufgraph ab = aufrufgraphAb(p, finde(p, "main.c", "main"), optionen(1, AufrufRichtung::Gerufene, false, {motor})).graph;
+        const Aufrufgraph ab = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), optionen(1, AufrufRichtung::Gerufene, false, {motor})).graph;
         REQUIRE(knoten(ab, "takt") != kKeine);
         CHECK_FALSE(ab.knoten[knoten(ab, "motor_starte")].weiter);
         CHECK_FALSE(ab.knoten[knoten(ab, "takt")].weiter);
         CHECK(ab.knoten[knoten(ab, "hilfe", "main.c")].weiter);  // nicht aufgeklappt
 
-        const Aufrufgraph datei = aufrufgraphDerDatei(p, p.finde("log/log.c"), optionen(2, AufrufRichtung::Gerufene, false, {motor})).graph;
+        const Aufrufgraph datei = aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), p.finde("log/log.c"), optionen(2, AufrufRichtung::Gerufene, false, {motor})).graph;
         CHECK(knoten(datei, "takt") != kKeine);
         CHECK(knoten(datei, "hilfe", "antrieb/motor.c") != kKeine);
         CHECK_FALSE(datei.knoten[knoten(datei, "motor_starte")].weiter);
@@ -270,10 +270,10 @@ TEST_SUITE("Aufrufgraph")
         };
         AufrufgraphOptionen o = optionen(0);
         CHECK(o.hoechstens == 300);
-        CHECK_FALSE(aufrufgraphAb(p, finde(p, "main.c", "main"), o).begrenzt);
+        CHECK_FALSE(aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), o).begrenzt);
 
         o.hoechstens = 3;
-        const AufrufgraphErgebnis e = aufrufgraphAb(p, finde(p, "main.c", "main"), o);
+        const AufrufgraphErgebnis e = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), o);
         CHECK(e.begrenzt);
         CHECK(funktionen(e.graph) == 3);
         CHECK(e.graph.knoten[0].weiter);  // main ruft mehr, als gezeigt ist
@@ -281,18 +281,18 @@ TEST_SUITE("Aufrufgraph")
 
         // was eine aufgeklappte Funktion ruft, kommt trotzdem dazu
         o.aufgeklappt = {finde(p, "main.c", "main")};
-        const AufrufgraphErgebnis auf = aufrufgraphAb(p, finde(p, "main.c", "main"), o);
+        const AufrufgraphErgebnis auf = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), o);
         CHECK(knoten(auf.graph, "log_schreibe") != kKeine);
         CHECK_FALSE(auf.graph.knoten[0].weiter);
 
         // nach oben und im Graph einer Datei ebenso
         AufrufgraphOptionen eins = optionen(0, AufrufRichtung::Aufrufer);
         eins.hoechstens = 1;
-        const AufrufgraphErgebnis oben = aufrufgraphAb(p, finde(p, "antrieb/motor.c", "motor_starte"), eins);
+        const AufrufgraphErgebnis oben = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "antrieb/motor.c", "motor_starte"), eins);
         CHECK(oben.begrenzt);
         CHECK(funktionen(oben.graph) == 1);
         CHECK(oben.graph.knoten[0].weiter);
-        const AufrufgraphErgebnis datei = aufrufgraphDerDatei(p, p.finde("antrieb/motor.c"), eins);
+        const AufrufgraphErgebnis datei = aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), p.finde("antrieb/motor.c"), eins);
         CHECK(datei.begrenzt);
         CHECK(funktionen(datei.graph) == 1);
     }
@@ -304,7 +304,7 @@ TEST_SUITE("Aufrufgraph")
         const Projekt p = liesOrdner(t.weg());
         const Fundstelle motor = finde(p, "antrieb/motor.c", "motor_starte");
 
-        const Aufrufgraph oben = aufrufgraphAb(p, motor, optionen(1, AufrufRichtung::Aufrufer)).graph;
+        const Aufrufgraph oben = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), motor, optionen(1, AufrufRichtung::Aufrufer)).graph;
         CHECK(oben.titel == "callers of motor_starte()");
         const std::size_t m = knoten(oben, "motor_starte");
         REQUIRE(knoten(oben, "main") != kKeine);
@@ -315,7 +315,7 @@ TEST_SUITE("Aufrufgraph")
         CHECK(oben.knoten[knoten(oben, "log_schreibe")].weiter);  // main ruft es
         CHECK_FALSE(oben.knoten[knoten(oben, "main")].weiter);    // niemand ruft main
 
-        const Aufrufgraph beide = aufrufgraphAb(p, motor, optionen(1, AufrufRichtung::Beide)).graph;
+        const Aufrufgraph beide = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), motor, optionen(1, AufrufRichtung::Beide)).graph;
         CHECK(knoten(beide, "takt") != kKeine);
         CHECK(knoten(beide, "main") != kKeine);
         // nach unten nur weiter nach unten: was main sonst ruft, steht nicht da
@@ -327,7 +327,7 @@ TEST_SUITE("Aufrufgraph")
         TempOrdner t;
         legeProjekt(t);
         const Projekt p = liesOrdner(t.weg());
-        const AufrufgraphErgebnis e = aufrufgraphDerDatei(p, p.finde("log/log.c"));
+        const AufrufgraphErgebnis e = aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), p.finde("log/log.c"));
         const Aufrufgraph& g = e.graph;
         CHECK(g.titel == "calls in log/log.c");
         CHECK(g.dateien.front() == "log/log.c");
@@ -339,15 +339,15 @@ TEST_SUITE("Aufrufgraph")
         CHECK(knoten(g, "takt") == kKeine);
 
         // eine Datei ohne Funktion mit Rumpf: ein leerer Graph
-        CHECK(aufrufgraphDerDatei(p, p.dateien.size()).graph.knoten.empty());
-        CHECK(aufrufgraphAb(p, Fundstelle{}).graph.knoten.empty());
+        CHECK(aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), p.dateien.size()).graph.knoten.empty());
+        CHECK(aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), Fundstelle{}).graph.knoten.empty());
     }
 
     TEST_CASE("Bedingte Uebersetzung: Varianten gepunktet mit Bedingung, Rahmen in Farbe")
     {
         const auto graph = [](bool varianten, bool bereiche) {
             const Projekt p = bedingt(varianten, bereiche);
-            return aufrufgraphAb(p, finde(p, "t.c", "f")).graph;
+            return aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "t.c", "f")).graph;
         };
         {
             const Aufrufgraph g = graph(false, false);
@@ -397,7 +397,7 @@ TEST_SUITE("Aufrufgraph")
         ProjektOptionen o;
         o.varianten = true;
         const Projekt p = liesText(quelle, "t.c", o);
-        const Aufrufgraph g = aufrufgraphAb(p, finde(p, "t.c", "f")).graph;
+        const Aufrufgraph g = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "t.c", "f")).graph;
         const AufrufKante* k = kante(g, 0, knoten(g, "g"));
         REQUIRE(k != nullptr);
         CHECK_FALSE(k->gilt);
@@ -405,7 +405,7 @@ TEST_SUITE("Aufrufgraph")
 
         o.definitionen.push_back(c2d::sprache::definitionAus("Y"));
         const Projekt mitY = liesText(quelle, "t.c", o);
-        const Aufrufgraph gy = aufrufgraphAb(mitY, finde(mitY, "t.c", "f")).graph;
+        const Aufrufgraph gy = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(mitY), finde(mitY, "t.c", "f")).graph;
         const AufrufKante* ky = kante(gy, 0, knoten(gy, "g"));
         REQUIRE(ky != nullptr);
         CHECK(ky->gilt);  // einer gilt, ohne Bedingung: die Kante gilt immer
@@ -417,7 +417,7 @@ TEST_SUITE("Aufrufgraph")
         TempOrdner t;
         legeProjekt(t);
         const Projekt p = liesOrdner(t.weg());
-        const Aufrufgraph g = aufrufgraphAb(p, finde(p, "main.c", "main"), optionen(0)).graph;
+        const Aufrufgraph g = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), optionen(0)).graph;
         for (const bool nachRechts : {false, true})
         {
             CAPTURE(nachRechts);
@@ -461,7 +461,7 @@ TEST_SUITE("Aufrufgraph")
         t.lege("b.c", "void b(void) { zurueck(); }\n");
         t.lege("c.c", "void c(void) { zurueck(); auch(); }\n");
         const Projekt p = liesOrdner(t.weg());
-        const Aufrufgraph g = aufrufgraphAb(p, finde(p, "main.c", "main"), optionen(0)).graph;
+        const Aufrufgraph g = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), optionen(0)).graph;
         REQUIRE(g.mitRahmen());
         double summe = 0;
         const FlussAnordnung a = ordneAn(g);
@@ -476,7 +476,7 @@ TEST_SUITE("Aufrufgraph")
         TempOrdner t;
         legeProjekt(t);
         const Projekt p = liesOrdner(t.weg());
-        const Aufrufgraph g = aufrufgraphAb(p, finde(p, "main.c", "main"), optionen(0)).graph;
+        const Aufrufgraph g = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), finde(p, "main.c", "main"), optionen(0)).graph;
         const c2d::ausgabe::Optionen o;
 
         const std::string mermaid = c2d::ausgabe::mermaid().schreibe(g, o);
@@ -508,14 +508,14 @@ TEST_SUITE("Aufrufgraph")
         ProjektOptionen v;
         v.varianten = true;
         const Projekt pv = liesText(kBedingt, "t.c", v);
-        const Aufrufgraph gv = aufrufgraphAb(pv, finde(pv, "t.c", "f")).graph;
+        const Aufrufgraph gv = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(pv), finde(pv, "t.c", "f")).graph;
         CHECK(c2d::ausgabe::dot().schreibe(gv, o).find("[style=dotted, label=\"defined(MIT_B)\"]") != std::string::npos);
         CHECK(c2d::ausgabe::svg().schreibe(gv, o).find("stroke-dasharray:2 3;") != std::string::npos);
         CHECK(c2d::ausgabe::drawio().schreibe(gv, o).find("dashPattern=1 3;") != std::string::npos);
         ProjektOptionen r;
         r.bereiche = true;
         const Projekt pr = liesText(kBedingt, "t.c", r);
-        const Aufrufgraph gr = aufrufgraphAb(pr, finde(pr, "t.c", "f")).graph;
+        const Aufrufgraph gr = aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(pr), finde(pr, "t.c", "f")).graph;
         const std::string farbe(rahmenFarbe(0));
         CHECK(c2d::ausgabe::mermaid().schreibe(gr, o).find("linkStyle 1 stroke:" + farbe) != std::string::npos);
         CHECK(c2d::ausgabe::dot().schreibe(gr, o).find("[color=\"" + farbe + "\"]") != std::string::npos);

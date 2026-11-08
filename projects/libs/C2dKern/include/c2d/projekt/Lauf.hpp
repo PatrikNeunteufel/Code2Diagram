@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Projekt.hpp"
 
 #include <cstddef>
@@ -72,7 +73,7 @@ struct Laufverbindung
 };
 
 /// Der Lauf der Datei `log` (ein Event-Log) und der Code des Projekts, zu dem er gehoert.
-[[nodiscard]] Laufverbindung verbindeLauf(const Projekt& projekt, std::size_t log);
+[[nodiscard]] Laufverbindung verbindeLauf(const Funktionsverzeichnis& funktionen, std::size_t log);
 
 /// Wo im Code eine Job- oder Stage-Zeile der Zeitachse steht: die Stelle der Stage, sonst die ihrer Aktion.
 [[nodiscard]] std::vector<Codestelle> codestellenVon(const Laufverbindung& v, int job, int stage);
@@ -85,6 +86,6 @@ struct LaufTreffer
     std::vector<int> jobs;
     int stage = -1;  ///< -1 = eine Aktion (dann jobs)
 };
-[[nodiscard]] std::vector<LaufTreffer> laeufeAn(const Projekt& projekt, std::size_t datei, int zeile);
+[[nodiscard]] std::vector<LaufTreffer> laeufeAn(const Funktionsverzeichnis& funktionen, std::size_t datei, int zeile);
 
 }  // namespace c2d::projekt

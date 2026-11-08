@@ -28,26 +28,27 @@ struct Gedaechtnis
     std::map<std::pair<std::size_t, std::string>, bool> istFunktion;
 };
 
-DatenflussUmfeld umfeld(const Projekt& p, std::size_t datei, const std::shared_ptr<Gedaechtnis>& g)
+DatenflussUmfeld umfeld(const Funktionsverzeichnis& v, std::size_t datei, const std::shared_ptr<Gedaechtnis>& g)
 {
+    const Projekt& p = v.projekt();
     DatenflussUmfeld u;
     const Datei& d = p.dateien[datei];
     u.vorgegeben = !d.zellen.empty();
-    u.istFunktion = [&p, datei, g](std::string_view name) {
+    u.istFunktion = [&v, datei, g](std::string_view name) {
         const std::pair<std::size_t, std::string> schluessel{datei, std::string(name)};
         const auto [da, neu] = g->istFunktion.try_emplace(schluessel, false);
-        if (neu) da->second = !kandidaten(p, datei, name).empty();
+        if (neu) da->second = !v.kandidaten(datei, name).empty();
         return da->second;
     };
-    u.liefert = [&p, datei, g](std::string_view name) {
+    u.liefert = [&v, &p, datei, g](std::string_view name) {
         const std::pair<std::size_t, std::string> schluessel{datei, std::string(name)};
         if (const auto da = g->liefert.find(schluessel); da != g->liefert.end()) return da->second;
         if (!g->inArbeit.insert(schluessel).second) return SparkRueckgabe{};
         SparkRueckgabe w;
-        for (const Fundstelle& f : kandidaten(p, datei, name))
+        for (const Fundstelle& f : v.kandidaten(datei, name))
         {
             const modell::Funktion& fn = p.dateien[f.datei].ergebnis.einheit.funktionen[f.funktion];
-            w = diagramm::rueckgabeVon(fn, umfeld(p, f.datei, g));
+            w = diagramm::rueckgabeVon(fn, umfeld(v, f.datei, g));
             if (w.wert != SparkWert::Keiner) break;
         }
         g->inArbeit.erase(schluessel);
@@ -82,11 +83,11 @@ std::vector<DatenflussBereich> bereicheVon(const Datei& d, bool& gemeinsam)
     return aus;
 }
 
-diagramm::Datenflussdiagramm flussVon(const Projekt& p, std::size_t datei, std::string_view funktion,
+diagramm::Datenflussdiagramm flussVon(const Funktionsverzeichnis& v, std::size_t datei, std::string_view funktion,
                                       const std::shared_ptr<Gedaechtnis>& g)
 {
-    const Datei& d = p.dateien[datei];
-    const DatenflussUmfeld u = umfeld(p, datei, g);
+    const Datei& d = v.projekt().dateien[datei];
+    const DatenflussUmfeld u = umfeld(v, datei, g);
     bool gemeinsam = false;
     const std::vector<DatenflussBereich> alle = bereicheVon(d, gemeinsam);
     if (funktion.empty()) return diagramm::datenflussVon(alle, gemeinsam, u, "Data flow of " + d.pfad);
@@ -107,13 +108,14 @@ diagramm::Datenflussdiagramm flussVon(const Projekt& p, std::size_t datei, std::
 
 }  // namespace
 
-std::vector<std::string> datenfluesseIn(const Projekt& projekt, std::size_t datei)
+std::vector<std::string> datenfluesseIn(const Funktionsverzeichnis& funktionen, std::size_t datei)
 {
+    const Projekt& projekt = funktionen.projekt();
     std::vector<std::string> aus;
     if (datei >= projekt.dateien.size()) return aus;
     const Datei& d = projekt.dateien[datei];
     const auto g = std::make_shared<Gedaechtnis>();
-    const DatenflussUmfeld u = umfeld(projekt, datei, g);
+    const DatenflussUmfeld u = umfeld(funktionen, datei, g);
     // ein Lauf ueber die Datei: im Notebook die Zellen gemeinsam, sonst jede Funktion fuer sich; dazu im
     // Notebook die Funktionen ausser den Zellen je fuer sich
     bool gemeinsam = false;
@@ -137,10 +139,11 @@ std::vector<std::string> datenfluesseIn(const Projekt& projekt, std::size_t date
     return aus;
 }
 
-diagramm::Datenflussdiagramm datenflussIn(const Projekt& projekt, std::size_t datei, std::string_view funktion)
+diagramm::Datenflussdiagramm datenflussIn(const Funktionsverzeichnis& funktionen, std::size_t datei,
+                                          std::string_view funktion)
 {
-    if (datei >= projekt.dateien.size()) return {};
-    return flussVon(projekt, datei, funktion, std::make_shared<Gedaechtnis>());
+    if (datei >= funktionen.projekt().dateien.size()) return {};
+    return flussVon(funktionen, datei, funktion, std::make_shared<Gedaechtnis>());
 }
 
 }  // namespace c2d::projekt

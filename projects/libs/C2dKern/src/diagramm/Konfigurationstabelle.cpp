@@ -217,26 +217,53 @@ void entbehrliche(std::vector<Term>& terme)
     terme = std::move(aus);
 }
 
-V nicht(V innen)
+/// Die absolute Bedingung von Zweig `z` der Weiche `w` — der umgebende Zweig, alle davor falsch, er wahr —
+/// als Oder von Und, je Weiche einmal gerechnet.
+///
+/// Gerechnet wie `dnf` ein Und rechnet: von einem leeren Term aus mit `und` Faktor um Faktor, in der Folge
+/// umgebender Zweig, ¬b0, ¬b1, …, dann bz; ist ein Zwischenstand zu gross, ist es das Ergebnis. Zweig z und
+/// z+1 teilen die Faktoren bis ¬b(z-1) und damit den Zwischenstand dort; er wird mitgefuehrt statt je Zweig
+/// neu gerechnet (vorher quadratisch in der Zahl der Zweige: die Compiler-Weichen von CMake, 82 Ketten mit
+/// zusammen 133 `#elif`, brauchten je Datei 1,5 s, jetzt 0,26 s). Der umgebende Zweig ist der gemerkte seiner Weiche.
+class AbsoluteBedingungen
 {
-    V v;
-    v.art = V::Art::Nicht;
-    v.teile.push_back(std::move(innen));
-    return v;
-}
+public:
+    explicit AbsoluteBedingungen(std::span<const Weiche> weichen) : m_weichen(weichen), m_je(weichen.size()) {}
 
-/// Die absolute Bedingung von Zweig `z` der Weiche `w`: der umgebende Zweig, alle davor falsch, er wahr.
-V bedingungVon(std::span<const Weiche> weichen, std::size_t w, std::size_t z)
-{
-    const Weiche& weiche = weichen[w];
-    V v;
-    v.art = V::Art::Und;
-    if (weiche.eltern != modell::kKeinZweig && weiche.eltern < w)
-        v.teile.push_back(bedingungVon(weichen, weiche.eltern, weiche.elternZweig));
-    for (std::size_t i = 0; i < z && i < weiche.baeume.size(); ++i) v.teile.push_back(nicht(weiche.baeume[i]));
-    if (z < weiche.baeume.size()) v.teile.push_back(weiche.baeume[z]);
-    return v;
-}
+    const Dnf& von(std::size_t w, std::size_t z)
+    {
+        Stand& s = m_je[w];
+        if (!s.begonnen)
+        {
+            s.begonnen = true;
+            s.praefix.terme.emplace_back();
+            const Weiche& weiche = m_weichen[w];
+            if (weiche.eltern != modell::kKeinZweig && weiche.eltern < w)
+                s.praefix = und(std::move(s.praefix), von(weiche.eltern, weiche.elternZweig));
+        }
+        const std::vector<V>& baeume = m_weichen[w].baeume;
+        while (s.zweige.size() <= z)
+        {
+            const std::size_t i = s.zweige.size();
+            if (s.praefix.zuGross || i >= baeume.size())
+                s.zweige.push_back(s.praefix);
+            else
+                s.zweige.push_back(und(s.praefix, dnf(baeume[i], true)));
+            if (!s.praefix.zuGross && i < baeume.size()) s.praefix = und(std::move(s.praefix), dnf(baeume[i], false));
+        }
+        return s.zweige[z];
+    }
+
+private:
+    struct Stand
+    {
+        bool begonnen = false;
+        Dnf praefix;              ///< der umgebende Zweig und alle bisherigen verneint
+        std::vector<Dnf> zweige;  ///< je Zweig bis hierher seine absolute Bedingung
+    };
+    std::span<const Weiche> m_weichen;
+    std::vector<Stand> m_je;
+};
 
 std::string zelle(const std::vector<const Literal*>& ls)
 {
@@ -270,6 +297,7 @@ int zweigZeile(const Weiche& w, std::size_t z)
 std::vector<Konfigurationstabelle> konfigurationVon(std::span<const Weiche> weichen, std::span<const modell::Schalter> schalter)
 {
     std::vector<Konfigurationstabelle> aus;
+    AbsoluteBedingungen absolut(weichen);
     for (std::size_t w = 0; w < weichen.size(); ++w)
     {
         const Weiche& weiche = weichen[w];
@@ -296,7 +324,7 @@ std::vector<Konfigurationstabelle> konfigurationVon(std::span<const Weiche> weic
         std::vector<Zweig> alle;
         for (std::size_t z = 0; z < zweige; ++z)
         {
-            Dnf d = zerlegbar ? dnf(bedingungVon(weichen, w, z), true) : Dnf{{}, true};
+            Dnf d = zerlegbar ? absolut.von(w, z) : Dnf{{}, true};
             if (!d.zuGross) entbehrliche(d.terme);
             alle.push_back({z, std::move(d)});
         }

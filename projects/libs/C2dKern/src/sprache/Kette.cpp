@@ -158,21 +158,32 @@ private:
                 ketten.pop_back();
                 return i;
             }
-            // die innere Kette an die Stelle der aeusseren ziehen
-            Aufrufkette innere = std::move(ketten[davor]);
-            std::vector<Aufrufkette> kinder(std::make_move_iterator(ketten.begin() + static_cast<std::ptrdiff_t>(davor) + 1),
-                                            std::make_move_iterator(ketten.end()));
-            ketten = std::move(vorher);
-            innere.eltern = eltern;
-            innere.glied = gliedVon;
-            innere.argument = argument;
-            ketten[stelle] = std::move(innere);
-            for (Aufrufkette& k : kinder)
+            if (ketten.size() <= davor)
             {
-                if (k.eltern != modell::kKeineKette && k.eltern >= davor) k.eltern = k.eltern - davor + stelle;
-                ketten.push_back(std::move(k));
+                // innen nur ein Name (`f((a))`, `(a).x()`): er hat sich als Name allein selbst entfernt — er ist die
+                // Wurzel, wie ohne Klammer (vorher las der Zugriff auf ketten[davor] hinter das Ende)
+                ketten = std::move(vorher);
+                ketten[stelle].glieder.push_back({std::string(m_t[innen].text), false, {}, {}});
+                j = z + 1;
             }
-            j = z + 1;
+            else
+            {
+                // die innere Kette an die Stelle der aeusseren ziehen
+                Aufrufkette innere = std::move(ketten[davor]);
+                std::vector<Aufrufkette> kinder(std::make_move_iterator(ketten.begin() + static_cast<std::ptrdiff_t>(davor) + 1),
+                                                std::make_move_iterator(ketten.end()));
+                ketten = std::move(vorher);
+                innere.eltern = eltern;
+                innere.glied = gliedVon;
+                innere.argument = argument;
+                ketten[stelle] = std::move(innere);
+                for (Aufrufkette& k : kinder)
+                {
+                    if (k.eltern != modell::kKeineKette && k.eltern >= davor) k.eltern = k.eltern - davor + stelle;
+                    ketten.push_back(std::move(k));
+                }
+                j = z + 1;
+            }
         }
         else
         {

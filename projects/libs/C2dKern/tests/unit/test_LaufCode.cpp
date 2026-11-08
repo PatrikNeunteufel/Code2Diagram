@@ -227,7 +227,7 @@ TEST_SUITE("Spark-Lauf und Code")
         const std::size_t code = p.finde("lager.py");
         REQUIRE(logDatei != projekt::kKeine);
         REQUIRE(code != projekt::kKeine);
-        const projekt::Laufverbindung v = projekt::verbindeLauf(p, logDatei);
+        const projekt::Laufverbindung v = projekt::verbindeLauf(c2d::projekt::Funktionsverzeichnis(p), logDatei);
         REQUIRE(v.aktionen.size() == 7);  // der Job ohne Ausfuehrung und ohne Stelle zaehlt nicht
         const auto bei = [&](const projekt::LaufAktion* a) { return a != nullptr && a->stellen.size() == 1 ? a->stellen[0].zeile : -1; };
         CHECK(bei(aktion(v, "collect")) == 7);
@@ -250,15 +250,15 @@ TEST_SUITE("Spark-Lauf und Code")
         CHECK(projekt::codestellenVon(v, 0, 0).front().zeile == 6);
         CHECK(projekt::codestellenVon(v, 3, -1).front().zeile == 10);
         // umgekehrt: aus dem Code in den Lauf
-        const std::vector<projekt::LaufTreffer> an10 = projekt::laeufeAn(p, code, 10);
+        const std::vector<projekt::LaufTreffer> an10 = projekt::laeufeAn(c2d::projekt::Funktionsverzeichnis(p), code, 10);
         REQUIRE(an10.size() == 1);
         CHECK(an10[0].log == logDatei);
         CHECK(an10[0].jobs == std::vector<int>{3});
-        const std::vector<projekt::LaufTreffer> an6 = projekt::laeufeAn(p, code, 6);
+        const std::vector<projekt::LaufTreffer> an6 = projekt::laeufeAn(c2d::projekt::Funktionsverzeichnis(p), code, 6);
         REQUIRE(an6.size() == 1);
         CHECK(an6[0].stage == 0);
         // die Knoten des Datenflusses kennen ihre Methode
-        const diagramm::Datenflussdiagramm f = projekt::datenflussIn(p, code, "");
+        const diagramm::Datenflussdiagramm f = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(p), code, "");
         CHECK(std::any_of(f.knoten.begin(), f.knoten.end(), [](const diagramm::DatenflussKnoten& k) {
             return k.methode == "show" && k.zeile == 10;
         }));
@@ -289,7 +289,7 @@ TEST_SUITE("Spark-Lauf und Code")
         CHECK(zellen[1].kernHash == 3691164798u);
         CHECK(zellen[2].kernHash == 1421375433u);
 
-        const projekt::Laufverbindung v = projekt::verbindeLauf(p, p.finde("local-9"));
+        const projekt::Laufverbindung v = projekt::verbindeLauf(c2d::projekt::Funktionsverzeichnis(p), p.finde("local-9"));
         REQUIRE(v.aktionen.size() == 3);
         CHECK(v.aktionen[0].stellen == std::vector<projekt::Codestelle>{{nb, 6}});   // Zelle 2, Zeile 1
         CHECK(v.aktionen[1].stellen == std::vector<projekt::Codestelle>{{nb, 10}});  // count, ueber den Namen
@@ -299,7 +299,7 @@ TEST_SUITE("Spark-Lauf und Code")
         CHECK(v.stages[0].stellen == std::vector<projekt::Codestelle>{{nb, 3}});    // reduceByKey, Zelle 1, Zeile 2
         CHECK(v.hinweise.empty());
 
-        const projekt::Laufverbindung w = projekt::verbindeLauf(p, p.finde("local-8"));
+        const projekt::Laufverbindung w = projekt::verbindeLauf(c2d::projekt::Funktionsverzeichnis(p), p.finde("local-8"));
         REQUIRE(w.aktionen.size() == 1);
         CHECK(w.aktionen[0].stellen == std::vector<projekt::Codestelle>{{nb, 11}});
         CHECK(hatHinweis(w.hinweise, "cell changed since the run"));
@@ -311,7 +311,7 @@ TEST_SUITE("Spark-Lauf und Code")
         Log log;
         log.ausfuehrung(0, "showString at NativeMethodAccessorImpl.java:0");
         const projekt::Projekt p = projekt::liesText(log.fertig(), "local-9");
-        const projekt::Laufverbindung v = projekt::verbindeLauf(p, 0);
+        const projekt::Laufverbindung v = projekt::verbindeLauf(c2d::projekt::Funktionsverzeichnis(p), 0);
         CHECK(hatHinweis(v.hinweise, "no Python location in the log"));
 
         const std::filesystem::path ordner = ordnerMit("c2d_test_laufcode_fremd");
@@ -320,7 +320,7 @@ TEST_SUITE("Spark-Lauf und Code")
         fremd.ausfuehrung(0, "take at /home/spark/job/lager.py:11");
         std::ofstream(ordner / "local-9") << fremd.fertig();
         const projekt::Projekt q = projekt::liesOrdner(ordner);
-        const projekt::Laufverbindung w = projekt::verbindeLauf(q, q.finde("local-9"));
+        const projekt::Laufverbindung w = projekt::verbindeLauf(c2d::projekt::Funktionsverzeichnis(q), q.finde("local-9"));
         REQUIRE(w.aktionen.size() == 1);
         CHECK(w.aktionen[0].stellen == std::vector<projekt::Codestelle>{{q.finde("lager.py"), 11}});
         std::filesystem::remove_all(ordner);

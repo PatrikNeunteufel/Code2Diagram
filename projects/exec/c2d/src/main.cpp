@@ -102,6 +102,7 @@
 #include "c2d/projekt/Abhaengigkeiten.hpp"
 #include "c2d/projekt/Aufrufgraph.hpp"
 #include "c2d/projekt/Datenfluss.hpp"
+#include "c2d/projekt/Funktionen.hpp"
 #include "c2d/projekt/Lauf.hpp"
 #include "c2d/projekt/Projekt.hpp"
 #include "c2d/projekt/Schaltstellen.hpp"
@@ -171,8 +172,9 @@ std::string orte(const Projekt& p, const std::vector<Fundstelle>& stellen)
     return aus;
 }
 
-void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Typverzeichnis& typen)
+void liste(const c2d::projekt::Funktionsverzeichnis& funktionen, std::size_t i, const c2d::projekt::Typverzeichnis& typen)
 {
+    const c2d::projekt::Projekt& p = funktionen.projekt();
     const c2d::projekt::Datei& d = p.dateien[i];
     const c2d::modell::Einheit& einheit = d.ergebnis.einheit;
     if (!d.zellen.empty())
@@ -233,9 +235,9 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
             }
     }
     // ein Datenfluss (Spark Schicht 1): je Funktion oder Zelle mit einem
-    for (const std::string& f : c2d::projekt::datenfluesseIn(p, i))
+    for (const std::string& f : c2d::projekt::datenfluesseIn(funktionen, i))
     {
-        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(p, i, f);
+        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(funktionen, i, f);
         std::cout << "dataflow  " << f << " (" << fluss.knoten.size() << " nodes, " << fluss.jobs << " jobs, " << fluss.stages
                   << " stages" << (fluss.hinweise.empty() ? std::string() : ", " + std::to_string(fluss.hinweise.size()) + " notes")
                   << ")\n";
@@ -270,7 +272,7 @@ void liste(const c2d::projekt::Projekt& p, std::size_t i, const c2d::projekt::Ty
     // der Code des Laufs (L5): je Aktion, wo sie steht
     if (!einheit.laeufe.empty())
     {
-        const c2d::projekt::Laufverbindung v = c2d::projekt::verbindeLauf(p, i);
+        const c2d::projekt::Laufverbindung v = c2d::projekt::verbindeLauf(funktionen, i);
         for (const c2d::projekt::LaufAktion& a : v.aktionen)
         {
             std::string jobs;
@@ -556,6 +558,8 @@ int main(int argc, char* argv[])
             std::cerr << "c2d: no reader for this file type - read as " << c2d::sprache::c().name() << '\n';
         p = c2d::projekt::liesText(inhalt, name, lesen);
     }
+    // welche Funktion ein Aufruf meint: einmal je Lesen
+    const c2d::projekt::Funktionsverzeichnis funktionen(p);
 
     // Meldungen: je Datei mit Zeile und Spalte (in einem Notebook dazu die Zelle), dann die des Projekts
     const auto vorn = [&](const std::string& pfad) { return ordner ? pfad : ziel; };
@@ -603,7 +607,7 @@ int main(int argc, char* argv[])
         {
             if (gewaehlteDatei != c2d::projekt::kKeine && i != gewaehlteDatei) continue;
             if (ordner) std::cout << "== " << p.dateien[i].pfad << '\n';
-            liste(p, i, typen);
+            liste(funktionen, i, typen);
         }
         return 0;
     }
@@ -671,11 +675,11 @@ int main(int argc, char* argv[])
             }
             for (const Zustandsdiagramm& z : automatenVon(einheit)) pruefe(z, "automaton " + z.titel);
             if (!einheit.typen.empty()) pruefe(strukturVon(einheit), "data types");
-            if (mitRumpf) pruefe(c2d::projekt::aufrufgraphDerDatei(p, i, graph).graph, "call graph of the file");
+            if (mitRumpf) pruefe(c2d::projekt::aufrufgraphDerDatei(funktionen, i, graph).graph, "call graph of the file");
             for (std::size_t q = 0; q < einheit.abfragen.size(); ++q)
                 pruefe(c2d::projekt::abfrageIn(p, i, q), "query " + einheit.abfragen[q].name);
-            if (!c2d::projekt::datenfluesseIn(p, i).empty())
-                pruefe(c2d::projekt::datenflussIn(p, i, ""), "data flow of the file");
+            if (!c2d::projekt::datenfluesseIn(funktionen, i).empty())
+                pruefe(c2d::projekt::datenflussIn(funktionen, i, ""), "data flow of the file");
             for (const c2d::modell::Plan& x : einheit.plaene) pruefe(planVon(x), "plan " + x.name);
         }
         std::cout << "checked " << geprueft << " layouts, " << zuBreit << " wider than x" << kHoechstesQuerVerhaeltnis
@@ -755,7 +759,7 @@ int main(int argc, char* argv[])
             for (const c2d::modell::Funktion& f : p.dateien[d].ergebnis.einheit.funktionen)
                 if (f.rumpf && (f.name == flussName || f.vollerName() == flussName)) name = f.vollerName();
         }
-        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(p, d, name);
+        const c2d::diagramm::Datenflussdiagramm fluss = c2d::projekt::datenflussIn(funktionen, d, name);
         for (const c2d::diagramm::DatenflussHinweis& h : fluss.hinweise)
             std::cerr << vorn(p.dateien[d].pfad) << ":" << h.zeile << ": " << h.text << '\n';
         if (fluss.knoten.empty())
@@ -991,8 +995,8 @@ int main(int argc, char* argv[])
     }
     if (aufrufgraph)
     {
-        const c2d::projekt::AufrufgraphErgebnis e = gewaehlt ? c2d::projekt::aufrufgraphAb(p, *gewaehlt, graph)
-                                                             : c2d::projekt::aufrufgraphDerDatei(p, gewaehlteDatei, graph);
+        const c2d::projekt::AufrufgraphErgebnis e = gewaehlt ? c2d::projekt::aufrufgraphAb(funktionen, *gewaehlt, graph)
+                                                             : c2d::projekt::aufrufgraphDerDatei(funktionen, gewaehlteDatei, graph);
         for (const c2d::projekt::Projektmeldung& m : e.meldungen)
             std::cerr << vorn(m.pfad) << ':' << m.meldung.ort.zeile << ": " << m.meldung.text << '\n';
         if (e.ausgelassen != 0) std::cerr << "c2d: " << e.ausgelassen << " external call(s) left out\n";
@@ -1072,7 +1076,7 @@ int main(int argc, char* argv[])
             for (KnotenId i = 0; !gelungen && i < d.knoten().size(); ++i)
                 for (const std::string& a : d.knoten()[i].aufrufe)
                 {
-                    std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(p, gewaehlt->datei, a);
+                    std::vector<Fundstelle> gemeint = funktionen.kandidaten(gewaehlt->datei, a);
                     std::erase_if(gemeint, [&](const Fundstelle& f) {
                         const c2d::modell::Funktion& g = c2d::projekt::funktion(p, f);
                         return g.name != name && g.vollerName() != name;

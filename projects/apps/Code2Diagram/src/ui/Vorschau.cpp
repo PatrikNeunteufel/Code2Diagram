@@ -968,7 +968,12 @@ QImage Vorschau::alsBild() const
 
 void Vorschau::leere()
 {
-    scene()->clear();  // nimmt auch die Marke mit
+    // eine neue Szene statt clear(), die alte erst geloescht, wenn die Sicht sie losgelassen hat — gemessen an UART,
+    // ein Aufrufgraph mit 10 379 Elementen: clear() 1,65 s, so 25 ms (eine Szene ohne Sicht raeumt clear() in
+    // 14 ms ab; auch ohne BSP-Index blieb es bei 1,3 s); die Marke geht mit
+    QGraphicsScene* alt = scene();
+    setScene(new QGraphicsScene(this));
+    delete alt;
     setBackgroundBrush(ausTabelle(Farbe::Grund, dunkel()));  // das Thema kann gewechselt haben
     scene()->setSceneRect(QRectF());
     m_formen = 0;

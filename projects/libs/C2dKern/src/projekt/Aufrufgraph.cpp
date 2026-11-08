@@ -42,7 +42,10 @@ std::string verbunden(const std::vector<std::string>& teile)
 class Bau
 {
 public:
-    Bau(const Projekt& projekt, const AufrufgraphOptionen& optionen) : m_p(projekt), m_o(optionen) {}
+    Bau(const Funktionsverzeichnis& funktionen, const AufrufgraphOptionen& optionen)
+        : m_v(funktionen), m_p(funktionen.projekt()), m_o(optionen)
+    {
+    }
 
     /// Die Rufe einer Funktion, je Name einer, in der Reihenfolge des Rumpfs.
     const std::vector<Ruf>& rufe(const Fundstelle& f)
@@ -55,7 +58,7 @@ public:
             auto ruf = std::find_if(aus.begin(), aus.end(), [&](const Ruf& r) { return r.name == s.name; });
             if (ruf == aus.end())
             {
-                std::vector<Fundstelle> ziele = kandidaten(m_p, f.datei, s.name);
+                std::vector<Fundstelle> ziele = m_v.kandidaten(f.datei, s.name);
                 // eine Funktion im Ausdruck (SQL), die keine Routine des Projekts ist: eingebaut, kein Aufruf
                 if (ziele.empty() && s.nurImProjekt) continue;
                 aus.push_back({s.name, std::move(ziele), {}});
@@ -174,7 +177,7 @@ public:
             offen.pop_front();
             if (!fertig.insert({f.datei, f.funktion}).second) continue;
             const std::size_t kf = knotenFuer(f);
-            const std::vector<Fundstelle> wer = aufrufer(m_p, f);
+            const std::vector<Fundstelle> wer = m_v.aufrufer(f);
             if (anDerGrenze(f, stufe))
             {
                 if (!wer.empty()) m_e.graph.knoten[kf].weiter = true;
@@ -333,6 +336,7 @@ private:
         return m_makros.contains(name);
     }
 
+    const Funktionsverzeichnis& m_v;
     const Projekt& m_p;
     const AufrufgraphOptionen& m_o;
     AufrufgraphErgebnis m_e;
@@ -356,10 +360,12 @@ bool istFunktion(const Projekt& projekt, const Fundstelle& f)
 
 }  // namespace
 
-AufrufgraphErgebnis aufrufgraphAb(const Projekt& projekt, const Fundstelle& wurzel, const AufrufgraphOptionen& optionen)
+AufrufgraphErgebnis aufrufgraphAb(const Funktionsverzeichnis& funktionen, const Fundstelle& wurzel,
+                                  const AufrufgraphOptionen& optionen)
 {
+    const Projekt& projekt = funktionen.projekt();
     if (!istFunktion(projekt, wurzel)) return {};
-    Bau bau(projekt, optionen);
+    Bau bau(funktionen, optionen);
     bau.wurzel(wurzel);
     if (optionen.richtung != AufrufRichtung::Aufrufer) bau.nachUnten(wurzel);
     if (optionen.richtung != AufrufRichtung::Gerufene) bau.nachOben(wurzel);
@@ -373,10 +379,12 @@ AufrufgraphErgebnis aufrufgraphAb(const Projekt& projekt, const Fundstelle& wurz
     return bau.ergebnis("calls from and callers of " + name + "()");
 }
 
-AufrufgraphErgebnis aufrufgraphDerDatei(const Projekt& projekt, std::size_t datei, const AufrufgraphOptionen& optionen)
+AufrufgraphErgebnis aufrufgraphDerDatei(const Funktionsverzeichnis& funktionen, std::size_t datei,
+                                        const AufrufgraphOptionen& optionen)
 {
+    const Projekt& projekt = funktionen.projekt();
     if (datei >= projekt.dateien.size()) return {};
-    Bau bau(projekt, optionen);
+    Bau bau(funktionen, optionen);
     bau.datei(datei);
     return bau.ergebnis("calls in " + projekt.dateien[datei].pfad);
 }

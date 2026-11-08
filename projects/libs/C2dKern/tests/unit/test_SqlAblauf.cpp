@@ -477,7 +477,7 @@ TEST_SUITE("SQL-Ablauf")
         const projekt::Projekt p = projekt::liesOrdner(o.weg());
         const std::size_t a = p.finde("a.sql");
         REQUIRE(a != projekt::kKeine);
-        const projekt::AufrufgraphErgebnis g = projekt::aufrufgraphDerDatei(p, a);
+        const projekt::AufrufgraphErgebnis g = projekt::aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), a);
         const auto knoten = [&](diagramm::AufrufKnotenArt art, std::string_view name) {
             return std::any_of(g.graph.knoten.begin(), g.graph.knoten.end(),
                                [&](const diagramm::AufrufKnoten& k) { return k.art == art && k.name == name; });

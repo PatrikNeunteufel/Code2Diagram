@@ -16,6 +16,8 @@
 #include "c2d/sprache/Sprache.hpp"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -515,6 +517,24 @@ TEST_SUITE("Spark-Plan")
         CHECK(e.meldungen[0].text.find("codegen") != std::string::npos);
     }
 
+    TEST_CASE("Projekt: eine .out mit NUL am Anfang ist kein Text und wird nicht gelesen, ein Plan in .txt schon")
+    {
+        // FirmWare: die ELF-Dateien des TI-Compilers (`Master_CLA.out`) verdreifachten das Laden (Volltest C2D_Session14)
+        const std::filesystem::path ordner = std::filesystem::temp_directory_path() / "c2d_test_plan_binaer";
+        std::filesystem::remove_all(ordner);
+        std::filesystem::create_directories(ordner);
+        {
+            std::ofstream elf(ordner / "Master_CLA.out", std::ios::binary);
+            elf << std::string("\x7f" "ELF\x01\x01\x01\0\0\0", 10) << kEinfach;  // traegt sogar einen Plan-Kopf
+            std::ofstream(ordner / "plan.txt") << kEinfach;
+        }
+        const projekt::Projekt p = projekt::liesOrdner(ordner);
+        CHECK(p.finde("Master_CLA.out") == projekt::kKeine);
+        REQUIRE(p.finde("plan.txt") != projekt::kKeine);
+        CHECK(p.dateien[p.finde("plan.txt")].ergebnis.einheit.plaene.size() == 1);
+        std::filesystem::remove_all(ordner);
+    }
+
     TEST_CASE("der eingerueckte Baum: WholeStageCodegen als Rahmen, InputAdapter faellt weg, Wiederverwendung")
     {
         CHECK(sprache::plantext(kEingerueckt));
@@ -604,7 +624,7 @@ TEST_SUITE("Spark-Plan")
         const auto& m = pr.dateien[0].ergebnis.meldungen;
         CHECK(std::any_of(m.begin(), m.end(), [](const quelle::Meldung& x) { return x.text.find("explain() in the cell") != std::string::npos; }));
         // im Datenfluss: der Knoten vor dem explain() traegt die Zeile `plan:` und fuehrt zum Plan (P2-2)
-        const diagramm::Datenflussdiagramm fluss = projekt::datenflussIn(pr, 0, "");
+        const diagramm::Datenflussdiagramm fluss = projekt::datenflussIn(c2d::projekt::Funktionsverzeichnis(pr), 0, "");
         const auto mitPlan = std::find_if(fluss.knoten.begin(), fluss.knoten.end(),
                                           [](const diagramm::DatenflussKnoten& k) { return !k.plan.empty(); });
         REQUIRE(mitPlan != fluss.knoten.end());

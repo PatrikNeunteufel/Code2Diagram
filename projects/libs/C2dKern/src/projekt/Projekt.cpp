@@ -90,6 +90,14 @@ std::string anfangVon(const fs::path& weg, std::size_t n)
     return aus;
 }
 
+/// Eine Datei, die eine Sprache nur nach ihrem Inhalt liest (`.txt`/`.out` mit einem Plan), aber ein NUL in ihren ersten
+/// 4 KB hat, ist kein Text — sie wird nicht ganz gelesen. (FirmWare: 653 `.out`/`.txt`, 263 MB, fast alle ELF-Dateien des
+/// TI-Compilers in `Build/`; ganz gelesen und nach einem Plan durchsucht, verdreifachten sie das Laden: 0,57 → 1,8 s.)
+bool binaer(const fs::path& weg)
+{
+    return anfangVon(weg, 4096).find('\0') != std::string::npos;
+}
+
 /// Ein Name ohne Endung (`app-20170708141026-0013`, `local-1794057617951`) — so heisst ein Event-Log (L1).
 bool ohneEndung(std::string_view name)
 {
@@ -823,6 +831,7 @@ public:
                 continue;
             }
             if (!kannLesen(name)) continue;
+            if (sprache::spracheFuer(name, {}) == &sprache::sparkPlan() && binaer(e.path())) continue;
             Datei d;
             d.pfad = weg;
             if (!liesDatei(e.path(), d.text))
@@ -1194,51 +1203,6 @@ std::string stelleIn(const Datei& datei, int zeile)
     const std::string zelle = "cell " + std::to_string(i + 1);
     if (zeile < z.zeile) return zelle;
     return zelle + ", line " + std::to_string(zeile - z.zeile + 1);
-}
-
-std::vector<Fundstelle> kandidaten(const Projekt& projekt, std::size_t ausDatei, std::string_view aufruf)
-{
-    std::vector<Fundstelle> aus;
-    const auto sammle = [&](std::size_t d, bool nurOeffentliche) {
-        const std::vector<modell::Funktion>& fs = projekt.dateien[d].ergebnis.einheit.funktionen;
-        for (std::size_t f = 0; f < fs.size(); ++f)
-            if (fs[f].rumpf && fs[f].heisst(aufruf) && !(nurOeffentliche && fs[f].intern)) aus.push_back({d, f});
-    };
-    if (ausDatei < projekt.dateien.size())
-    {
-        sammle(ausDatei, false);
-        if (!aus.empty()) return aus;
-    }
-    for (std::size_t d = 0; d < projekt.dateien.size(); ++d)
-        if (d != ausDatei) sammle(d, true);
-    return aus;
-}
-
-std::vector<Fundstelle> aufrufer(const Projekt& projekt, const Fundstelle& ziel)
-{
-    std::vector<Fundstelle> aus;
-    if (ziel.datei >= projekt.dateien.size()) return aus;
-    const modell::Funktion& gerufen = funktion(projekt, ziel);
-    for (std::size_t d = 0; d < projekt.dateien.size(); ++d)
-    {
-        const std::vector<modell::Funktion>& fs = projekt.dateien[d].ergebnis.einheit.funktionen;
-        for (std::size_t f = 0; f < fs.size(); ++f)
-        {
-            if (!fs[f].rumpf) continue;
-            for (const std::string& aufruf : modell::aufrufeVon(fs[f]))
-            {
-                // erst der billige Vergleich am Namen, dann die Regeln des Projekts
-                if (!gerufen.heisst(aufruf)) continue;
-                const std::vector<Fundstelle> gemeint = kandidaten(projekt, d, aufruf);
-                if (std::any_of(gemeint.begin(), gemeint.end(), [&](const Fundstelle& g) { return g == ziel; }))
-                {
-                    aus.push_back({d, f});
-                    break;
-                }
-            }
-        }
-    }
-    return aus;
 }
 
 std::vector<Fundstelle> funktionenNamens(const Projekt& projekt, std::string_view name)

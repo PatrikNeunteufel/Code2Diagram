@@ -860,12 +860,15 @@ void Hauptfenster::liesEin()
     else
         m_projekt = c2d::projekt::liesOrdner(alsWeg(m_ordner), optionen);
     m_typen = c2d::projekt::Typverzeichnis(m_projekt);
+    m_funktionen = c2d::projekt::Funktionsverzeichnis(m_projekt);
     m_struktur = {};
     // wie viele Namen die Dateien fragen: nur die Zahl, fuer den Eintrag #if names
     std::set<std::string> schalter;
     for (const c2d::projekt::Datei& d : m_projekt.dateien)
         for (const c2d::sprache::Schalter& s : d.ergebnis.schalter) schalter.insert(s.name);
     m_schalterZahl = schalter.size();
+    m_uebersichtGemerkt.reset();
+    m_schaltstellenGemerkt.clear();
 
     // was vorher galt, verweist nicht mehr sicher in dieses Projekt
     m_datei = kKeine;
@@ -1004,7 +1007,7 @@ void Hauptfenster::zeigeDatei(std::size_t index)
         if (!einheit.abfragen.empty())
             m_auswahl->addItem(QStringLiteral("Queries (%1)").arg(einheit.abfragen.size()), QString::fromLatin1(kAbfragen));
         // der Datenfluss (Spark Schicht 1): je Funktion oder Zelle mit einem, dazu die ganze Datei
-        m_flussNamen = c2d::projekt::datenfluesseIn(m_projekt, m_datei);
+        m_flussNamen = c2d::projekt::datenfluesseIn(m_funktionen, m_datei);
         if (!m_flussNamen.empty())
             m_auswahl->addItem(QStringLiteral("Data flow (%1)").arg(m_flussNamen.size()), QString::fromLatin1(kDatenfluss));
         // die Plaene von Spark (Schicht 2): aus den Ausgaben eines Notebooks oder einer Plan-Datei
@@ -1882,7 +1885,7 @@ void Hauptfenster::leiteDatenflussAb()
 {
     m_datenfluss = {};
     if (!istDatenfluss() || m_datei >= m_projekt.dateien.size()) return;
-    m_datenfluss = c2d::projekt::datenflussIn(m_projekt, m_datei, m_flussName.toStdString());
+    m_datenfluss = c2d::projekt::datenflussIn(m_funktionen, m_datei, m_flussName.toStdString());
 }
 
 bool Hauptfenster::zeigeDatenfluss(const QString& funktion)
@@ -1990,7 +1993,7 @@ void Hauptfenster::folgeZiel(const c2d::diagramm::DatenflussKnoten& k, const std
                 geheZuDatenfluss(m_datei, ausStd(f), knoten);
                 return;
             }
-    const std::vector<c2d::projekt::Fundstelle> stellen = c2d::projekt::kandidaten(m_projekt, m_datei, ziel);
+    const std::vector<c2d::projekt::Fundstelle> stellen = m_funktionen.kandidaten(m_datei, ziel);
     if (stellen.empty())
     {
         statusBar()->showMessage(QStringLiteral("%1: not defined in the project").arg(ausStd(ziel)), 4000);
@@ -2127,7 +2130,7 @@ void Hauptfenster::leiteLaufAb()
     if (laeufe.empty()) return;
     m_zeitachse = c2d::diagramm::zeitachseVon(laeufe.front());
     // wo der Lauf im Code steht (L5); die Hinweise stehen unter der Zeitachse
-    m_laufCode = c2d::projekt::verbindeLauf(m_projekt, m_datei);
+    m_laufCode = c2d::projekt::verbindeLauf(m_funktionen, m_datei);
     m_zeitachse.hinweise.insert(m_zeitachse.hinweise.end(), m_laufCode.hinweise.begin(), m_laufCode.hinweise.end());
     for (c2d::diagramm::ZeitBalken& b : m_zeitachse.balken)
     {
@@ -2163,7 +2166,7 @@ void Hauptfenster::geheZuLauf(std::size_t log, const std::vector<int>& jobs, int
 std::vector<c2d::projekt::LaufTreffer> Hauptfenster::laeufeDesKnotens(const c2d::diagramm::DatenflussKnoten& k) const
 {
     if (k.zeile <= 0) return {};
-    std::vector<c2d::projekt::LaufTreffer> aus = c2d::projekt::laeufeAn(m_projekt, m_datei, k.zeile);
+    std::vector<c2d::projekt::LaufTreffer> aus = c2d::projekt::laeufeAn(m_funktionen, m_datei, k.zeile);
     // eine Aktion fuehrt zu ihrem Job, ein anderer Knoten zu der Stage auf seiner Zeile
     const bool aktion = k.art == c2d::diagramm::DatenflussKnotenArt::Aktion;
     std::erase_if(aus, [&](const c2d::projekt::LaufTreffer& t) { return aktion ? t.stage >= 0 : t.stage < 0; });
@@ -2356,7 +2359,7 @@ std::optional<c2d::projekt::Fundstelle> Hauptfenster::ablaufDesObjekts(const c2d
     if (o.art != c2d::modell::ObjektArt::Trigger) return std::nullopt;
     for (const c2d::modell::Zugriff& z : o.zugriffe)
         if (z.art == c2d::modell::ZugriffArt::Ruft)
-            if (const std::vector<c2d::projekt::Fundstelle> ziele = c2d::projekt::kandidaten(m_projekt, s.datei, z.ziel);
+            if (const std::vector<c2d::projekt::Fundstelle> ziele = m_funktionen.kandidaten(s.datei, z.ziel);
                 ziele.size() == 1)
                 return ziele.front();
     return std::nullopt;
@@ -2500,7 +2503,7 @@ void Hauptfenster::leiteAufrufgraphAb()
     o.aufgeklappt = m_aufgeklappt;
     if (m_gezeigt == QLatin1String(kAufrufgraphDatei))
     {
-        m_aufrufgraph = c2d::projekt::aufrufgraphDerDatei(m_projekt, m_datei, o);
+        m_aufrufgraph = c2d::projekt::aufrufgraphDerDatei(m_funktionen, m_datei, o);
         return;
     }
     const std::string name = m_gezeigt.mid(static_cast<qsizetype>(std::string_view(kAufrufgraph).size())).toStdString();
@@ -2508,7 +2511,7 @@ void Hauptfenster::leiteAufrufgraphAb()
     for (std::size_t f = 0; f < fs.size(); ++f)
         if (fs[f].rumpf && fs[f].vollerName() == name)
         {
-            m_aufrufgraph = c2d::projekt::aufrufgraphAb(m_projekt, {m_datei, f}, o);
+            m_aufrufgraph = c2d::projekt::aufrufgraphAb(m_funktionen, {m_datei, f}, o);
             return;
         }
 }
@@ -2653,7 +2656,7 @@ QStringList Hauptfenster::aufrufer() const
 {
     QStringList aus;
     if (const std::optional<Fundstelle> ich = gezeigteFunktion())
-        for (const Fundstelle& f : c2d::projekt::aufrufer(m_projekt, *ich)) aus << beschreibe(f);
+        for (const Fundstelle& f : m_funktionen.aufrufer(*ich)) aus << beschreibe(f);
     return aus;
 }
 
@@ -2661,7 +2664,7 @@ bool Hauptfenster::springeZuAufrufer(int wahl)
 {
     const std::optional<Fundstelle> ich = gezeigteFunktion();
     if (!ich || wahl < 0) return false;
-    const std::vector<Fundstelle> wer = c2d::projekt::aufrufer(m_projekt, *ich);
+    const std::vector<Fundstelle> wer = m_funktionen.aufrufer(*ich);
     if (static_cast<std::size_t>(wahl) >= wer.size()) return false;
     const Fundstelle ziel = *ich;  // gehe() wechselt das gezeigte Diagramm
     gehe(wer[static_cast<std::size_t>(wahl)]);
@@ -2690,7 +2693,7 @@ void Hauptfenster::fuelleAufruferMenue(QMenu* menue)
         menue->addAction(QStringLiteral("(no function shown)"))->setEnabled(false);
         return;
     }
-    const std::vector<Fundstelle> wer = c2d::projekt::aufrufer(m_projekt, *ich);
+    const std::vector<Fundstelle> wer = m_funktionen.aufrufer(*ich);
     if (wer.empty())
     {
         menue->addAction(QStringLiteral("No caller in the project"))->setEnabled(false);
@@ -3215,7 +3218,7 @@ std::vector<Fundstelle> Hauptfenster::zieleVon(c2d::diagramm::KnotenId knoten) c
     const c2d::diagramm::Knoten& k = m_fluss.knoten()[knoten];
     for (const std::vector<std::string>* namen : {&k.aufrufe, &k.innere})
         for (const std::string& name : *namen)
-            for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, name))
+            for (const Fundstelle& f : m_funktionen.kandidaten(von, name))
                 // find_if: std::find nimmt fuer diese Struktur einen vektorisierten Weg, den MSVC 14.51 nicht uebersetzt
                 if (std::find_if(aus.begin(), aus.end(), [&](const Fundstelle& a) { return a == f; }) == aus.end())
                     aus.push_back(f);
@@ -3233,7 +3236,7 @@ QString Hauptfenster::beschreibe(const Fundstelle& stelle) const
 QStringList Hauptfenster::ziele(const QString& aufruf) const
 {
     QStringList aus;
-    for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, m_datei, aufruf.toStdString()))
+    for (const Fundstelle& f : m_funktionen.kandidaten(m_datei, aufruf.toStdString()))
         aus << QStringLiteral("%1:%2").arg(ausStd(m_projekt.dateien[f.datei].pfad)).arg(c2d::projekt::funktion(m_projekt, f).zeile);
     return aus;
 }
@@ -3241,7 +3244,7 @@ QStringList Hauptfenster::ziele(const QString& aufruf) const
 bool Hauptfenster::springe(const QString& aufruf, int wahl)
 {
     const std::string name = aufruf.toStdString();
-    const std::vector<Fundstelle> k = c2d::projekt::kandidaten(m_projekt, m_datei, name);
+    const std::vector<Fundstelle> k = m_funktionen.kandidaten(m_datei, name);
     if (wahl < 0 && k.size() == 1) wahl = 0;
     if (wahl < 0 || static_cast<std::size_t>(wahl) >= k.size()) return false;
     // der Knoten, der so ruft (oder in dem sie definiert wird): zu ihm fuehrt zurueck()
@@ -3285,7 +3288,7 @@ bool Hauptfenster::betteEin(const QString& funktionName)
     for (c2d::diagramm::KnotenId i = 0; i < m_fluss.knoten().size(); ++i)
         for (const std::string& aufruf : m_fluss.knoten()[i].aufrufe)
         {
-            std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, dateiVon(i), aufruf);
+            std::vector<Fundstelle> gemeint = m_funktionen.kandidaten(dateiVon(i), aufruf);
             std::erase_if(gemeint, [&](const Fundstelle& f) {
                 const c2d::modell::Funktion& g = c2d::projekt::funktion(m_projekt, f);
                 return g.name != name && g.vollerName() != name;
@@ -3409,11 +3412,21 @@ void Hauptfenster::baueNeu()
                 m_fluss.neuerKnoten(std::move(k));
             }
     }
+    // ifnames und switch:NAME gelten fuer das ganze Projekt: gemerkt, solange Defines gleich bleibt
+    if (m_schalterGemerktMit != m_definitionen->text())
+    {
+        m_uebersichtGemerkt.reset();
+        m_schaltstellenGemerkt.clear();
+        m_schalterGemerktMit = m_definitionen->text();
+    }
     if (istSchaltstellen() && m_datei < m_projekt.dateien.size())
     {
         // erst je Setzung, dann je Zeile ein Knoten (Klick, Ring); die Zeilen stehen in vielen Dateien (dateiVon)
-        m_schaltstellen = c2d::projekt::schaltstellen(
-            m_projekt, m_gezeigt.mid(QString::fromLatin1(kSchaltstellen).size()).toStdString(), definitionenImFeld());
+        const std::string name = m_gezeigt.mid(QString::fromLatin1(kSchaltstellen).size()).toStdString();
+        auto gemerkt = m_schaltstellenGemerkt.find(name);
+        if (gemerkt == m_schaltstellenGemerkt.end())
+            gemerkt = m_schaltstellenGemerkt.emplace(name, c2d::projekt::schaltstellen(m_projekt, name, definitionenImFeld())).first;
+        m_schaltstellen = gemerkt->second;
         for (const Schaltstellen::Setzung& s : m_schaltstellen.gesetzt)
         {
             Knoten k;
@@ -3431,7 +3444,8 @@ void Hauptfenster::baueNeu()
     }
     if (m_gezeigt == QLatin1String(kSchalter) && m_datei < m_projekt.dateien.size())
     {
-        m_uebersicht = c2d::projekt::schalteruebersicht(m_projekt, definitionenImFeld());
+        if (!m_uebersichtGemerkt) m_uebersichtGemerkt = c2d::projekt::schalteruebersicht(m_projekt, definitionenImFeld());
+        m_uebersicht = *m_uebersichtGemerkt;
         for (const Schalteruebersicht::Zeile& z : m_uebersicht.zeilen)
         {
             Knoten k;
@@ -3651,7 +3665,7 @@ void Hauptfenster::zeichne()
     {
         const std::size_t von = dateiVon(i);
         for (const std::string& aufruf : m_fluss.knoten()[i].aufrufe)
-            if (!c2d::projekt::kandidaten(m_projekt, von, aufruf).empty()) links[i].push_back(aufruf);
+            if (!m_funktionen.kandidaten(von, aufruf).empty()) links[i].push_back(aufruf);
         for (const c2d::projekt::TypVerweis& t : typVerweiseVon(i)) links[i].push_back(t.name);
     }
     // ein Knoten (Block), in dessen Zeilen eine Bedingung mit Tabelle steht, traegt ihr Symbol
@@ -3744,14 +3758,14 @@ void Hauptfenster::kontextMenue(c2d::diagramm::KnotenId knoten, std::size_t grup
         }
         // eine Funktion, die hier definiert wird: nur hingehen
         for (const std::string& name : k.innere)
-            for (const Fundstelle& f : c2d::projekt::kandidaten(m_projekt, von, name))
+            for (const Fundstelle& f : m_funktionen.kandidaten(von, name))
             {
                 const QString voll = QString::fromStdString(c2d::projekt::funktion(m_projekt, f).vollerName());
                 menue.addAction(QStringLiteral("Go to %1()").arg(voll), this, [this, f, knoten] { gehe(f, knoten); });
             }
         for (const std::string& aufruf : k.aufrufe)
         {
-            const std::vector<Fundstelle> gemeint = c2d::projekt::kandidaten(m_projekt, von, aufruf);
+            const std::vector<Fundstelle> gemeint = m_funktionen.kandidaten(von, aufruf);
             if (gemeint.size() == 1)
             {
                 const Fundstelle f = gemeint.front();

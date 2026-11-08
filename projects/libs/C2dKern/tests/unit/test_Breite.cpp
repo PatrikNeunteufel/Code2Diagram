@@ -176,11 +176,11 @@ TEST_SUITE("Breite")
         alle.tiefe = 0;
         const auto main = c2d::projekt::funktionenNamens(p, "main");
         REQUIRE(main.size() == 1);
-        const Aufrufgraph ab = c2d::projekt::aufrufgraphAb(p, main.front(), alle).graph;
+        const Aufrufgraph ab = c2d::projekt::aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), main.front(), alle).graph;
         REQUIRE(ab.mitRahmen());
         pruefe(ab, "calls from main");
         alle.richtung = c2d::projekt::AufrufRichtung::Beide;
-        pruefe(c2d::projekt::aufrufgraphAb(p, main.front(), alle).graph, "calls from main, both");
-        pruefe(c2d::projekt::aufrufgraphDerDatei(p, p.finde("gross.c")).graph, "calls of gross.c");
+        pruefe(c2d::projekt::aufrufgraphAb(c2d::projekt::Funktionsverzeichnis(p), main.front(), alle).graph, "calls from main, both");
+        pruefe(c2d::projekt::aufrufgraphDerDatei(c2d::projekt::Funktionsverzeichnis(p), p.finde("gross.c")).graph, "calls of gross.c");
     }
 }

@@ -55,12 +55,12 @@ constexpr std::pair<std::string_view, std::string_view> kLogNamen[] = {{"showStr
 class Zuordnung
 {
 public:
-    explicit Zuordnung(const Projekt& projekt) : m_projekt(projekt) {}
+    explicit Zuordnung(const Funktionsverzeichnis& funktionen) : m_funktionen(funktionen), m_projekt(funktionen.projekt()) {}
 
     const diagramm::Datenflussdiagramm& fluss(std::size_t datei)
     {
         const auto [it, neu] = m_fluss.try_emplace(datei);
-        if (neu) it->second = datenflussIn(m_projekt, datei, "");
+        if (neu) it->second = datenflussIn(m_funktionen, datei, "");
         return it->second;
     }
 
@@ -132,6 +132,7 @@ public:
     }
 
 private:
+    const Funktionsverzeichnis& m_funktionen;
     const Projekt& m_projekt;
     std::map<std::size_t, diagramm::Datenflussdiagramm> m_fluss;
 };
@@ -174,14 +175,15 @@ std::optional<Aufrufstelle> aufrufstelleAus(std::string_view text)
     return s;
 }
 
-Laufverbindung verbindeLauf(const Projekt& projekt, std::size_t log)
+Laufverbindung verbindeLauf(const Funktionsverzeichnis& funktionen, std::size_t log)
 {
+    const Projekt& projekt = funktionen.projekt();
     Laufverbindung v;
     if (log >= projekt.dateien.size()) return v;
     const std::vector<modell::Lauf>& laeufe = projekt.dateien[log].ergebnis.einheit.laeufe;
     if (laeufe.empty()) return v;
     const modell::Lauf& lauf = laeufe.front();
-    Zuordnung z(projekt);
+    Zuordnung z(funktionen);
 
     // die Aktionen des Laufs: je Ausfuehrung (ohne die in einer anderen) und je Job ohne Ausfuehrung mit Stelle
     std::vector<Kandidat> kandidaten;
@@ -314,14 +316,15 @@ std::vector<Codestelle> codestellenVon(const Laufverbindung& v, int job, int sta
     return {};
 }
 
-std::vector<LaufTreffer> laeufeAn(const Projekt& projekt, std::size_t datei, int zeile)
+std::vector<LaufTreffer> laeufeAn(const Funktionsverzeichnis& funktionen, std::size_t datei, int zeile)
 {
+    const Projekt& projekt = funktionen.projekt();
     std::vector<LaufTreffer> aus;
     const Codestelle hier{datei, zeile};
     for (std::size_t log = 0; log < projekt.dateien.size(); ++log)
     {
         if (projekt.dateien[log].ergebnis.einheit.laeufe.empty()) continue;
-        const Laufverbindung v = verbindeLauf(projekt, log);
+        const Laufverbindung v = verbindeLauf(funktionen, log);
         for (const LaufAktion& a : v.aktionen)
             if (std::find(a.stellen.begin(), a.stellen.end(), hier) != a.stellen.end()) aus.push_back({log, a.jobs, -1});
         for (const LaufStageStelle& s : v.stages)
